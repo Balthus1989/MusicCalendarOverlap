@@ -1,0 +1,21 @@
+# Fine riga normalizzati a LF nel repository.
+#
+# Senza questo, su Windows ogni file toccato risulta interamente modificato per
+# la sola conversione CRLF, e le diff diventano illeggibili.
+* text=auto eol=lf
+
+# Binari: mai toccare.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+
+# Generato: fuori dalle statistiche di linguaggio e dalle diff di revisione.
+package-lock.json linguist-generated=true -diff
+src/lib/server/db/migrations/meta/** linguist-generated=true -diff
+src/lib/components/ui/** linguist-vendored=true

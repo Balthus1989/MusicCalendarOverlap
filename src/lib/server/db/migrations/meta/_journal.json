@@ -8,6 +8,13 @@
       "when": 1787134312869,
       "tag": "0000_fase0_profiles",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787142560760,
+      "tag": "0001_fase1_anagrafiche",
+      "breakpoints": true
     }
   ]
 }

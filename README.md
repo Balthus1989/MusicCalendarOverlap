@@ -11,16 +11,20 @@ delle sovrapposizioni tra date.
 | Fase                    | Stato                            |
 | ----------------------- | -------------------------------- |
 | 0 — Fondazioni          | codice completo, manca il deploy |
-| 1 — Anagrafiche         | da iniziare                      |
+| 1 — Anagrafiche         | codice completo, manca il deploy |
 | 2 — Eventi e calendario | da iniziare                      |
 | 3 — Motore conflitti    | da iniziare                      |
 | 4 — Interoperabilità    | da iniziare                      |
 | 5 — Import assistito    | da iniziare                      |
 | 6 — Rifinitura          | da iniziare                      |
 
-La Fase 0 è completa sul codice. Restano i passi che richiedono account e
-credenziali: creazione del progetto Supabase, applicazione delle migrazioni e
-primo deploy su Cloudflare. Vedi [Setup](#setup).
+Fasi 0 e 1 complete sul codice. Restano i passi che richiedono account e
+credenziali: creazione del progetto Supabase, applicazione delle migrazioni,
+seed dei generi e primo deploy su Cloudflare. Vedi [Setup](#setup).
+
+I criteri di fine delle due fasi — _login e logout in produzione_, e _due utenti
+in due organizzazioni diverse con band e venue inseriti_ — non sono quindi
+ancora verificati.
 
 ## Setup
 
@@ -63,6 +67,16 @@ npm run db:migrate
 Le migrazioni usano `DIRECT_DATABASE_URL` (porta 5432), mai il pooler, e girano
 da locale o da CI — mai a runtime.
 
+Poi il seed della tassonomia generi, che è versionata e non si inserisce a mano
+(ADR-0007). È idempotente: si può rilanciare a ogni deploy.
+
+```bash
+npm run db:seed
+```
+
+Senza generi, l'affinità che il motore conflitti calcola in Fase 3 non ha nulla
+su cui lavorare.
+
 ### 3. Auth
 
 Nel pannello Supabase, sezione _Authentication_:
@@ -75,14 +89,30 @@ Nel pannello Supabase, sezione _Authentication_:
 
 La registrazione è **solo su invito** (ADR-0004): il form di login usa
 `shouldCreateUser: false`, quindi un indirizzo sconosciuto non crea un account.
-Per il primo accesso crea l'utente a mano da _Authentication → Users → Add
-user_, poi segna il profilo come platform admin:
+Un account nasce unicamente accettando un invito valido, da `/invite/[code]`.
 
-```sql
-update profiles set is_platform_admin = true where email = 'tua@email';
-```
+### 4. Primo accesso
 
-### 4. Dev server
+Il calendario parte vuoto, e un invito può essere generato solo da chi è già
+dentro: il primo utente va creato a mano.
+
+1. In Supabase, _Authentication → Users → Add user_, con la tua email.
+2. Accedi da `/login`. Il profilo viene creato al primo accesso.
+3. Promuoviti ad amministratore della piattaforma:
+
+   ```sql
+   update profiles set is_platform_admin = true where email = 'tua@email';
+   ```
+
+4. Ricarica: atterri su `/admin/invites`, l'unica pagina raggiungibile da un
+   profilo che non appartiene ancora a nessuna organizzazione. Genera il primo
+   invito e aprilo tu stesso per registrare la tua organizzazione.
+
+Da lì in poi ogni nuovo ingresso passa da un invito, generato da `/admin/invites`
+per una organizzazione nuova o da `/org` per aggiungere un membro a una
+esistente.
+
+### 5. Dev server
 
 ```bash
 npm run dev
@@ -99,6 +129,7 @@ npm run dev
 | `npm test`            | vitest (unit)                                   |
 | `npm run db:generate` | genera migrazione da `schema.ts`                |
 | `npm run db:migrate`  | applica (usa `DIRECT_DATABASE_URL`, porta 5432) |
+| `npm run db:seed`     | tassonomia generi (idempotente)                 |
 | `npm run db:studio`   | drizzle studio                                  |
 | `npm run build`       | build di produzione (adapter-cloudflare)        |
 

@@ -113,6 +113,8 @@ Storico delle decisioni architetturali del progetto. Ogni voce spiega **perché*
 
 **Conseguenze.** Serve curation minima contro i duplicati. Il flag `is_verified` esiste per questo. Se emergono duplicati in quantità, servirà un ruolo di moderatore e uno strumento di merge — non previsto in v1.
 
+> **Aggiornamento (2026-08-19).** Il ruolo di moderatore è stato anticipato alla v1: vedi [ADR-0016](#adr-0016--il-ruolo-moderator-esiste-dalla-v1-ed-è-trasversale-alle-organizzazioni). Lo strumento di merge resta fuori dalla v1, come scritto qui.
+
 ---
 
 ## ADR-0007 — Tassonomia generi chiusa e gerarchica
@@ -261,6 +263,37 @@ CREATE TABLE IF NOT EXISTS "auth"."users" ("id" uuid PRIMARY KEY NOT NULL);
 
 ---
 
+## ADR-0016 — Il ruolo `moderator` esiste dalla v1, ed è trasversale alle organizzazioni
+
+**Data:** 2026-08-19 · **Stato:** Accettata
+
+**Contesto.** ADR-0006 rende artisti e venue **anagrafiche condivise**, e prevede che serva "un ruolo di moderatore e uno strumento di merge" quando i doppioni si accumulano, rimandandolo fuori dalla v1. La questione era però anche la decisione aperta #3 del registro, in scadenza in Fase 1 — cioè adesso, perché è in Fase 1 che si scrive l'enum `member_role` in una migrazione, e le migrazioni committate non si modificano.
+
+Il nodo che ha fatto propendere per il sì: una scheda artista o venue **non appartiene a nessuna organizzazione**. Senza un ruolo dedicato, l'unico che può correggere la scheda inserita male da un altro è il platform admin, cioè il manutentore part-time. Il costo non è "un ruolo in più", è che ogni refuso diventa una richiesta via Telegram al manutentore.
+
+**Decisione.** `member_role` è `owner | admin | moderator | member`. Il moderatore può correggere, verificare (`is_verified`) e unire le schede di artisti e venue **di tutto il calendario**. Non guadagna nessun potere sull'organizzazione a cui appartiene: lì conta come un membro qualunque.
+
+**Motivazioni.** Le due cose sono assi indipendenti. Il potere sull'organizzazione deriva dall'appartenenza; il potere sulle anagrafiche condivise no, perché quelle non sono di nessuno. Legarlo a `owner` sarebbe stato sbagliato in entrambe le direzioni: darebbe a ogni titolare di circolo il diritto di riscrivere le schede altrui, e non permetterebbe di nominare moderatore chi cura bene l'anagrafica ma non governa la propria associazione.
+
+Aggiungerlo ora costa un valore in più nell'enum. Aggiungerlo dopo costa un `ALTER TYPE` in una migrazione a parte, più il travaso dei controlli di permesso già scritti. È una di quelle scelte in cui la versione difficile da annullare è quella di non farla.
+
+**Alternative scartate.**
+
+- _Nessun ruolo, solo `is_platform_admin`_: è ADR-0006 alla lettera. Scartata perché concentra sul manutentore un lavoro di manutenzione ordinaria che cresce col numero di schede.
+- _Moderazione derivata da `owner`_: confonde il governo dell'organizzazione con la cura di un bene comune, e i due insiemi di persone non coincidono.
+- _Moderazione per organizzazione_: non ha senso su entità che non appartengono a un'organizzazione. Un moderatore lo è per tutto il calendario o non lo è.
+
+**Conseguenze.**
+
+- Tutti i controlli di permesso stanno in `src/lib/server/auth/permissions.ts` e sono coperti da test, incluso il caso "il moderatore non guadagna niente dentro l'organizzazione".
+- Una scheda `is_verified` diventa modificabile solo dai moderatori: è il meccanismo con cui la curatela regge nel tempo.
+- Lo **strumento di merge** vero e proprio non c'è ancora: `canMergeCatalogEntries()` esiste e i permessi sono al loro posto, ma l'operazione di unione di due schede arriva quando servirà davvero. Il ruolo senza il merge è comunque utile: correzione e verifica coprono la gran parte dei casi.
+- Il ruolo si assegna dal titolare dell'organizzazione, in `/org`, oppure con un invito.
+
+**Da rivedere se.** I moderatori non vengono mai nominati da nessuno, o i doppioni restano rari: in quel caso il ruolo è peso morto e va tolto, non lasciato a decorare l'interfaccia.
+
+---
+
 ## Template per nuove voci
 
 ```markdown
@@ -291,7 +324,7 @@ Non ancora decise, elencate per non perderle di vista. Vanno chiuse **parlando c
 | --- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
 | 1   | Raggio di conflitto di default: 60 km è un'ipotesi da tarare sulla geografia reale del gruppo                                  | Fase 3           |
 | 2   | Finestra di ±14 giorni per la sovrapposizione artisti: dipende dalle clausole di esclusiva nei loro contratti di booking       | Fase 3           |
-| 3   | Serve un ruolo di moderatore con poteri di correzione e merge su anagrafiche artisti e venue?                                  | Fase 1           |
+| 3   | ~~Serve un ruolo di moderatore con poteri di correzione e merge su anagrafiche artisti e venue?~~ **Chiusa: sì, vedi ADR-0016.** Resta da capire con gli organizzatori chi nominare, e se lo strumento di merge serva davvero. | ~~Fase 1~~ chiusa |
 | 4   | La visibilità ridotta in `hold` è sufficiente a far fidare gli organizzatori? Va verificata con loro prima di costruirci sopra | Fase 2           |
 | 5   | Chi è formalmente titolare del trattamento dei dati: una delle associazioni o il manutentore a titolo personale?               | Prima del lancio |
 | 6   | Canale Telegram come sink di notifica aggiuntivo, dato che la community esiste già?                                            | Fase 6           |

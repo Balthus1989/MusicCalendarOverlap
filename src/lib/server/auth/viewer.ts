@@ -7,7 +7,7 @@
 import type { User } from '@supabase/supabase-js';
 import { eq } from 'drizzle-orm';
 import type { Database } from '$lib/server/db/client';
-import { profiles, type Profile } from '$lib/server/db/schema';
+import { memberships, profiles, type MemberRole, type Profile } from '$lib/server/db/schema';
 import type { ViewerContext } from '$lib/server/visibility';
 
 function displayNameFor(user: User): string {
@@ -40,10 +40,34 @@ export async function ensureProfile(db: Database, user: User): Promise<Profile> 
 	return reread[0];
 }
 
-export function toViewerContext(profile: Profile, organizationIds: string[]): ViewerContext {
+/** Ruolo del profilo in ciascuna organizzazione di cui è membro. */
+export async function loadRoles(
+	db: Database,
+	profileId: string
+): Promise<Record<string, MemberRole>> {
+	const righe = await db
+		.select({ organizationId: memberships.organizationId, role: memberships.role })
+		.from(memberships)
+		.where(eq(memberships.profileId, profileId));
+
+	return Object.fromEntries(righe.map((r) => [r.organizationId, r.role]));
+}
+
+export function toViewerContext(
+	profile: Profile,
+	roles: Record<string, MemberRole>
+): ViewerContext {
 	return {
 		profileId: profile.id,
-		organizationIds,
+		organizationIds: Object.keys(roles),
+		roles,
 		isPlatformAdmin: profile.isPlatformAdmin
 	};
+}
+
+/** Profilo + ruoli in una sola chiamata: è ciò che serve a ogni rotta `(app)`. */
+export async function loadViewer(db: Database, user: User) {
+	const profile = await ensureProfile(db, user);
+	const roles = await loadRoles(db, profile.id);
+	return { profile, viewer: toViewerContext(profile, roles) };
 }

@@ -9,10 +9,14 @@
 	 * Solo le rotte che esistono davvero: `resolve()` è tipizzato sui path
 	 * generati da SvelteKit, quindi un link a una rotta non ancora costruita
 	 * fallisce il typecheck invece di diventare un 404 silenzioso.
-	 * Le voci Conflitti / Artisti / Venue / Organizzazione si aggiungono qui
-	 * nelle Fasi 1–3.
+	 * Conflitti arriva in Fase 3.
 	 */
-	const links = [{ path: '/calendar', label: 'Calendario' }] as const;
+	const links = [
+		{ path: '/calendar', label: 'Calendario' },
+		{ path: '/artists', label: 'Artisti' },
+		{ path: '/venues', label: 'Locali' },
+		{ path: '/org', label: 'Organizzazione' }
+	] as const;
 
 	const isActive = (path: string) =>
 		page.url.pathname === path || page.url.pathname.startsWith(`${path}/`);
@@ -37,10 +41,32 @@
 						{link.label}
 					</a>
 				{/each}
+
+				{#if data.profile.isPlatformAdmin}
+					<a
+						href={resolve('/admin/invites')}
+						aria-current={isActive('/admin/invites') ? 'page' : undefined}
+						class={isActive('/admin/invites')
+							? 'text-foreground text-sm font-medium'
+							: 'text-muted-foreground hover:text-foreground text-sm'}
+					>
+						Inviti
+					</a>
+				{/if}
 			</nav>
 
 			<form method="POST" action={resolve('/auth/logout')} class="ml-auto flex items-center gap-3">
-				<span class="text-muted-foreground text-sm">{data.profile.displayName}</span>
+				<span class="text-muted-foreground text-sm">
+					{data.profile.displayName}
+					{#if data.puoModerare}
+						<span
+							class="border-border ml-1 rounded border px-1.5 py-0.5 text-[0.625rem] tracking-wide uppercase"
+							title="Puoi correggere, verificare e unire le schede di artisti e locali"
+						>
+							moderatore
+						</span>
+					{/if}
+				</span>
 				<button type="submit" class="text-sm underline underline-offset-4">Esci</button>
 			</form>
 		</div>
