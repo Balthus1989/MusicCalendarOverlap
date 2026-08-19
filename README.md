@@ -186,8 +186,11 @@ se serve un cambiamento, se ne genera una nuova.
 
 Dopo ogni `npm run db:generate`, controlla il file prodotto prima di committarlo.
 Drizzle può riemettere un `CREATE TABLE "auth"."users"` non condizionato, perché
-`profiles.id` ha una foreign key verso lo schema `auth` gestito da Supabase: va
-reso idempotente come in `0000_fase0_profiles.sql` (ADR-0015).
+`profiles.id` ha una foreign key verso lo schema `auth`, che su Supabase non
+appartiene al ruolo con cui giriamo le migrazioni. Va racchiuso nel blocco `DO`
+di `0000_fase0_profiles.sql`, che lo salta quando la tabella esiste (ADR-0015).
+Renderlo solo idempotente non basta: `IF NOT EXISTS` verifica comunque i
+permessi e fallisce con `42501`.
 
 ### Endpoint cron
 

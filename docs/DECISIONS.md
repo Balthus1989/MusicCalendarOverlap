@@ -239,27 +239,36 @@ La vista pubblica è la più probabile candidata alla v2: il serializzatore di v
 
 ---
 
-## ADR-0015 — Lo schema `auth` di Supabase è dichiarato in Drizzle, ma migrato in forma idempotente
+## ADR-0015 — Lo schema `auth` di Supabase è dichiarato in Drizzle, ma la sua creazione è saltata in migrazione
 
 **Data:** 2026-08-19 · **Stato:** Accettata
 
 **Contesto.** `profiles.id` è una foreign key verso `auth.users.id`, tabella creata e gestita da Supabase. Perché Drizzle possa esprimere quella foreign key, `auth.users` va dichiarata nello schema TypeScript. Ma `drizzle-kit generate` non distingue fra "tabella che possiedo" e "tabella che referenzio": emette un `CREATE TABLE "auth"."users"` che su Supabase fallirebbe, perché quella tabella esiste già. `schemaFilter: ['public']` non risolve: agisce sull'introspezione, non sulla generazione.
 
-**Decisione.** Si dichiara `auth.users` come `pgSchema('auth').table(...)` con la sola colonna `id`, e nella migrazione si sostituisce a mano la creazione con la forma idempotente:
+**Decisione.** Si dichiara `auth.users` come `pgSchema('auth').table(...)` con la sola colonna `id`, e nella migrazione si sostituisce a mano la creazione con un blocco che la **salta del tutto** quando la tabella esiste:
 
 ```sql
-CREATE SCHEMA IF NOT EXISTS "auth";
-CREATE TABLE IF NOT EXISTS "auth"."users" ("id" uuid PRIMARY KEY NOT NULL);
+DO $$
+BEGIN
+	IF NOT EXISTS (
+		SELECT 1 FROM pg_catalog.pg_tables WHERE schemaname = 'auth' AND tablename = 'users'
+	) THEN
+		CREATE SCHEMA IF NOT EXISTS "auth";
+		CREATE TABLE "auth"."users" ("id" uuid PRIMARY KEY NOT NULL);
+	END IF;
+END $$;
 ```
 
-**Motivazioni.** Su Supabase entrambe le istruzioni sono no-op e la migrazione passa. Su un Postgres vuoto — un database di scarto per provare un ripristino, o un'istanza locale — la foreign key resta creabile invece di far fallire l'intera catena di migrazioni. L'alternativa, rinunciare al `.references()` e scrivere il vincolo in SQL grezzo, toglierebbe a Drizzle la conoscenza della relazione senza guadagnare nulla.
+> **Correzione (2026-08-19, alla prima applicazione reale).** La stesura originale di questo ADR usava `CREATE TABLE IF NOT EXISTS "auth"."users"`, dando per scontato che su Supabase fosse un no-op. Non lo è: lo schema `auth` appartiene a `supabase_auth_admin`, non al ruolo `postgres` con cui girano le migrazioni, e `IF NOT EXISTS` **verifica comunque il permesso di creazione** prima di accorgersi che la tabella c'è già. Il risultato era `42501 permission denied for schema auth`, con drizzle-kit che faceva rollback **senza stampare l'errore**: il database restava vuoto e il comando sembrava non fare nulla. Serve un salto esplicito, non l'idempotenza.
+
+**Motivazioni.** Su Supabase il blocco non esegue nulla e la migrazione passa. Su un Postgres vuoto — un database di scarto per provare un ripristino, o un'istanza locale — la foreign key resta creabile invece di far fallire l'intera catena di migrazioni. L'alternativa, rinunciare al `.references()` e scrivere il vincolo in SQL grezzo, toglierebbe a Drizzle la conoscenza della relazione senza guadagnare nulla.
 
 **Alternative scartate.**
 
 - _Nessuna foreign key verso `auth.users`_: l'integrità fra profilo e utente è esattamente ciò che rende `profiles` uno specchio affidabile. Rinunciarvi significherebbe accettare profili orfani.
 - _Migrazione scritta interamente a mano_: perde il vantaggio principale di Drizzle, cioè lo schema come unica fonte di verità.
 
-**Conseguenze.** Il passaggio va **ricontrollato a ogni `npm run db:generate`**: drizzle-kit può riemettere la creazione non condizionata, e la migrazione si scoprirebbe rotta solo al deploy. È annotato nel file di migrazione e nel runbook del README. Vale solo per la prima migrazione: dallo snapshot in poi la tabella risulta già esistente.
+**Conseguenze.** Il blocco va **ricontrollato a ogni `npm run db:generate`**: drizzle-kit può riemettere la creazione non condizionata, e la migrazione si scoprirebbe rotta solo al deploy. È annotato nel file di migrazione e nel runbook del README. Vale solo per la prima migrazione: dallo snapshot in poi la tabella risulta già esistente.
 
 **Da rivedere se.** Drizzle introduce un modo esplicito di marcare una tabella come "esterna, non gestita". A quel punto la nota va rimossa e la dichiarazione semplificata.
 
