@@ -33,7 +33,7 @@ Un gruppo di organizzatori di concerti e festival (club, associazioni culturali,
 | ---------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------- |
 | Framework        | **SvelteKit 2** (TypeScript)                                                              | Full-stack: server load + form actions + endpoint API |
 | ORM / migrazioni | **Drizzle ORM** + `drizzle-kit`                                                           | Schema come unica fonte di verità dei tipi            |
-| Database         | **Supabase Postgres** (region EU — Frankfurt)                                             | Free tier; Postgres vero, non un'astrazione           |
+| Database         | **Supabase Postgres** (region UE)                                             | Free tier; Postgres vero, non un'astrazione           |
 | Driver DB        | `postgres` (postgres.js) su **Supavisor**, porta 6543, transaction mode, `prepare: false` | Obbligatorio in ambiente serverless                   |
 | Auth             | **Supabase Auth**, magic link via email                                                   | `@supabase/ssr` per la gestione cookie/sessione       |
 | Storage          | **Supabase Storage**                                                                      | Locandine e foto band                                 |

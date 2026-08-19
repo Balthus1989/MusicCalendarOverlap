@@ -36,8 +36,9 @@ npm install
 
 ### 1. Progetto Supabase
 
-Crea un progetto su [supabase.com](https://supabase.com) **in region EU
-(Frankfurt)** — l'hosting europeo è parte della posizione GDPR (ADR-0002).
+Crea un progetto su [supabase.com](https://supabase.com) **in una region UE** — qualunque
+va bene; l'hosting europeo è parte della posizione GDPR (ADR-0002). La region
+**non si cambia dopo la creazione**, quindi controllala prima di procedere.
 
 Dal pannello del progetto, in _Project Settings → API_ e _→ Database_, raccogli:
 

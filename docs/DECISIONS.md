@@ -43,7 +43,9 @@ Storico delle decisioni architetturali del progetto. Ogni voce spiega **perché*
 
 **Contesto.** Vincolo di budget: solo free tier. Serve Postgres, autenticazione e storage per le locandine.
 
-**Decisione.** Supabase free tier, region EU (Frankfurt). Auth con magic link.
+**Decisione.** Supabase free tier, in una region dell'Unione Europea. Auth con magic link.
+
+> **Precisazione (2026-08-19).** La stesura originale diceva "Frankfurt". Il vincolo che conta è **l'hosting nell'UE**, non il datacenter specifico: il progetto reale è su `eu-west-3` (Parigi) e soddisfa la decisione allo stesso modo. La region **non è modificabile dopo la creazione del progetto**: va verificata prima di caricare dati.
 
 **Motivazioni.** È Postgres standard, non un'astrazione proprietaria: la migrazione altrove è un `pg_dump`. Scrivere l'autenticazione a mano sarebbe stato il rischio più alto del progetto (sessioni, reset password, enumeration) per zero valore di dominio. Hosting EU semplifica la posizione GDPR.
 
