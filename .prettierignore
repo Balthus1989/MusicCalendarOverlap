@@ -1,0 +1,13 @@
+.svelte-kit/
+build/
+.wrangler/
+node_modules/
+package-lock.json
+src/lib/server/db/migrations/
+
+# Documenti di specifica: scritti a mano, non vanno riformattati.
+docs/
+CLAUDE.md
+
+# Impostazioni locali dell'agente, non versionate.
+.claude/

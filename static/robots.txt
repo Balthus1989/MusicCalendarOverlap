@@ -1,0 +1,5 @@
+# L'applicazione è privata: nulla qui dentro è destinato a un indice pubblico.
+# In particolare i feed ICS sono endpoint senza auth protetti solo dal token
+# nell'URL (ADR-0011): un crawler che ne indicizzasse uno lo renderebbe pubblico.
+User-agent: *
+Disallow: /

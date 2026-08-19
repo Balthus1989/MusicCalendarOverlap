@@ -1,0 +1,53 @@
+# Backup settimanale del database.
+#
+# Non è opzionale: il free tier di Supabase non garantisce backup utilizzabili
+# (ADR-0002). Il dump viene cifrato con GPG simmetrico prima di diventare un
+# artifact, perché gli artifact di GitHub sono leggibili da chiunque abbia
+# accesso in lettura al repository.
+#
+# Secret richiesti:
+#   DIRECT_DATABASE_URL  connessione diretta (porta 5432)
+#   BACKUP_PASSPHRASE    passphrase di cifratura, custodita fuori da GitHub
+name: Backup database
+
+on:
+  schedule:
+    # Ogni domenica alle 03:17 UTC. Minuto non tondo: gli scheduler di GitHub
+    # sono congestionati agli scoccare dell'ora.
+    - cron: '17 3 * * 0'
+  workflow_dispatch:
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Installa pg_dump 17
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Dump e cifratura
+        env:
+          DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          test -n "$DIRECT_DATABASE_URL" || { echo "DIRECT_DATABASE_URL mancante"; exit 1; }
+          test -n "$BACKUP_PASSPHRASE" || { echo "BACKUP_PASSPHRASE mancante"; exit 1; }
+          stamp="$(date -u +%Y-%m-%d)"
+          pg_dump --format=custom --no-owner --no-privileges \
+            --file="backup-${stamp}.dump" "$DIRECT_DATABASE_URL"
+          gpg --batch --yes --symmetric --cipher-algo AES256 \
+            --passphrase "$BACKUP_PASSPHRASE" "backup-${stamp}.dump"
+          rm "backup-${stamp}.dump"
+          ls -lh backup-*.dump.gpg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: db-backup
+          path: '*.dump.gpg'
+          # Il free tier di GitHub conserva gli artifact al massimo 90 giorni.
+          retention-days: 90
+          if-no-files-found: error

@@ -141,3 +141,13 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# --- Progetto: Calendario Eventi Condiviso ---
+/build
+/.wrangler
+/test-results
+/playwright-report
+/playwright/.cache
+
+# Impostazioni locali di Claude Code
+.claude/settings.local.json
