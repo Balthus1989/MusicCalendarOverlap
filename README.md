@@ -243,9 +243,31 @@ essere pulita.
 Le dipendenze importate da una sola pagina sono le più esposte a questo giro,
 perché Vite le scopre solo quando quella pagina viene servita per la prima
 volta, e a quel punto ri-ottimizza e forza un reload. Per questo FullCalendar è
-dichiarata in `optimizeDeps.include` dentro `vite.config.ts`: viene preparata
-all'avvio, non a metà sessione. Se in futuro aggiungi una dipendenza usata da
-una rotta sola, conviene elencarla lì.
+dichiarata in `vite.config.ts` sotto **`environments.client.optimizeDeps`**:
+viene preparata all'avvio, non a metà sessione. Se in futuro aggiungi una
+dipendenza usata da una rotta sola, elencala lì.
+
+### Ogni pagina che tocca il database resta appesa
+
+Sintomo insidioso: `/login` risponde, le pagine statiche rispondono, ma
+qualunque rotta che interroghi il database non torna mai — nessun errore, né
+nel browser né nel terminale.
+
+Causa vista una volta e da non ripetere: un `optimizeDeps` scritto al **livello
+principale** di `vite.config.ts`. In Vite 8 vale per tutti gli ambienti, SSR
+compreso, e ri-ottimizzando l'SSR finisce nel pre-bundle anche `postgres`, che
+da lì non riesce più ad aprire la connessione. Le dichiarazioni di
+pre-bundling per il browser vanno **sempre** sotto `environments.client`.
+
+Come riconoscerlo in fretta: se lo stesso `select` gira in millisecondi da uno
+script `tsx` e non torna dall'applicazione, non è il database — è l'ambiente
+SSR.
+
+Attenzione anche alle misure: il pool ha **una sola connessione**
+(`max: 1` in `db/client.ts`, obbligatorio con il pooler in transaction mode).
+Una richiesta lenta accoda tutte le successive, quindi provando più volte di
+seguito si misura la propria coda invece del problema. Ferma tutto, riavvia il
+dev server e fai **una** richiesta.
 
 ### Il browser resta in attesa e non arriva mai nessun errore
 

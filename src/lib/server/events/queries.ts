@@ -322,42 +322,43 @@ export async function prossimiEventiDi(
 
 /** Opzioni per i filtri del calendario: solo ciò che compare davvero negli eventi. */
 export async function opzioniFiltri(db: Database) {
-	const [generi, orgs] = await Promise.all([
-		db
-			.selectDistinct({ slug: genres.slug, name: genres.name, path: genres.path })
-			.from(eventGenres)
-			.innerJoin(genres, eq(genres.id, eventGenres.genreId))
-			.orderBy(asc(genres.path)),
-		db
-			.selectDistinct({ id: organizations.id, name: organizations.name })
-			.from(events)
-			.innerJoin(organizations, eq(organizations.id, events.organizationId))
-			.orderBy(asc(organizations.name))
-	]);
+	const generi = await db
+		.selectDistinct({ slug: genres.slug, name: genres.name, path: genres.path })
+		.from(eventGenres)
+		.innerJoin(genres, eq(genres.id, eventGenres.genreId))
+		.orderBy(asc(genres.path));
+
+	const orgs = await db
+		.selectDistinct({ id: organizations.id, name: organizations.name })
+		.from(events)
+		.innerJoin(organizations, eq(organizations.id, events.organizationId))
+		.orderBy(asc(organizations.name));
 
 	return { generi, organizzazioni: orgs };
 }
 
 /** Venue e artisti servono al form: qui solo i riferimenti minimi. */
 export async function opzioniForm(db: Database) {
-	const [locali, generiTutti] = await Promise.all([
-		db
-			.select({
-				id: venues.id,
-				name: venues.name,
-				city: venues.city,
-				province: venues.province,
-				lat: venues.lat,
-				lon: venues.lon
-			})
-			.from(venues)
-			.orderBy(asc(venues.city), asc(venues.name))
-			.limit(500),
-		db
-			.select({ slug: genres.slug, name: genres.name, path: genres.path, depth: genres.depth })
-			.from(genres)
-			.orderBy(asc(genres.path))
-	]);
+	// Sequenziali e non in `Promise.all`: il pool ha una connessione sola
+	// (vedi `db/client.ts`), quindi il parallelismo è apparente, e in cambio
+	// un errore o una lentezza si attribuiscono alla query giusta.
+	const locali = await db
+		.select({
+			id: venues.id,
+			name: venues.name,
+			city: venues.city,
+			province: venues.province,
+			lat: venues.lat,
+			lon: venues.lon
+		})
+		.from(venues)
+		.orderBy(asc(venues.city), asc(venues.name))
+		.limit(500);
+
+	const generiTutti = await db
+		.select({ slug: genres.slug, name: genres.name, path: genres.path, depth: genres.depth })
+		.from(genres)
+		.orderBy(asc(genres.path));
 
 	return { locali, generi: generiTutti };
 }

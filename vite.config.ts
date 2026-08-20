@@ -54,23 +54,31 @@ export default defineConfig({
 		// `vite dev`, non ha alcun effetto sul deploy.
 		host: true
 	},
-	optimizeDeps: {
-		// FullCalendar è importata da una sola pagina, `/calendar`, che è anche
-		// la prima che si apre dopo il login. Senza questa dichiarazione Vite
-		// scopre le quattro dipendenze solo al momento di servirla: si ferma a
-		// ri-ottimizzarle e impone un reload completo della pagina, proprio
-		// nell'istante meno opportuno.
-		//
-		// Elencandole qui vengono preparate all'avvio del dev server, una volta
-		// sola, prima che arrivi qualunque richiesta. Non ha effetto sulla
-		// build di produzione, dove il bundling avviene comunque in anticipo.
-		include: [
-			'@fullcalendar/core',
-			'@fullcalendar/core/locales/it',
-			'@fullcalendar/daygrid',
-			'@fullcalendar/timegrid',
-			'@fullcalendar/list'
-		]
+	environments: {
+		client: {
+			optimizeDeps: {
+				// FullCalendar è importata da una sola pagina, `/calendar`, che è
+				// anche la prima che si apre dopo il login. Senza questa
+				// dichiarazione Vite scopre le quattro dipendenze solo al momento
+				// di servirla: si ferma a ri-ottimizzarle e impone un reload
+				// completo della pagina, proprio nell'istante meno opportuno.
+				//
+				// **Va dichiarata qui dentro, sotto `environments.client`, e non
+				// in un `optimizeDeps` al livello principale.** In Vite 8 quello
+				// vale per tutti gli ambienti, SSR compreso: ri-ottimizzando
+				// l'SSR finisce nel pre-bundle anche `postgres`, e da lì la
+				// connessione al database resta appesa per sempre. L'app risponde
+				// su ogni pagina che non tocca il database e si blocca su tutte le
+				// altre, senza un errore da nessuna parte.
+				include: [
+					'@fullcalendar/core',
+					'@fullcalendar/core/locales/it',
+					'@fullcalendar/daygrid',
+					'@fullcalendar/timegrid',
+					'@fullcalendar/list'
+				]
+			}
+		}
 	},
 	test: {
 		include: ['tests/unit/**/*.test.ts'],
