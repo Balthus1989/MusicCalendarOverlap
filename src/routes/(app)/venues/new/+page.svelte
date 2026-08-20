@@ -37,7 +37,15 @@
 				lon = String(dati.risultato.lon);
 				geocodeSource = dati.risultato.source;
 				geocodeQuery = q;
-				if (!provincia && dati.risultato.province) provincia = dati.risultato.province;
+				// Photon e Nominatim restituiscono il *nome* della provincia
+				// ("Perugia"), non la sigla. Lo schema pretende due lettere, quindi
+				// precompilare alla cieca farebbe fallire il salvataggio con un
+				// messaggio che non spiega niente. Meglio lasciare il campo a chi
+				// compila, che la sigla la sa.
+				const prov = dati.risultato.province;
+				if (!provincia && typeof prov === 'string' && /^[A-Za-z]{2}$/.test(prov)) {
+					provincia = prov.toUpperCase();
+				}
 				statoRicerca = 'trovato';
 			} else {
 				statoRicerca = 'niente';
