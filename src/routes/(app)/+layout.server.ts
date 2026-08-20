@@ -1,6 +1,5 @@
 import { error, redirect } from '@sveltejs/kit';
 import { inArray } from 'drizzle-orm';
-import { loadViewer } from '$lib/server/auth/viewer';
 import { canModerateCatalog } from '$lib/server/auth/permissions';
 import { getDb } from '$lib/server/db/client';
 import { organizations } from '$lib/server/db/schema';
@@ -10,10 +9,11 @@ export const load: LayoutServerLoad = async ({ locals, route }) => {
 	// `authGuard` in hooks.server.ts ha già rediretto se la sessione manca.
 	if (!locals.user) error(401, 'Sessione non valida.');
 
-	const db = getDb();
-	const { profile, viewer } = await loadViewer(db, locals.user);
-	locals.viewer = viewer;
+	// Profilo e viewer arrivano da hooks.server.ts: qui non si riquerya.
+	const { profile, viewer } = locals;
+	if (!profile || !viewer) error(401, 'Contesto utente non disponibile.');
 
+	const db = getDb();
 	const orgIds = viewer.organizationIds;
 
 	// Senza organizzazione non c'è niente da mostrare: un profilo arriva qui

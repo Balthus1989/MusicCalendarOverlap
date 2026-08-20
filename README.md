@@ -207,6 +207,10 @@ secret `CRON_SECRET`. Senza header valido rispondono `403`, sempre.
   sempre coperto da test unitari.
 - Le rotte autenticate stanno dentro `src/routes/(app)/`: la guardia in
   `hooks.server.ts` protegge il gruppo, non una lista di path.
+- Il contesto utente (`locals.viewer`, `locals.profile`) si popola **negli
+  hook**, mai in una `load`. In SvelteKit le form action girano prima delle
+  `load`: un contesto costruito in una `load` non esiste ancora quando
+  l'action lo legge, e ogni scrittura fallisce con "Sessione non valida".
 - La configurazione SvelteKit sta in `vite.config.ts`, non in un
   `svelte.config.js`: è la convenzione dello scaffolding corrente. Alcuni
   strumenti di terze parti cercano ancora `svelte.config.js` — se serve, si

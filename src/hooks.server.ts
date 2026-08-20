@@ -10,6 +10,8 @@ import { env as publicEnv } from '$env/dynamic/public';
 import { createServerClient } from '@supabase/ssr';
 import { redirect, type Handle } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
+import { loadViewer } from '$lib/server/auth/viewer';
+import { getDb } from '$lib/server/db/client';
 
 /**
  * Il confine di autenticazione è il **gruppo di rotte** `(app)`, non una lista
@@ -70,6 +72,7 @@ const authGuard: Handle = async ({ event, resolve }) => {
 	event.locals.session = session;
 	event.locals.user = user;
 	event.locals.viewer = null;
+	event.locals.profile = null;
 
 	const isProtected = event.route.id?.startsWith(PROTECTED_GROUP) ?? false;
 
@@ -80,6 +83,20 @@ const authGuard: Handle = async ({ event, resolve }) => {
 
 	if (event.route.id === '/login' && session) {
 		redirect(303, '/calendar');
+	}
+
+	/**
+	 * Il viewer si costruisce **qui**, non nella `load` del layout.
+	 *
+	 * In SvelteKit le form action girano *prima* delle `load`: un contesto
+	 * popolato in una `load` non esiste ancora quando l'action lo legge, e
+	 * ogni scrittura fallirebbe con "Sessione non valida". Gli hook sono
+	 * l'unico punto attraversato da entrambe.
+	 */
+	if (user && (isProtected || event.route.id?.startsWith('/api/'))) {
+		const { profile, viewer } = await loadViewer(getDb(), user);
+		event.locals.profile = profile;
+		event.locals.viewer = viewer;
 	}
 
 	return resolve(event);
