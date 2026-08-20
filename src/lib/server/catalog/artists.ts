@@ -4,7 +4,7 @@
  * La deduplica è il punto delicato (ADR-0006): l'MBID è la chiave forte, il
  * nome normalizzato è la rete di sicurezza per chi un MBID non ce l'ha.
  */
-import { and, asc, eq, ilike, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Database } from '$lib/server/db/client';
 import { artistGenres, artists, genres, type Artist } from '$lib/server/db/schema';
 import { looksLikeDuplicate, normalizeName } from '$lib/server/text';
@@ -133,7 +133,10 @@ export async function setArtistGenres(db: Database, artistId: string, slugs: str
 	const trovati = await db
 		.select({ id: genres.id, slug: genres.slug })
 		.from(genres)
-		.where(sql`${genres.slug} = any(${slugs})`);
+		// `sql`... = any(${slugs})`` NON funziona: Drizzle interpola un array
+		// JS come tupla `($1, $2)`, che in `any()` e' SQL non valido. `inArray`
+		// genera la clausola corretta.
+		.where(inArray(genres.slug, slugs));
 
 	const bySlug = new Map(trovati.map((g) => [g.slug, g.id]));
 	const righe = slugs
