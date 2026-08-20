@@ -24,7 +24,9 @@ declare global {
 			profile: Profile | null;
 		}
 		interface PageData {
-			session: Session | null;
+			/** Solo un booleano: la sessione non viene mai serializzata (vedi
+			 * `src/routes/+layout.server.ts`). */
+			autenticato?: boolean;
 		}
 		interface Platform {
 			env?: Record<string, string>;

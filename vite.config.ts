@@ -1,7 +1,27 @@
+import { realpathSync } from 'node:fs';
 import adapter from '@sveltejs/adapter-cloudflare';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vitest/config';
+
+/**
+ * Su Windows le cartelle note hanno un nome localizzato: `C:/Users/x/Documenti`
+ * e `C:/Users/x/Documents` sono **la stessa cartella**. Vite confronta i
+ * percorsi della allow-list come stringhe, quindi avviando il dev server dal
+ * nome localizzato ogni modulo generato in `.svelte-kit` risulta "outside of
+ * Vite serving allow list" e la pagina non si carica.
+ *
+ * Autorizzare entrambe le forme rende indifferente da quale delle due si parte.
+ */
+const radice = process.cwd();
+const radiceReale = (() => {
+	try {
+		return realpathSync(radice);
+	} catch {
+		return radice;
+	}
+})();
+const cartelleConsentite = [...new Set([radice, radiceReale])];
 
 export default defineConfig({
 	plugins: [
@@ -18,6 +38,9 @@ export default defineConfig({
 			adapter: adapter()
 		})
 	],
+	server: {
+		fs: { allow: cartelleConsentite }
+	},
 	test: {
 		include: ['tests/unit/**/*.test.ts'],
 		environment: 'node'
