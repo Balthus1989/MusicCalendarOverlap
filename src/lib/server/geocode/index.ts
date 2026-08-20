@@ -154,7 +154,12 @@ export async function geocode(db: Database, query: string): Promise<GeocodeResul
 	const q = encodeURIComponent(query);
 
 	const risultato =
-		parsePhoton(await fetchJson(`${base}/api?q=${q}&limit=1&lang=it`)) ??
+		// Niente `lang=it`: Photon accetta solo `default`, `de`, `en`, `fr` e
+		// risponde 400 su tutto il resto. Con un parametro non supportato il
+		// geocoder primario fallisce *sempre* e ogni richiesta ricade su
+		// Nominatim, che e' il fallback e ammette una richiesta al secondo.
+		// `default` restituisce comunque i toponimi nella lingua locale.
+		parsePhoton(await fetchJson(`${base}/api?q=${q}&limit=1`)) ??
 		parseNominatim(
 			await fetchJson(`${NOMINATIM}/search?q=${q}&format=json&addressdetails=1&limit=1`)
 		);
