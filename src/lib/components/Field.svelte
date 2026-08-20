@@ -13,6 +13,12 @@
 		max?: number;
 		rows?: number;
 		options?: ReadonlyArray<{ value: string; label: string }>;
+		/**
+		 * Per i campi che un altro campo può riempire — la città che segue il
+		 * locale scelto, per esempio. In quei casi il valore arriva da fuori e
+		 * `bind:value` non basta.
+		 */
+		onInput?: (valore: string) => void;
 		children?: Snippet;
 	};
 
@@ -27,7 +33,8 @@
 		min,
 		max,
 		rows,
-		options
+		options,
+		onInput
 	}: Props = $props();
 
 	const base =
@@ -47,7 +54,18 @@
 			{/each}
 		</select>
 	{:else if rows}
-		<textarea id={name} {name} {required} {rows} {placeholder} class={base} bind:value></textarea>
+		<textarea
+			id={name}
+			{name}
+			{required}
+			{rows}
+			{placeholder}
+			class={base}
+			value={value ?? ''}
+			oninput={(e) => {
+				value = e.currentTarget.value;
+				onInput?.(e.currentTarget.value);
+			}}></textarea>
 	{:else}
 		<!-- `bind:value` non è ammesso su un input con `type` dinamico: la
 		     scrittura esplicita fa la stessa cosa senza vincolare il tipo. -->
@@ -60,7 +78,10 @@
 			{min}
 			{max}
 			value={value ?? ''}
-			oninput={(e) => (value = e.currentTarget.value)}
+			oninput={(e) => {
+				value = e.currentTarget.value;
+				onInput?.(e.currentTarget.value);
+			}}
 			class={base}
 		/>
 	{/if}

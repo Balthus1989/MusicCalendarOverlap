@@ -37,7 +37,7 @@ Un gruppo di organizzatori di concerti e festival (club, associazioni culturali,
 | Driver DB        | `postgres` (postgres.js) su **Supavisor**, porta 6543, transaction mode, `prepare: false` | Obbligatorio in ambiente serverless                   |
 | Auth             | **Supabase Auth**, magic link via email                                                   | `@supabase/ssr` per la gestione cookie/sessione       |
 | Storage          | **Supabase Storage**                                                                      | Locandine e foto band                                 |
-| Validazione      | **Zod** + `sveltekit-superforms`                                                          | Una sola definizione per client, server e tipi        |
+| Validazione      | **Zod** su form action (no superforms, ADR-0017)                                          | Una sola definizione per client, server e tipi        |
 | UI               | **Tailwind CSS** + **shadcn-svelte**                                                      |                                                       |
 | Calendario       | **FullCalendar** (pacchetti core MIT)                                                     | Viste `dayGridMonth`, `timeGridWeek`, `listMonth`     |
 | ICS              | `ical-generator`                                                                          | Feed sottoscrivibili + download singolo               |
@@ -285,7 +285,7 @@ Il punto più delicato del prodotto: **nessun organizzatore carica una lineup no
 | Titolo                    | ✗       | ✗                  | ✓                       | ✓                       | ✓                        |
 | Genere primario           | ✗       | ✓                  | ✓                       | ✓                       | ✓                        |
 | Generi secondari          | ✗       | ✗                  | ✓                       | ✓                       | ✓                        |
-| Lineup                    | ✗       | ✗                  | ✓ (solo `is_announced`) | ✓                       | ✓                        |
+| Lineup                    | ✗       | ✗                  | ✓ (solo `is_announced`) | ✓ (solo `is_announced`) | ✓                        |
 | Locandina, prezzi, ticket | ✗       | ✗                  | ✓                       | ✓                       | ✓                        |
 | Organizzazione + contatto | ✗       | ✓                  | ✓                       | ✓                       | ✓                        |
 | `internal_notes`          | ✗       | ✗                  | ✗                       | ✗                       | ✓                        |
@@ -294,6 +294,8 @@ Il punto più delicato del prodotto: **nessun organizzatore carica una lineup no
 Un evento in `hold` visto da un'altra organizzazione si presenta come: _"12 ottobre — Perugia (PG) — Metal — Associazione X — [contatta]"_. Abbastanza per far scattare la telefonata, non abbastanza per bruciare un annuncio.
 
 Gli eventi `cancelled` restano visibili: liberano uno slot ed è un'informazione utile.
+
+> **Correzione (2026-08-20, implementando `serializeEvent`).** La stesura originale segnava la lineup come pienamente visibile nella colonna `cancelled`. Sarebbe stato un varco: una data passata da `hold` a `cancelled` avrebbe rivelato in blocco la lineup che `hold` proteggeva. Fuori dall'organizzazione proprietaria si vedono solo le voci `is_announced`, in **ogni** stato. Vedi [ADR-0020](DECISIONS.md).
 
 ### Implementazione
 
@@ -414,6 +416,7 @@ Su ogni salvataggio di evento (o cambio di stato/data/luogo/lineup/generi):
 
 | Metodo | Path                                             | Scopo                                 |
 | ------ | ------------------------------------------------ | ------------------------------------- |
+| GET    | `/api/events?da=&a=&stato=&genere=&org=&raggio=` | date visibili in una finestra, per il calendario |
 | POST   | `/api/conflicts/preview`                         | conflitti su bozza non salvata        |
 | POST   | `/api/parse`                                     | paste-to-parse (§9)                   |
 | GET    | `/api/artists/search?q=`                         | anagrafica locale + proxy MusicBrainz |
@@ -425,7 +428,7 @@ Su ogni salvataggio di evento (o cambio di stato/data/luogo/lineup/generi):
 | POST   | `/api/cron/recompute`                            | protetto da header secret             |
 | POST   | `/api/cron/digest`                               | idem                                  |
 
-Le mutazioni di dominio usano **form actions** di SvelteKit, non endpoint REST: progressive enhancement gratis e validazione condivisa con superforms.
+Le mutazioni di dominio usano **form actions** di SvelteKit, non endpoint REST: progressive enhancement gratis e validazione condivisa con lo schema Zod (ADR-0017).
 
 ---
 
@@ -520,7 +523,7 @@ Schema completo (§4) e migrazioni. Seed generi. Flusso inviti → creazione org
 _Criterio di fine:_ due utenti in due organizzazioni diverse, con band e venue inseriti.
 
 **Fase 2 — Eventi e calendario**
-Schema Zod del form completo con superforms: dati base, luogo, orari, ticketing, lineup dinamica (aggiungi/riordina/rimuovi), generi serata e band, link, upload locandina. Macchina a stati `draft → hold → confirmed → cancelled` con transizioni permesse e audit. **`serializeEvent` con test unitari completi sulla matrice §5.** Calendario FullCalendar con filtri. Pagina dettaglio evento.
+Schema Zod del form completo (ADR-0017): dati base, luogo, orari, ticketing, lineup dinamica (aggiungi/riordina/rimuovi), generi serata e band, link, upload locandina. Macchina a stati `draft → hold → confirmed → cancelled` con transizioni permesse e audit. **`serializeEvent` con test unitari completi sulla matrice §5.** Calendario FullCalendar con filtri. Pagina dettaglio evento.
 _Criterio di fine:_ un evento in `hold` di un'organizzazione appare correttamente redatto all'altra. Testato, non solo verificato a occhio.
 
 **Fase 3 — Motore conflitti**

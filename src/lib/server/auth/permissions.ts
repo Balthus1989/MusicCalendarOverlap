@@ -110,3 +110,47 @@ export function canManageMembers(viewer: Viewer, organizationId: string): boolea
 export function canCreateOrgInvite(viewer: Viewer): boolean {
 	return viewer.isPlatformAdmin;
 }
+
+/* ------------------------------------------------------------------ *
+ * Eventi
+ * ------------------------------------------------------------------ */
+
+/**
+ * Sugli eventi il platform admin **non** ha scorciatoie, a differenza di
+ * quanto fa `hasOrgRole`.
+ *
+ * Il motivo è lo stesso per cui `serializeEvent` lo tratta come un estraneo:
+ * ADR-0005 promette agli organizzatori che le loro date sono loro. Una
+ * promessa che vale contro i concorrenti ma non contro chi amministra il
+ * server non è la promessa che si è fatta. Amministrare inviti e tassonomie
+ * non è amministrare il cartellone di un'associazione.
+ */
+function membroEffettivo(viewer: Viewer, organizationId: string): MemberRole | null {
+	return viewer.roles[organizationId] ?? null;
+}
+
+/** Creare una data per un'organizzazione: basta esserne membri, a qualunque titolo. */
+export function canCreateEvent(viewer: Viewer, organizationId: string): boolean {
+	return membroEffettivo(viewer, organizationId) !== null;
+}
+
+/**
+ * Modificare una data, cambiarne lo stato, toccarne la lineup: chiunque sia
+ * dentro l'organizzazione proprietaria. Chi inserisce le date, in un circolo,
+ * spesso non è chi lo governa.
+ */
+export function canEditEvent(viewer: Viewer, event: { organizationId: string }): boolean {
+	return membroEffettivo(viewer, event.organizationId) !== null;
+}
+
+/**
+ * Cancellare davvero una data: da `admin` in su.
+ *
+ * Quasi sempre la cosa giusta è annullarla, non cancellarla: l'annullamento
+ * lascia agli altri l'informazione che lo slot si è liberato. La cancellazione
+ * serve solo per le date inserite per errore.
+ */
+export function canDeleteEvent(viewer: Viewer, event: { organizationId: string }): boolean {
+	const ruolo = membroEffettivo(viewer, event.organizationId);
+	return ruolo === 'admin' || ruolo === 'owner';
+}

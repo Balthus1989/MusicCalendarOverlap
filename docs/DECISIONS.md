@@ -305,6 +305,107 @@ Aggiungerlo ora costa un valore in più nell'enum. Aggiungerlo dopo costa un `AL
 
 ---
 
+## ADR-0017 — Form action e Zod a mano, senza superforms
+
+**Data:** 2026-08-20 · **Stato:** Accettata
+
+**Contesto.** `ARCHITECTURE.md` §3 e il piano di Fase 2 prevedevano `sveltekit-superforms` per il form evento, che è il più lungo del prodotto: una trentina di campi, lineup dinamica, link ripetuti. In Fase 1, però, i form di organizzazione, locale e artista sono stati scritti come form action normali con validazione Zod esplicita (`formValues()` + `schema.safeParse()`), e superforms è rimasto in `package.json` senza mai essere importato.
+
+Arrivati al form evento la scelta andava fatta davvero: adottare superforms qui avrebbe significato avere due modi diversi di scrivere un form nella stessa applicazione, oppure riscrivere anche i tre form esistenti.
+
+**Decisione.** Form action con validazione Zod esplicita, come già fa tutto il resto. La lineup dinamica usa campi con nomi indicizzati (`lineup.0.artistName`), letti sul server da `righeIndicizzate()`. `sveltekit-superforms` viene rimosso dalle dipendenze.
+
+**Motivazioni.**
+
+- Un solo modo di fare la stessa cosa. Il vantaggio principale di superforms — non riscrivere la gestione degli errori a ogni form — vale se lo si usa ovunque; usato in un form su quattro è solo una cosa in più da conoscere per chi legge il codice.
+- I nomi indicizzati mantengono il form un form HTML vero. Il salvataggio funziona anche senza JavaScript: si perde l'aggiunta dinamica delle righe, non l'inserimento della data.
+- Lo schema Zod resta l'unica fonte di verità della validazione in entrambe le soluzioni: è quello il vincolo che conta di ADR-0001, e non cambia.
+
+**Alternative scartate.**
+
+- _Adottare superforms solo nel form evento_: due dialetti nello stesso repo, per un manutentore part-time che ci torna ogni tanto.
+- _Riscrivere anche i form di Fase 1_: lavoro reale su codice che funziona, per un beneficio che nessuno ha chiesto.
+
+**Conseguenze.** La gestione degli errori è a carico nostro: `validaEvento()` appiattisce le issue Zod in `campo → messaggio`, dove la chiave è il `name` dell'input (`lineup.2.artistName`), così l'errore si può mostrare accanto alla riga giusta. Dopo un salvataggio fallito i valori digitati tornano al form tramite `valoriDaForm()`: su trenta campi, ripresentarne il form vuoto sarebbe il modo più rapido di far smettere qualcuno di usare il prodotto.
+
+**Da rivedere se.** I form diventano molti di più e la gestione manuale degli errori inizia a divergere fra l'uno e l'altro. In quel caso si adotta superforms **ovunque**, in un intervento solo, non un form alla volta.
+
+---
+
+## ADR-0018 — Da `draft` si esce e non si rientra
+
+**Data:** 2026-08-20 · **Stato:** Accettata
+
+**Contesto.** Scritta la macchina a stati di Fase 2 andava deciso quali transizioni ammettere. Quella dubbia è il ritorno indietro: da `hold` o `confirmed` verso `draft`.
+
+**Decisione.** Le transizioni ammesse sono:
+
+| Da          | A                              |
+| ----------- | ------------------------------ |
+| `draft`     | `hold`, `confirmed`, `cancelled` |
+| `hold`      | `confirmed`, `cancelled`       |
+| `confirmed` | `hold`, `cancelled`            |
+| `cancelled` | `hold`, `confirmed`            |
+
+Nessuno stato torna a `draft`.
+
+**Motivazioni.** `draft` non è un livello di visibilità come gli altri: è l'affermazione "nessun altro l'ha mai vista". Appena una data passa a `hold`, quell'affermazione smette di essere vera **per sempre** — qualcuno l'ha già letta nel proprio calendario, magari ci ha già ragionato sopra. Un ritorno in bozza darebbe l'illusione di aver ritirato un'informazione che è già uscita: l'interfaccia direbbe "privata" di una cosa che privata non è più.
+
+Per togliere una data dal calendario degli altri esiste `cancelled`, che è onesto: dice che quella serata non si fa, e libera lo slot — che è esattamente l'informazione che agli altri interessa (ADR-0005).
+
+Le transizioni all'indietro fra gli stati *visibili* restano invece ammesse, perché corrispondono a cose che succedono davvero: `confirmed → hold` è l'annuncio ritirato, `cancelled → confirmed` è la data recuperata.
+
+**Alternative scartate.**
+
+- _Ammettere il ritorno in bozza ai soli `owner`_: il problema non è chi lo fa, è che l'informazione è già uscita. Nessun ruolo può disfare una cosa già letta da altri.
+- _Nessun vincolo, qualunque transizione_: lascia costruire un'interfaccia che mente.
+
+**Conseguenze.** `motiviCheImpediscono()` è l'unico punto del prodotto in cui qualcosa viene **bloccato**, ed è deliberato: confermare senza locale non è una scelta strategica come ignorare un conflitto (ADR-0009), è un campo dimenticato, e chi legge quella data nel proprio calendario non saprebbe dove andare. Il messaggio d'errore propone l'alternativa giusta invece di dire solo di no.
+
+---
+
+## ADR-0019 — Il platform admin non vede le date altrui
+
+**Data:** 2026-08-20 · **Stato:** Accettata
+
+**Contesto.** `hasOrgRole()` concede al platform admin qualunque permesso dentro qualunque organizzazione: è comodo per inviti e tassonomie, dove il manutentore fa da amministratore di sistema. Scrivendo `serializeEvent()` e i permessi sugli eventi bisognava decidere se quella scorciatoia valesse anche per le date.
+
+**Decisione.** No. Sugli eventi il platform admin è un estraneo come un altro: non vede le bozze altrui, vede un `hold` altrui ridotto come chiunque, non legge le note interne, non crea né modifica né cancella date di organizzazioni di cui non è membro. I controlli sugli eventi non passano da `hasOrgRole()` ma dalla sola appartenenza.
+
+**Motivazioni.** ADR-0005 promette agli organizzatori che le loro date non annunciate restano loro. Una promessa che vale contro i concorrenti ma non contro chi amministra il server è un'altra promessa, e non è quella che si è fatta. Amministrare inviti e tassonomie non è amministrare il cartellone di un'associazione: sono due poteri diversi e non c'è motivo che il primo implichi il secondo.
+
+C'è anche un argomento pratico: il manutentore è, con ogni probabilità, anche uno degli organizzatori. Dargli visibilità totale sulle date degli altri lo mette in una posizione imbarazzante di cui nessuno ha bisogno.
+
+**Alternative scartate.**
+
+- _Accesso completo con registrazione in audit_: sposta il problema dalla capacità alla sorveglianza, e comunque lascia il potere dov'era.
+- _Accesso completo solo su richiesta esplicita di supporto_: sensato in astratto, ma richiede un meccanismo di richiesta e revoca che a questa scala non si giustifica. Se serve leggere una riga per aiutare qualcuno, esiste `db:studio`, che è un'operazione manuale e consapevole.
+
+**Conseguenze.** Un platform admin senza organizzazioni vede un calendario in cui compaiono solo `hold`, `confirmed` e `cancelled` altrui, ridotti secondo la matrice. È il comportamento giusto e ha i suoi test, sia in `visibility.test.ts` sia in `permissions.test.ts`.
+
+---
+
+## ADR-0020 — Una lineup mai annunciata resta nascosta anche a data annullata
+
+**Data:** 2026-08-20 · **Stato:** Accettata
+
+**Contesto.** La matrice di `ARCHITECTURE.md` §5 segna la lineup come pienamente visibile nella colonna `cancelled` di un'altra organizzazione, mentre per `confirmed` la limita alle voci con `is_announced = true`. Implementando `serializeEvent()` la differenza è saltata all'occhio: una data passata da `hold` a `cancelled` avrebbe rivelato di colpo l'intera lineup che `hold` aveva protetto fino a un istante prima.
+
+**Decisione.** Fuori dall'organizzazione proprietaria si vedono **solo** le voci di lineup con `is_announced = true`, in qualunque stato, `cancelled` incluso. La cella della matrice è stata corretta di conseguenza, con rimando a questa voce.
+
+**Motivazioni.** Il senso di `is_announced` è la rivelazione progressiva: una band esce quando chi la porta decide di annunciarla. L'annullamento della serata non è quella decisione — anzi, è il caso in cui l'annuncio non arriverà mai, e sapere chi si stava trattando resta un'informazione commercialmente sensibile. La lettura opposta renderebbe l'annullamento un modo per far uscire ciò che `hold` teneva dentro, cioè esattamente il contrario di ADR-0005.
+
+Che nella matrice ci fosse una spunta piena si spiega meglio come scorciatoia di scrittura — "`cancelled` si comporta come `confirmed`" — che come intenzione.
+
+**Alternative scartate.**
+
+- _Seguire la matrice alla lettera_: fedeltà al documento contro il principio che il documento serviva a proteggere. Fra i due, il documento è la parte che si corregge.
+- _Rendere la cosa configurabile_: un'opzione in più su una decisione che non ha una risposta ragionevole diversa.
+
+**Conseguenze.** `ARCHITECTURE.md` §5 è stato aggiornato. Il test corrispondente in `visibility.test.ts` è scritto con la motivazione accanto, perché chi in futuro rileggerà la matrice originale penserà a un bug.
+
+---
+
 ## Template per nuove voci
 
 ```markdown

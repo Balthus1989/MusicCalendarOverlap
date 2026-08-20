@@ -39,7 +39,38 @@ export default defineConfig({
 		})
 	],
 	server: {
-		fs: { allow: cartelleConsentite }
+		fs: { allow: cartelleConsentite },
+		// Su questa macchina `localhost` risolve in `::1`, e Vite di default si
+		// lega **solo** a quello. Un browser che preferisce `127.0.0.1` non
+		// trova nessuno in ascolto — e su Windows il SYN verso una porta
+		// loopback IPv4 senza listener viene scartato invece che rifiutato:
+		// niente errore, la scheda resta in caricamento per sempre.
+		//
+		// `host: true` mette il dev server in ascolto su entrambi gli stack, e
+		// rende indifferente quale dei due indirizzi si apra. Comporta che il
+		// server risponda anche agli altri dispositivi della rete locale:
+		// accettabile per un server di sviluppo su una macchina personale, e
+		// comodo per provare l'interfaccia dal telefono. Vale solo per
+		// `vite dev`, non ha alcun effetto sul deploy.
+		host: true
+	},
+	optimizeDeps: {
+		// FullCalendar è importata da una sola pagina, `/calendar`, che è anche
+		// la prima che si apre dopo il login. Senza questa dichiarazione Vite
+		// scopre le quattro dipendenze solo al momento di servirla: si ferma a
+		// ri-ottimizzarle e impone un reload completo della pagina, proprio
+		// nell'istante meno opportuno.
+		//
+		// Elencandole qui vengono preparate all'avvio del dev server, una volta
+		// sola, prima che arrivi qualunque richiesta. Non ha effetto sulla
+		// build di produzione, dove il bundling avviene comunque in anticipo.
+		include: [
+			'@fullcalendar/core',
+			'@fullcalendar/core/locales/it',
+			'@fullcalendar/daygrid',
+			'@fullcalendar/timegrid',
+			'@fullcalendar/list'
+		]
 	},
 	test: {
 		include: ['tests/unit/**/*.test.ts'],

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+	canCreateEvent,
 	canCreateOrgInvite,
+	canDeleteEvent,
 	canEditCatalogEntry,
+	canEditEvent,
 	canEditOrg,
 	canInviteToOrg,
 	canManageMembers,
@@ -126,5 +129,40 @@ describe('inviti', () => {
 	it('creare organizzazioni nuove è solo dei platform admin', () => {
 		expect(canCreateOrgInvite(platformAdmin)).toBe(true);
 		expect(canCreateOrgInvite(owner)).toBe(false);
+	});
+});
+
+describe('eventi', () => {
+	const eventoA = { organizationId: ORG_A };
+	const eventoB = { organizationId: ORG_B };
+
+	it('qualunque membro inserisce e modifica le date della sua organizzazione', () => {
+		expect(canCreateEvent(member, ORG_A)).toBe(true);
+		expect(canEditEvent(member, eventoA)).toBe(true);
+	});
+
+	it('nessuno tocca le date di un’altra organizzazione', () => {
+		expect(canCreateEvent(owner, ORG_B)).toBe(false);
+		expect(canEditEvent(owner, eventoB)).toBe(false);
+	});
+
+	it('cancellare davvero una data parte da admin', () => {
+		expect(canDeleteEvent(member, eventoA)).toBe(false);
+		expect(canDeleteEvent(admin, eventoA)).toBe(true);
+		expect(canDeleteEvent(owner, eventoA)).toBe(true);
+	});
+
+	it('il platform admin non ha scorciatoie sugli eventi altrui', () => {
+		// Coerente con `serializeEvent`, che lo tratta come un estraneo: la
+		// promessa di ADR-0005 vale anche verso chi amministra il server.
+		expect(canCreateEvent(platformAdmin, ORG_A)).toBe(false);
+		expect(canEditEvent(platformAdmin, eventoA)).toBe(false);
+		expect(canDeleteEvent(platformAdmin, eventoA)).toBe(false);
+	});
+
+	it('il moderatore non guadagna niente sugli eventi: il suo potere è sulle anagrafiche', () => {
+		expect(canEditEvent(moderator, eventoA)).toBe(true);
+		expect(canEditEvent(moderator, eventoB)).toBe(false);
+		expect(canDeleteEvent(moderator, eventoA)).toBe(false);
 	});
 });

@@ -20,11 +20,14 @@
 		"db:seed": "tsx db/seeds/run.ts"
 	},
 	"dependencies": {
+		"@fullcalendar/core": "^6.1.21",
+		"@fullcalendar/daygrid": "^6.1.21",
+		"@fullcalendar/list": "^6.1.21",
+		"@fullcalendar/timegrid": "^6.1.21",
 		"@supabase/ssr": "^0.12.4",
 		"@supabase/supabase-js": "^2.86.0",
 		"drizzle-orm": "^0.45.0",
 		"postgres": "^3.4.7",
-		"sveltekit-superforms": "^2.30.2",
 		"zod": "^4.1.13"
 	},
 	"devDependencies": {

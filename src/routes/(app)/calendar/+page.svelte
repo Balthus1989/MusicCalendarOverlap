@@ -1,22 +1,256 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import { Calendar } from '@fullcalendar/core';
+	import itLocale from '@fullcalendar/core/locales/it';
+	import dayGridPlugin from '@fullcalendar/daygrid';
+	import listPlugin from '@fullcalendar/list';
+	import timeGridPlugin from '@fullcalendar/timegrid';
+	import { resolve } from '$app/paths';
+	import { goto } from '$app/navigation';
+	import { Button } from '$lib/components/ui/button';
+	import { ETICHETTE_STATO, type EventoCalendario } from '$lib/events';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	let contenitore: HTMLDivElement;
+	let calendario: Calendar | null = null;
+	let errore = $state<string | null>(null);
+
+	/* Filtri. Restano nello stato del componente: la finestra visibile la
+	   decide FullCalendar, e tenere tutto nell'URL vorrebbe dire ricaricare la
+	   pagina a ogni cambio di mese. */
+	let statiScelti = $state<string[]>(['hold', 'confirmed']);
+	let genereScelto = $state('');
+	let orgScelta = $state('');
+	let raggio = $state<number | ''>('');
+
+	const STATI = ['hold', 'confirmed', 'cancelled', 'draft'] as const;
+
+	function parametri(da: Date, a: Date): string {
+		const coppie: [string, string][] = [
+			['da', da.toISOString()],
+			['a', a.toISOString()],
+			...statiScelti.map((s): [string, string] => ['stato', s])
+		];
+		if (genereScelto) coppie.push(['genere', genereScelto]);
+		if (orgScelta) coppie.push(['org', orgScelta]);
+		if (raggio && data.centro) {
+			coppie.push(['raggio', String(raggio)]);
+			coppie.push(['lat', String(data.centro.lat)]);
+			coppie.push(['lon', String(data.centro.lon)]);
+		}
+		return coppie.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+	}
+
+	async function caricaEventi(info: { start: Date; end: Date }): Promise<EventoCalendario[]> {
+		// `untrack`: FullCalendar può chiamare questa funzione durante
+		// `render()`, cioè dentro l'`$effect` che costruisce il calendario. Senza,
+		// i filtri letti qui diventerebbero dipendenze dell'effetto, e cambiarne
+		// uno distruggerebbe e ricostruirebbe il calendario invece di
+		// ricaricarne le date — perdendo per giunta il mese che si stava
+		// guardando.
+		const query = untrack(() => parametri(info.start, info.end));
+		const risposta = await fetch(`/api/events?${query}`);
+		if (!risposta.ok) {
+			errore = 'Non è stato possibile caricare le date. Riprova fra un momento.';
+			return [];
+		}
+		errore = null;
+		return risposta.json();
+	}
+
+	$effect(() => {
+		calendario = new Calendar(contenitore, {
+			plugins: [dayGridPlugin, timeGridPlugin, listPlugin],
+			locale: itLocale,
+			// Il fuso è quello del prodotto, non quello del browser: un
+			// organizzatore in viaggio deve vedere gli stessi orari di sempre.
+			timeZone: 'Europe/Rome',
+			initialView: 'dayGridMonth',
+			headerToolbar: {
+				left: 'prev,next oggi',
+				center: 'title',
+				right: 'dayGridMonth,timeGridWeek,listMonth'
+			},
+			customButtons: {
+				oggi: { text: 'Oggi', click: () => calendario?.today() }
+			},
+			buttonText: { month: 'Mese', week: 'Settimana', list: 'Elenco' },
+			height: 'auto',
+			firstDay: 1,
+			nowIndicator: true,
+			events: (info, successo, fallimento) => {
+				caricaEventi(info).then(successo).catch(fallimento);
+			},
+			eventClick: (info) => {
+				info.jsEvent.preventDefault();
+				goto(resolve(`/events/${info.event.id}`));
+			},
+			eventDidMount: (info) => {
+				const p = info.event.extendedProps as EventoCalendario['extendedProps'];
+				const luogo = [p.citta, p.provincia && `(${p.provincia})`].filter(Boolean).join(' ');
+				info.el.title = p.ridotto
+					? `${p.statusEtichetta} · ${luogo} · ${p.organizzazione} — data opzionata: orario, locale e lineup non sono visibili`
+					: `${p.statusEtichetta} · ${luogo}${p.locale ? ` · ${p.locale}` : ''} · ${p.organizzazione}`;
+			}
+		});
+
+		calendario.render();
+		return () => calendario?.destroy();
+	});
+
+	/** Cambiare filtro non ricarica la pagina: ricarica solo le date. */
+	function applicaFiltri() {
+		calendario?.refetchEvents();
+	}
+
+	function alternaStato(stato: string) {
+		statiScelti = statiScelti.includes(stato)
+			? statiScelti.filter((s) => s !== stato)
+			: [...statiScelti, stato];
+		applicaFiltri();
+	}
 </script>
 
-<svelte:head>
-	<title>Calendario · Calendario Eventi Condiviso</title>
-</svelte:head>
+<svelte:head><title>Calendario · Calendario Eventi Condiviso</title></svelte:head>
 
-<h1 class="text-xl font-semibold tracking-tight">Calendario</h1>
+<header class="mb-6 flex flex-wrap items-start justify-between gap-4">
+	<div>
+		<h1 class="text-xl font-semibold tracking-tight">Calendario</h1>
+		<p class="text-muted-foreground mt-1 text-sm">
+			Le date opzionate delle altre organizzazioni si vedono come giorno, città e genere: è quanto
+			basta per accorgersi di una sovrapposizione e alzare il telefono.
+		</p>
+	</div>
+	<Button href={resolve('/events/new')}>Nuova data</Button>
+</header>
 
-<p class="text-muted-foreground mt-2 text-sm">
-	Sei autenticato come <strong class="text-foreground">{data.profile.email}</strong>.
+<section aria-label="Filtri" class="border-border mb-6 space-y-4 rounded-lg border p-4">
+	<fieldset>
+		<legend class="mb-2 text-sm font-medium">Stato</legend>
+		<div class="flex flex-wrap gap-3">
+			{#each STATI as stato (stato)}
+				<label class="flex items-center gap-2 text-sm">
+					<input
+						type="checkbox"
+						checked={statiScelti.includes(stato)}
+						onchange={() => alternaStato(stato)}
+						class="border-input rounded"
+					/>
+					{ETICHETTE_STATO[stato]}
+					{#if stato === 'draft'}
+						<span class="text-muted-foreground text-xs">(solo le tue)</span>
+					{/if}
+				</label>
+			{/each}
+		</div>
+	</fieldset>
+
+	<div class="grid gap-4 sm:grid-cols-3">
+		<label class="space-y-1.5 text-sm">
+			<span class="font-medium">Genere</span>
+			<select
+				bind:value={genereScelto}
+				onchange={applicaFiltri}
+				class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+			>
+				<option value="">Tutti</option>
+				{#each data.generi as g (g.slug)}
+					<option value={g.slug}>{g.name}</option>
+				{/each}
+			</select>
+			<span class="text-muted-foreground block text-xs">Include i sottogeneri.</span>
+		</label>
+
+		<label class="space-y-1.5 text-sm">
+			<span class="font-medium">Organizzazione</span>
+			<select
+				bind:value={orgScelta}
+				onchange={applicaFiltri}
+				class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+			>
+				<option value="">Tutte</option>
+				{#each data.organizzazioni as o (o.id)}
+					<option value={o.id}>{o.name}</option>
+				{/each}
+			</select>
+		</label>
+
+		{#if data.centro}
+			<label class="space-y-1.5 text-sm">
+				<span class="font-medium">Distanza da {data.centro.etichetta}</span>
+				<select
+					bind:value={raggio}
+					onchange={applicaFiltri}
+					class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+				>
+					<option value="">Ovunque</option>
+					<option value={30}>Entro 30 km</option>
+					<option value={data.centro.raggioPredefinito}>
+						Entro {data.centro.raggioPredefinito} km
+					</option>
+					<option value={150}>Entro 150 km</option>
+				</select>
+			</label>
+		{/if}
+	</div>
+</section>
+
+{#if errore}
+	<p class="text-destructive mb-4 text-sm" role="alert">{errore}</p>
+{/if}
+
+<div bind:this={contenitore} class="calendario"></div>
+
+<noscript>
+	<p class="border-border mt-4 rounded-md border p-3 text-sm">
+		Il calendario ha bisogno di JavaScript. Le date restano consultabili una per una dalle pagine di
+		dettaglio.
+	</p>
+</noscript>
+
+<p class="text-muted-foreground mt-4 text-xs">
+	Le date in grigio tratteggiato sono opzionate da altre organizzazioni: se ne conosce il giorno, la
+	città e il genere, non l'orario né il locale.
 </p>
 
-<div class="border-border mt-6 rounded-lg border border-dashed p-8 text-center">
-	<p class="text-muted-foreground text-sm">
-		La vista FullCalendar con i filtri arriva in Fase 2, insieme allo schema eventi e a
-		<code>serializeEvent()</code>.
-	</p>
-</div>
+<style>
+	/* FullCalendar porta il proprio CSS via JS. Qui si allinea solo ciò che
+	   deve parlare la lingua del resto dell'interfaccia. */
+	.calendario :global(.fc) {
+		--fc-border-color: var(--border);
+		--fc-today-bg-color: color-mix(in oklab, var(--accent) 40%, transparent);
+		font-size: 0.875rem;
+	}
+
+	.calendario :global(.fc-event) {
+		cursor: pointer;
+		border-radius: 0.25rem;
+		padding: 0 0.25rem;
+	}
+
+	/* Lo stato si legge dal bordo e dal tratteggio, non dal solo colore:
+	   il colore da solo esclude chi non lo distingue. */
+	.calendario :global(.evento--hold) {
+		background: transparent;
+		border: 1px dashed currentColor;
+		color: var(--muted-foreground);
+	}
+
+	.calendario :global(.evento--draft) {
+		background: transparent;
+		border: 1px dotted currentColor;
+		color: var(--muted-foreground);
+		font-style: italic;
+	}
+
+	.calendario :global(.evento--cancelled) {
+		text-decoration: line-through;
+		opacity: 0.6;
+	}
+
+	.calendario :global(.evento--proprio) {
+		font-weight: 600;
+	}
+</style>

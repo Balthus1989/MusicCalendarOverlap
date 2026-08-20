@@ -14,6 +14,34 @@ export const load: PageServerLoad = async ({ url }) => {
 	};
 };
 
+/**
+ * Messaggio da mostrare quando Supabase rifiuta l'invio.
+ *
+ * Il caso "questo indirizzo non ha un account" resta deliberatamente
+ * indistinguibile da un guasto generico: dire "non ci sei" a chi prova un
+ * indirizzo a caso permetterebbe di scoprire, uno per uno, chi è iscritto al
+ * calendario. Con la registrazione su invito (ADR-0004) l'elenco degli
+ * iscritti è di fatto l'elenco degli organizzatori della zona, e non è nostro
+ * da rivelare.
+ *
+ * Il limite di invii è un'altra cosa: parla di quante richieste ha fatto chi
+ * sta guardando lo schermo, non dell'esistenza di un account. Distinguerlo non
+ * rivela niente, e risparmia a chi aspetta un'email che non arriverà di
+ * concludere che il suo accesso è stato revocato.
+ */
+function messaggioPerErrore(error: { status?: number; code?: string; message: string }): string {
+	const limitato =
+		error.status === 429 ||
+		error.code === 'over_email_send_rate_limit' ||
+		/rate limit|only request this after/i.test(error.message);
+
+	if (limitato) {
+		return 'Hai chiesto troppi link in poco tempo e il servizio di posta ha messo in pausa gli invii. Aspetta qualche minuto e riprova: non devi rifare nulla.';
+	}
+
+	return 'Non è stato possibile inviare il link. Se non hai ancora un account, ti serve un invito.';
+}
+
 export const actions: Actions = {
 	default: async ({ request, url, locals }) => {
 		const form = await request.formData();
@@ -40,11 +68,15 @@ export const actions: Actions = {
 		});
 
 		if (error) {
-			return fail(400, {
-				email: parsed.data.email,
-				error:
-					'Non è stato possibile inviare il link. Se non hai ancora un account, ti serve un invito.'
-			});
+			// Il messaggio vero non arriva mai all'utente (vedi sotto), quindi
+			// senza questa riga un errore di invio è indistinguibile da un
+			// account inesistente anche per chi ha il terminale davanti.
+			console.error(
+				'Invio del magic link non riuscito:',
+				JSON.stringify({ status: error.status, code: error.code, message: error.message })
+			);
+
+			return fail(400, { email: parsed.data.email, error: messaggioPerErrore(error) });
 		}
 
 		return { sent: true, email: parsed.data.email };

@@ -12,19 +12,24 @@ delle sovrapposizioni tra date.
 | ----------------------- | -------------------------------- |
 | 0 — Fondazioni          | codice completo, manca il deploy |
 | 1 — Anagrafiche         | codice completo, manca il deploy |
-| 2 — Eventi e calendario | da iniziare                      |
+| 2 — Eventi e calendario | codice completo, manca il deploy |
 | 3 — Motore conflitti    | da iniziare                      |
 | 4 — Interoperabilità    | da iniziare                      |
 | 5 — Import assistito    | da iniziare                      |
 | 6 — Rifinitura          | da iniziare                      |
 
-Fasi 0 e 1 complete sul codice. Restano i passi che richiedono account e
-credenziali: creazione del progetto Supabase, applicazione delle migrazioni,
-seed dei generi e primo deploy su Cloudflare. Vedi [Setup](#setup).
+Fasi 0, 1 e 2 complete sul codice. Il progetto Supabase esiste, le migrazioni
+fino a `0002_fase2_eventi` sono applicate e i generi sono seminati. Resta il
+primo deploy su Cloudflare. Vedi [Setup](#setup).
 
-I criteri di fine delle due fasi — _login e logout in produzione_, e _due utenti
-in due organizzazioni diverse con band e venue inseriti_ — non sono quindi
-ancora verificati.
+I criteri di fine restano da verificare in esercizio, perché richiedono due
+account veri: _login e logout in produzione_ (Fase 0), _due utenti in due
+organizzazioni diverse con band e venue inseriti_ (Fase 1) e _una data in
+`hold` di un'organizzazione che appare correttamente ridotta all'altra_
+(Fase 2). Quest'ultimo è coperto dai test unitari di
+`tests/unit/visibility.test.ts`, una asserzione per cella della matrice: ciò
+che manca è vederlo accadere fra due persone, non la certezza che il codice lo
+faccia.
 
 ## Setup
 
@@ -197,6 +202,79 @@ permessi e fallisce con `42501`.
 Gli endpoint sotto `/api/cron/` richiedono l'header `x-cron-secret` uguale al
 secret `CRON_SECRET`. Senza header valido rispondono `403`, sempre.
 
+### Il dev server parte ma la pagina non finisce mai di caricare
+
+Sintomo: `npm run dev` stampa `ready in ...` e l'indirizzo, ma nel browser la
+scheda gira a vuoto all'infinito.
+
+Quasi sempre è la cache di pre-bundle di Vite (`node_modules/.vite`) rimasta
+indietro rispetto alle dipendenze. Vite risponde `500` su un modulo con
+_"there is a new version of the pre-bundle, a page reload is going to ask for
+it"_, il client ricarica, riceve lo stesso errore, e il giro non finisce mai.
+
+Succede in due casi:
+
+- **dopo un `npm install` o `npm uninstall`** con il dev server già avviato,
+  o riavviato senza che Vite si accorgesse del cambiamento;
+- **con due dev server aperti sulla stessa cartella**: condividono
+  `node_modules/.vite` e se lo invalidano a vicenda. Non tenerne due.
+
+Rimedio, nell'ordine:
+
+```bash
+rm -rf node_modules/.vite
+```
+
+poi riavvia `npm run dev`. All'avvio deve comparire una riga tipo
+`Forced re-optimization of dependencies` o `[optimizer] bundling
+dependencies...`: è il segno che la cache è stata ricostruita.
+
+**Non basta riavviare il server.** Vite serve i moduli pre-bundle con
+`immutable`, quindi il browser tiene in cache i riferimenti ai vecchi hash e un
+normale F5 non li richiede di nuovo: continua a chiederli, si prende un `504`
+("outdated optimize dep") e ricarica all'infinito. Serve un ricaricamento
+forzato con **Ctrl+Shift+R**, o F12 → **Application** → **Clear site data**.
+
+Nota che la cache è per **origine**: se `http://localhost:5173` gira a vuoto
+mentre `http://192.168.1.74:5173` funziona, non è il server ad avere due
+comportamenti — è la prima origine ad avere lo sporco in cache e la seconda a
+essere pulita.
+
+Le dipendenze importate da una sola pagina sono le più esposte a questo giro,
+perché Vite le scopre solo quando quella pagina viene servita per la prima
+volta, e a quel punto ri-ottimizza e forza un reload. Per questo FullCalendar è
+dichiarata in `optimizeDeps.include` dentro `vite.config.ts`: viene preparata
+all'avvio, non a metà sessione. Se in futuro aggiungi una dipendenza usata da
+una rotta sola, conviene elencarla lì.
+
+### Il browser resta in attesa e non arriva mai nessun errore
+
+Sintomo diverso dal precedente: il server risponde a `curl`, ma la scheda del
+browser gira a vuoto per sempre, senza nemmeno un messaggio di errore.
+
+Causa: su questa macchina `localhost` risolve in `::1`, e Vite di default si
+lega **solo** a quello. Un browser che punta a `127.0.0.1` non trova nessuno in
+ascolto — e su Windows il pacchetto verso una porta loopback IPv4 senza
+listener viene **scartato invece che rifiutato**. Senza un rifiuto non c'è
+errore da mostrare, e il browser aspetta all'infinito.
+
+Il rimedio è già in `vite.config.ts` (`server.host: true`): il dev server
+ascolta su entrambi gli stack, quindi `localhost`, `127.0.0.1` e `[::1]`
+funzionano tutti. Come effetto collaterale il server risponde anche agli altri
+dispositivi della rete locale — comodo per provare l'interfaccia dal telefono,
+e ininfluente sul deploy. Al primo avvio Windows può chiedere di sbloccare
+Node nel firewall: è quello.
+
+Per controllare su cosa sta ascoltando:
+
+```bash
+netstat -ano | findstr :5173
+```
+
+Devono comparire **due** righe in `LISTENING`, una su `0.0.0.0` e una su
+`[::]`. Se ne vedi una sola su `[::1]`, il dev server sta girando con una
+configurazione vecchia: fermalo e riavvialo.
+
 ## Convenzioni di codice
 
 - Il browser non parla mai direttamente con Supabase per i dati di dominio: solo
@@ -205,6 +283,16 @@ secret `CRON_SECRET`. Senza header valido rispondono `403`, sempre.
   `serializeEvent()` (ADR-0005).
 - Il motore conflitti in `src/lib/server/conflicts/` è codice puro senza I/O,
   sempre coperto da test unitari.
+- Le etichette che servono anche al browser (nomi degli stati, ruoli di
+  locandina) stanno in `src/lib/events.ts`, non sotto `$lib/server`:
+  SvelteKit rifiuta di importare `$lib/server` dal codice client, e un
+  calendario che deve scrivere "Opzionata" non è una decisione di dominio.
+  Sotto `$lib/server` resta ciò che _decide_ qualcosa.
+- Gli orari viaggiano come orario di parete (`2026-10-12T22:00`) fino al
+  salvataggio, dove `daLocaleAIstante()` li converte in istanti. È l'unico
+  punto di conversione: il server gira in UTC, e costruire una `Date` da
+  un'ora italiana in qualunque altro punto sposterebbe la data di un'ora nei
+  due fine settimana in cui cambia l'ora legale.
 - Le rotte autenticate stanno dentro `src/routes/(app)/`: la guardia in
   `hooks.server.ts` protegge il gruppo, non una lista di path.
 - Il contesto utente (`locals.viewer`, `locals.profile`) si popola **negli

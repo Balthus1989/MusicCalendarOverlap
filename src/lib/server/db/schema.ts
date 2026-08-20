@@ -17,11 +17,14 @@
 import { relations, sql } from 'drizzle-orm';
 import {
 	boolean,
+	check,
+	date,
 	doublePrecision,
 	foreignKey,
 	index,
 	integer,
 	jsonb,
+	numeric,
 	pgEnum,
 	pgSchema,
 	pgTable,
@@ -303,6 +306,166 @@ export const venues = pgTable(
 ).enableRLS();
 
 /* ------------------------------------------------------------------ *
+ * §4.4 Eventi
+ * ------------------------------------------------------------------ */
+
+/**
+ * Gli stati dell'evento (ADR-0005). Non sono etichette: sono il meccanismo
+ * con cui un organizzatore può caricare una data *prima* di annunciarla.
+ * `draft` è privato all'organizzazione, `hold` mostra alle altre solo giorno,
+ * città e genere primario, `confirmed` mostra tutto, `cancelled` resta
+ * visibile perché liberare uno slot è un'informazione utile agli altri.
+ */
+export const eventStatus = pgEnum('event_status', ['draft', 'hold', 'confirmed', 'cancelled']);
+
+/** Posizione in locandina. `tba` esiste perché in `hold` spesso è tutto ciò che si sa. */
+export const billingRole = pgEnum('billing_role', [
+	'headliner',
+	'co_headliner',
+	'special_guest',
+	'support',
+	'opener',
+	'dj',
+	'tba'
+]);
+
+export const events = pgTable(
+	'events',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		/** Proprietario: è l'asse su cui ruota tutta la matrice di visibilità. */
+		organizationId: uuid('organization_id')
+			.notNull()
+			.references(() => organizations.id, { onDelete: 'cascade' }),
+		// Nullable di proposito: in `hold` la data è decisa e il locale no.
+		// Se il venue fosse obbligatorio, nessuno caricherebbe le date in
+		// anticipo — cioè l'unico caso che dà senso al prodotto.
+		venueId: uuid('venue_id').references(() => venues.id, { onDelete: 'set null' }),
+		status: eventStatus('status').notNull().default('draft'),
+		title: text('title').notNull(),
+		subtitle: text('subtitle'),
+		/** Markdown. */
+		description: text('description'),
+		startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+		/** Se `NULL` il motore conflitti assume +4h (vedi `DURATA_PREDEFINITA_MS`). */
+		endsAt: timestamp('ends_at', { withTimezone: true }),
+		doorsAt: timestamp('doors_at', { withTimezone: true }),
+		isMultiDay: boolean('is_multi_day').notNull().default(false),
+		// Denormalizzati, non ridondanti: un evento in `hold` può non avere
+		// ancora un venue, ma la città è nota e il conflitto geografico va
+		// calcolato lo stesso (ADR-0008).
+		city: text('city').notNull(),
+		province: text('province'),
+		region: text('region'),
+		country: text('country').notNull().default('IT'),
+		lat: doublePrecision('lat'),
+		lon: doublePrecision('lon'),
+		/** Override del raggio dell'organizzazione, in km. */
+		conflictRadiusKm: integer('conflict_radius_km'),
+		isFree: boolean('is_free').notNull().default(false),
+		/** Tesseramento ARCI/ACSI e simili. */
+		isMembersOnly: boolean('is_members_only').notNull().default(false),
+		pricePresale: numeric('price_presale', { precision: 8, scale: 2 }),
+		priceDoor: numeric('price_door', { precision: 8, scale: 2 }),
+		currency: text('currency').notNull().default('EUR'),
+		ticketUrl: text('ticket_url'),
+		ageRestriction: text('age_restriction'),
+		capacityExpected: integer('capacity_expected'),
+		posterUrl: text('poster_url'),
+		facebookEventUrl: text('facebook_event_url'),
+		instagramPostUrl: text('instagram_post_url'),
+		externalUrl: text('external_url'),
+		/** Data prevista di annuncio pubblico; ha senso solo in `hold`. */
+		announceAt: timestamp('announce_at', { withTimezone: true }),
+		/** **Mai** visibile ad altre organizzazioni, in nessuno stato. */
+		internalNotes: text('internal_notes'),
+		createdBy: uuid('created_by').references(() => profiles.id, { onDelete: 'set null' }),
+		updatedBy: uuid('updated_by').references(() => profiles.id, { onDelete: 'set null' }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [
+		index('events_starts_at_idx').on(t.startsAt),
+		// La selezione dei candidati a conflitto filtra per stato e finestra
+		// temporale insieme (ARCHITECTURE.md §6.1).
+		index('events_status_starts_at_idx').on(t.status, t.startsAt),
+		index('events_org_starts_at_idx').on(t.organizationId, t.startsAt),
+		index('events_coords_idx').on(t.lat, t.lon),
+		index('events_venue_idx').on(t.venueId)
+	]
+).enableRLS();
+
+/** Il genere della serata è indipendente da quello delle singole band. */
+export const eventGenres = pgTable(
+	'event_genres',
+	{
+		eventId: uuid('event_id')
+			.notNull()
+			.references(() => events.id, { onDelete: 'cascade' }),
+		genreId: uuid('genre_id')
+			.notNull()
+			.references(() => genres.id, { onDelete: 'cascade' }),
+		isPrimary: boolean('is_primary').notNull().default(false)
+	},
+	(t) => [
+		primaryKey({ columns: [t.eventId, t.genreId] }),
+		index('event_genres_genre_idx').on(t.genreId)
+	]
+).enableRLS();
+
+export const eventLineup = pgTable(
+	'event_lineup',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		eventId: uuid('event_id')
+			.notNull()
+			.references(() => events.id, { onDelete: 'cascade' }),
+		/** `NULL` se la band non è ancora in anagrafica, o se è un "TBA". */
+		artistId: uuid('artist_id').references(() => artists.id, { onDelete: 'set null' }),
+		/** Usato quando `artistId` è `NULL`. */
+		artistNameRaw: text('artist_name_raw'),
+		billing: billingRole('billing').notNull().default('support'),
+		/** Ordine di locandina. */
+		position: integer('position').notNull().default(0),
+		stage: text('stage'),
+		/** Per i festival multi-giorno. */
+		dayDate: date('day_date'),
+		setStartsAt: timestamp('set_starts_at', { withTimezone: true }),
+		setDurationMinutes: integer('set_duration_minutes'),
+		// Rivelazione progressiva: una band non annunciata non esce mai da
+		// `serializeEvent`, e non deve nemmeno far scattare la regola R2 in
+		// modo riconoscibile (ADR-0009).
+		isAnnounced: boolean('is_announced').notNull().default(false),
+		notes: text('notes')
+	},
+	(t) => [
+		check(
+			'event_lineup_artista_presente',
+			sql`${t.artistId} is not null or ${t.artistNameRaw} is not null`
+		),
+		index('event_lineup_event_idx').on(t.eventId, t.position),
+		// La regola R2 cerca gli eventi che condividono un artista: senza
+		// questo indice diventa una scansione della tabella.
+		index('event_lineup_artist_idx').on(t.artistId)
+	]
+).enableRLS();
+
+/** Link extra oltre a quelli tipizzati su `events`. */
+export const eventLinks = pgTable(
+	'event_links',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		eventId: uuid('event_id')
+			.notNull()
+			.references(() => events.id, { onDelete: 'cascade' }),
+		label: text('label').notNull(),
+		url: text('url').notNull(),
+		sortOrder: integer('sort_order').notNull().default(0)
+	},
+	(t) => [index('event_links_event_idx').on(t.eventId, t.sortOrder)]
+).enableRLS();
+
+/* ------------------------------------------------------------------ *
  * §4.6 Supporto
  * ------------------------------------------------------------------ */
 
@@ -318,6 +481,32 @@ export const geocodeCache = pgTable('geocode_cache', {
 	source: text('source').notNull(),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 }).enableRLS();
+
+/**
+ * Traccia di chi ha cambiato cosa. Serve soprattutto sugli eventi: quando due
+ * organizzatori si accorgono che una data è cambiata sotto i piedi, la domanda
+ * è sempre "chi e quando", e senza registro la risposta non esiste.
+ *
+ * Non è una tabella di sicurezza: nessuno ci costruisce sopra un permesso.
+ */
+export const auditLog = pgTable(
+	'audit_log',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		actorProfileId: uuid('actor_profile_id').references(() => profiles.id, {
+			onDelete: 'set null'
+		}),
+		/** `event`, `conflict`, `membership`. */
+		entityType: text('entity_type').notNull(),
+		entityId: uuid('entity_id').notNull(),
+		/** `create`, `update`, `status_change`, `delete`. */
+		action: text('action').notNull(),
+		/** Solo i campi cambiati: `{ campo: [prima, dopo] }`. */
+		diff: jsonb('diff'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [index('audit_log_entity_idx').on(t.entityType, t.entityId, t.createdAt)]
+).enableRLS();
 
 /* ------------------------------------------------------------------ *
  * Relazioni
@@ -363,6 +552,31 @@ export const artistGenresRelations = relations(artistGenres, ({ one }) => ({
 	genre: one(genres, { fields: [artistGenres.genreId], references: [genres.id] })
 }));
 
+export const eventsRelations = relations(events, ({ one, many }) => ({
+	organization: one(organizations, {
+		fields: [events.organizationId],
+		references: [organizations.id]
+	}),
+	venue: one(venues, { fields: [events.venueId], references: [venues.id] }),
+	eventGenres: many(eventGenres),
+	lineup: many(eventLineup),
+	links: many(eventLinks)
+}));
+
+export const eventGenresRelations = relations(eventGenres, ({ one }) => ({
+	event: one(events, { fields: [eventGenres.eventId], references: [events.id] }),
+	genre: one(genres, { fields: [eventGenres.genreId], references: [genres.id] })
+}));
+
+export const eventLineupRelations = relations(eventLineup, ({ one }) => ({
+	event: one(events, { fields: [eventLineup.eventId], references: [events.id] }),
+	artist: one(artists, { fields: [eventLineup.artistId], references: [artists.id] })
+}));
+
+export const eventLinksRelations = relations(eventLinks, ({ one }) => ({
+	event: one(events, { fields: [eventLinks.eventId], references: [events.id] })
+}));
+
 /* ------------------------------------------------------------------ *
  * Tipi
  * ------------------------------------------------------------------ */
@@ -381,3 +595,12 @@ export type Artist = typeof artists.$inferSelect;
 export type NewArtist = typeof artists.$inferInsert;
 export type Venue = typeof venues.$inferSelect;
 export type NewVenue = typeof venues.$inferInsert;
+export type Event = typeof events.$inferSelect;
+export type NewEvent = typeof events.$inferInsert;
+export type EventStatus = (typeof eventStatus.enumValues)[number];
+export type BillingRole = (typeof billingRole.enumValues)[number];
+export type EventGenre = typeof eventGenres.$inferSelect;
+export type EventLineupRow = typeof eventLineup.$inferSelect;
+export type NewEventLineupRow = typeof eventLineup.$inferInsert;
+export type EventLink = typeof eventLinks.$inferSelect;
+export type AuditLogRow = typeof auditLog.$inferSelect;
