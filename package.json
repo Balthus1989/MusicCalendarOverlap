@@ -17,7 +17,8 @@
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "drizzle-kit migrate",
 		"db:studio": "drizzle-kit studio",
-		"db:seed": "tsx db/seeds/run.ts"
+		"db:seed": "tsx db/seeds/run.ts",
+		"db:seed:demo": "tsx db/seeds/demo.ts"
 	},
 	"dependencies": {
 		"@fullcalendar/core": "^6.1.21",

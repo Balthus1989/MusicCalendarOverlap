@@ -20,7 +20,17 @@
 	/* Filtri. Restano nello stato del componente: la finestra visibile la
 	   decide FullCalendar, e tenere tutto nell'URL vorrebbe dire ricaricare la
 	   pagina a ogni cambio di mese. */
-	let statiScelti = $state<string[]>(['hold', 'confirmed']);
+	/**
+	 * Tutti gli stati accesi di partenza.
+	 *
+	 * Le date annullate **devono** vedersi senza doverle chiedere: liberare uno
+	 * slot è esattamente l'informazione che interessa a un altro organizzatore
+	 * (ADR-0005), e un filtro spento di default la nasconderebbe proprio a chi
+	 * potrebbe approfittarne. Le bozze sono le proprie e nessun altro le vede:
+	 * escluderle significherebbe aprire il calendario e non trovare la data
+	 * appena salvata.
+	 */
+	let statiScelti = $state<string[]>(['hold', 'confirmed', 'cancelled', 'draft']);
 	let genereScelto = $state('');
 	let orgScelta = $state('');
 	let raggio = $state<number | ''>('');

@@ -165,3 +165,21 @@ describe('le proprie date in calendario', () => {
 		expect(JSON.stringify(voce)).not.toContain('Cachet');
 	});
 });
+
+describe('una data annullata in calendario', () => {
+	const voce = perCalendario(evento({ status: 'cancelled' }), estraneo);
+
+	it('resta visibile: lo slot liberato è ciò che interessa agli altri', () => {
+		expect(voce.title).toBe('Notte di Death Metal');
+		expect(voce.extendedProps.status).toBe('cancelled');
+	});
+
+	it('si riconosce dallo stile, non da un testo da leggere', () => {
+		expect(voce.classNames).toContain('evento--cancelled');
+	});
+
+	it('porta con sé giorno e luogo, che sono il motivo per cui la si guarda', () => {
+		expect(voce.start).toBe(daLocaleAIstante('2026-10-12T22:00').toISOString());
+		expect(voce.extendedProps.citta).toBe('Perugia');
+	});
+});
