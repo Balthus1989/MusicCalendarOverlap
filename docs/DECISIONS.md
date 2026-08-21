@@ -406,6 +406,47 @@ Che nella matrice ci fosse una spunta piena si spiega meglio come scorciatoia di
 
 ---
 
+## ADR-0021 — La sovrapposizione fra artisti si misura in giorni, non in due settimane
+
+**Data:** 2026-08-21 · **Stato:** Accettata
+
+**Contesto.** Erano le decisioni #1 e #2 del registro, in scadenza con la Fase 3, e andavano chiuse parlando con chi organizza le serate — non a tavolino. La stesura originale fissava per la regola R2 una finestra di ±14 giorni, con la motivazione che "una band non suona due volte a 50 km di distanza a due settimane di distanza". Il numero però veniva dalle clausole di esclusiva dei contratti di booking, che sono una cosa diversa dal problema che questo prodotto affronta: R2 non serve a far rispettare un contratto, serve ad avvisare due organizzatori che si stanno contendendo lo stesso pubblico.
+
+**Decisione.**
+
+1. Il **raggio di conflitto predefinito resta 60 km**, confermato: chiude la decisione #1.
+2. La finestra della regola R2 scende da ±14 a **±7 giorni civili**, con severity **graduata** invece che fissa a `high`. Oltre i sette giorni non c'è conflitto: due date non si danno più fastidio.
+
+| Giorni di distanza | Severity |
+| ------------------ | -------- |
+| 0 (stesso giorno)  | `high`   |
+| 1–2                | `high`   |
+| 3–5                | `medium` |
+| 6–7                | `low`    |
+| oltre 7            | nessun conflitto |
+
+Il vincolo di distanza ≤ 200 km resta invariato e continua a fare da soglia: la gradazione riguarda i giorni, non i chilometri.
+
+**Motivazioni.** "Sovrapposizione", per un organizzatore, vuol dire anzitutto **stesso giorno**: è quello il caso in cui il pubblico deve scegliere. Da lì l'effetto sfuma man mano che le date si allontanano, e dopo una settimana è finito — chi è andato a un concerto sabato non è impedito ad andare a un altro il sabato dopo. Una finestra di due settimane trattata tutta con la stessa gravità produce avvisi che gli organizzatori imparano a ignorare, e un avviso ignorato è peggio di un avviso assente, perché toglie credibilità anche a quelli veri.
+
+**Lo stesso giorno merita un discorso a parte.** Se la stessa band risulta ingaggiata da due organizzazioni diverse nella stessa data, quello non è un conflitto strategico: è un **errore materiale**, come il `venue_clash` della regola R1. O c'è un doppio ingaggio, o uno dei due ha inserito la data sbagliata. Il messaggio dovrà dirlo con parole diverse dagli altri casi — non "attenzione, vi contendete il pubblico" ma "questa band risulta impegnata altrove quella sera".
+
+**Alternative scartate.**
+
+- _Tenere ±14 giorni con severity fissa_: è la stesura originale, e produce la classe di avvisi che nessuno legge.
+- _Una formula continua sui giorni_ (severity che decresce linearmente): più elegante da scrivere, impossibile da spiegare a chi riceve l'avviso. Le fasce si raccontano in una riga.
+- _Graduare anche sulla distanza_: raddoppia i casi da spiegare e da testare per un guadagno che nessuno ha chiesto. I 200 km restano una soglia netta.
+
+**Conseguenze.**
+
+- La finestra di selezione dei candidati in §6.1 scende da ±21 a ±10 giorni: sette più tre di margine, perché il confronto avviene su giorni civili in `Europe/Rome` mentre il filtro SQL lavora su istanti.
+- La tabella delle fasce va coperta dai test caso per caso, inclusi i bordi a 7 e 8 giorni, e con una data a cavallo del cambio d'ora: il "giorno di distanza" si conta fra giorni civili, non dividendo millisecondi per 86.400.000.
+- Il rischio di leak di ADR-0009 non cambia e non va allentato: la gradazione riguarda la gravità, non quanto si rivela. Una band non annunciata resta senza nome in tutte le fasce.
+
+**Da rivedere se.** Gli organizzatori riferiscono di essersi pestati i piedi a otto o dieci giorni di distanza, oppure che gli avvisi a 6–7 giorni sono rumore. Sono i due bordi che questa decisione fissa a occhio, ed è su quelli che tornerà l'evidenza.
+
+---
+
 ## Template per nuove voci
 
 ```markdown
@@ -434,8 +475,8 @@ Non ancora decise, elencate per non perderle di vista. Vanno chiuse **parlando c
 
 | #   | Questione                                                                                                                      | Entro            |
 | --- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
-| 1   | Raggio di conflitto di default: 60 km è un'ipotesi da tarare sulla geografia reale del gruppo                                  | Fase 3           |
-| 2   | Finestra di ±14 giorni per la sovrapposizione artisti: dipende dalle clausole di esclusiva nei loro contratti di booking       | Fase 3           |
+| 1   | ~~Raggio di conflitto di default~~ **Chiusa: 60 km confermati, vedi ADR-0021.** | ~~Fase 3~~ chiusa |
+| 2   | ~~Finestra di ±14 giorni per la sovrapposizione artisti~~ **Chiusa: ±7 giorni civili con severity graduata, vedi ADR-0021.** | ~~Fase 3~~ chiusa |
 | 3   | ~~Serve un ruolo di moderatore con poteri di correzione e merge su anagrafiche artisti e venue?~~ **Chiusa: sì, vedi ADR-0016.** Resta da capire con gli organizzatori chi nominare, e se lo strumento di merge serva davvero. | ~~Fase 1~~ chiusa |
 | 4   | La visibilità ridotta in `hold` è sufficiente a far fidare gli organizzatori? Va verificata con loro prima di costruirci sopra. **Scaduta:** la Fase 2 è chiusa e la domanda è ancora aperta. Il `hold` ora si può *mostrare* a qualcuno — è il momento di farlo, invece di descriverlo | ~~Fase 2~~ **aperta** |
 | 5   | Chi è formalmente titolare del trattamento dei dati: una delle associazioni o il manutentore a titolo personale?               | Prima del lancio |

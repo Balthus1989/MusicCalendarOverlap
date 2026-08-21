@@ -333,11 +333,13 @@ Codice puro in `src/lib/server/conflicts/`, senza accesso al DB: riceve l'evento
 WHERE status IN ('hold','confirmed')
   AND organization_id <> :orgId
   AND id <> :eventId
-  AND starts_at BETWEEN :day_start - INTERVAL '21 days'
-                    AND :day_end   + INTERVAL '21 days'
+  AND starts_at BETWEEN :day_start - INTERVAL '10 days'
+                    AND :day_end   + INTERVAL '10 days'
 ```
 
-La finestra di ±21 giorni serve al controllo di sovrapposizione artisti (una band non suona due volte a 50 km di distanza a due settimane di distanza). Per i controlli geografici si restringe poi allo stesso giorno.
+La finestra serve al solo controllo di sovrapposizione artisti: è ±7 giorni civili (ADR-0021) più tre di margine, perché il confronto avviene su giorni civili in `Europe/Rome` mentre il filtro SQL lavora su istanti. Per i controlli geografici si restringe poi allo stesso giorno.
+
+> **Modifica (2026-08-21).** Era ±21 giorni, derivata da una finestra artisti di ±14. Vedi [ADR-0021](DECISIONS.md).
 
 Prefiltro geografico via bounding box prima dell'haversine:
 `Δlat = radius/111.0`, `Δlon = radius/(111.0 * cos(lat_radianti))`.
@@ -347,8 +349,17 @@ Prefiltro geografico via bounding box prima dell'haversine:
 **R1 — `venue_clash`** (severity `high`)
 Stesso `venue_id` e sovrapposizione temporale degli intervalli `[doors_at ?? starts_at, ends_at ?? starts_at + 4h]`. È un errore materiale, non una scelta strategica: va segnalato con la massima evidenza.
 
-**R2 — `artist_overlap`** (severity `high`)
-Almeno un `artist_id` in comune, entro ±14 giorni (configurabile) e distanza ≤ 200 km. Considera solo lineup con `is_announced = true` oppure appartenenti alla propria organizzazione — altrimenti si rivelerebbe indirettamente una lineup segreta. **Attenzione: questa è la regola dove è più facile creare un leak di informazione.** Il messaggio all'utente deve dire _"un altro organizzatore ha già una data con una band della tua lineup"_ senza specificare quale band, se quell'evento è in `hold`.
+**R2 — `artist_overlap`** (severity `high`, `medium` o `low` secondo i giorni di distanza)
+Almeno un `artist_id` in comune, entro **±7 giorni civili** e distanza ≤ 200 km (ADR-0021).
+
+| Giorni di distanza | Severity | Che cosa significa                                                        |
+| ------------------ | -------- | ------------------------------------------------------------------------- |
+| 0 (stesso giorno)  | `high`   | non è concorrenza, è un doppio ingaggio: qualcuno ha sbagliato            |
+| 1–2                | `high`   | stesso fine settimana, stesso pubblico                                    |
+| 3–5                | `medium` | il pubblico è in larga parte lo stesso, ma qualcuno viene a entrambe      |
+| 6–7                | `low`    | informativo                                                               |
+| oltre 7            | —        | nessun conflitto                                                          |
+ Considera solo lineup con `is_announced = true` oppure appartenenti alla propria organizzazione — altrimenti si rivelerebbe indirettamente una lineup segreta. **Attenzione: questa è la regola dove è più facile creare un leak di informazione.** Il messaggio all'utente deve dire _"un altro organizzatore ha già una data con una band della tua lineup"_ senza specificare quale band, se quell'evento è in `hold`.
 
 **R3 — `geo_genre_overlap`** (severity `medium` o `high`)
 Stesso giorno civile (`Europe/Rome`), distanza ≤ raggio effettivo, affinità di genere ≥ 0.4.
