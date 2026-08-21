@@ -22,14 +22,21 @@ Fasi 0, 1 e 2 complete sul codice. Il progetto Supabase esiste, le migrazioni
 fino a `0002_fase2_eventi` sono applicate e i generi sono seminati. Resta il
 primo deploy su Cloudflare. Vedi [Setup](#setup).
 
-I criteri di fine restano da verificare in esercizio, perché richiedono due
-account veri: _login e logout in produzione_ (Fase 0), _due utenti in due
-organizzazioni diverse con band e venue inseriti_ (Fase 1) e _una data in
-`hold` di un'organizzazione che appare correttamente ridotta all'altra_
-(Fase 2). Quest'ultimo è coperto dai test unitari di
-`tests/unit/visibility.test.ts`, una asserzione per cella della matrice: ciò
-che manca è vederlo accadere fra due persone, non la certezza che il codice lo
-faccia.
+**Il criterio di fine della Fase 2 è stato verificato nell'applicazione in
+esecuzione** (21 agosto 2026), non solo dai test: con i dati di
+`npm run db:seed:demo`, un profilo che appartiene a una sola organizzazione
+vede le date delle altre esattamente come prevede la matrice di §5 — la bozza
+altrui non compare affatto, la data opzionata mostra solo giorno, città,
+genere principale e contatto, la confermata espone la sola lineup annunciata,
+l'annullata resta visibile col suo badge, e la propria data opzionata si apre
+per intero, note interne comprese.
+
+Restano invece da verificare i criteri che richiedono **due account veri**:
+_login e logout in produzione_ (Fase 0) e _due utenti in due organizzazioni
+diverse_ (Fase 1). Il collo di bottiglia non è il codice ma la posta: il
+servizio email integrato di Supabase ammette pochissimi invii all'ora, quindi
+il secondo account conviene crearlo dopo aver configurato un SMTP
+personalizzato (vedi il runbook).
 
 ## Setup
 
@@ -246,6 +253,22 @@ volta, e a quel punto ri-ottimizza e forza un reload. Per questo FullCalendar è
 dichiarata in `vite.config.ts` sotto **`environments.client.optimizeDeps`**:
 viene preparata all'avvio, non a metà sessione. Se in futuro aggiungi una
 dipendenza usata da una rotta sola, elencala lì.
+
+### `npm run build` fallisce con EPERM su `.svelte-kit/cloudflare`
+
+```
+error during build:
+Error: EPERM, Permission denied: ....svelte-kitcloudflare
+```
+
+Il bundle in realtà è stato prodotto — la riga `✓ built` compare poco sopra.
+A fallire è la pulizia della cartella di output dell'adapter Cloudflare.
+
+Causa: **il dev server è ancora acceso.** Vite tiene aperti dei descrittori su
+`.svelte-kit`, e su Windows una cartella osservata non si cancella. Ferma
+`npm run dev` e rilancia la build. Su Linux e macOS lo stesso comando passa,
+quindi in CI non si vede: è un inciampo solo locale, ma capita esattamente nel
+momento peggiore, cioè quando si prova a fare un deploy di fretta.
 
 ### Ogni pagina che tocca il database resta appesa
 

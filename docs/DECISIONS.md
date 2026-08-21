@@ -437,6 +437,6 @@ Non ancora decise, elencate per non perderle di vista. Vanno chiuse **parlando c
 | 1   | Raggio di conflitto di default: 60 km è un'ipotesi da tarare sulla geografia reale del gruppo                                  | Fase 3           |
 | 2   | Finestra di ±14 giorni per la sovrapposizione artisti: dipende dalle clausole di esclusiva nei loro contratti di booking       | Fase 3           |
 | 3   | ~~Serve un ruolo di moderatore con poteri di correzione e merge su anagrafiche artisti e venue?~~ **Chiusa: sì, vedi ADR-0016.** Resta da capire con gli organizzatori chi nominare, e se lo strumento di merge serva davvero. | ~~Fase 1~~ chiusa |
-| 4   | La visibilità ridotta in `hold` è sufficiente a far fidare gli organizzatori? Va verificata con loro prima di costruirci sopra | Fase 2           |
+| 4   | La visibilità ridotta in `hold` è sufficiente a far fidare gli organizzatori? Va verificata con loro prima di costruirci sopra. **Scaduta:** la Fase 2 è chiusa e la domanda è ancora aperta. Il `hold` ora si può *mostrare* a qualcuno — è il momento di farlo, invece di descriverlo | ~~Fase 2~~ **aperta** |
 | 5   | Chi è formalmente titolare del trattamento dei dati: una delle associazioni o il manutentore a titolo personale?               | Prima del lancio |
 | 6   | Canale Telegram come sink di notifica aggiuntivo, dato che la community esiste già?                                            | Fase 6           |
