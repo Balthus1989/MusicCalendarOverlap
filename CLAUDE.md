@@ -32,8 +32,14 @@ npm run db:migrate # applica (usa DIRECT_DATABASE_URL, porta 5432)
   dominio. Solo l'auth passa dal client.
 - Nessun handler restituisce una riga `events` grezza: tutto passa da
   `serializeEvent()`. Vedi la matrice di visibilità in ARCHITECTURE.md §5.
-- Il motore conflitti (`src/lib/server/conflicts/`) è codice puro senza
-  I/O, sempre coperto da test unitari.
+- Lo stesso vale per i conflitti: mai una riga `conflicts` grezza, perché
+  `details` contiene quali band erano annunciate su ciascun lato. Si passa
+  da `serializeConflict()` / `redigiConflitto()`. Vedi ADR-0024.
+- Le **regole** del motore conflitti (`conflicts/engine.ts`, `rules.ts`,
+  `genre-affinity.ts`, `geo.ts`) sono codice puro senza I/O, sempre coperto
+  da test unitari. L'accesso al database sta accanto, in `reconcile.ts`,
+  `queries.ts`, `actions.ts` e `preview.ts`, e non deve rientrare nelle
+  regole: è ciò che le rende testabili caso per caso.
 - Le migrazioni Drizzle sono versionate: mai modificare una migrazione
   già committata.
 - Prefisso `PUBLIC_` in SvelteKit = esposto al browser. Mai usarlo per

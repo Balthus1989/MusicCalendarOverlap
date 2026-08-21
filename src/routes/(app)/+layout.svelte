@@ -9,10 +9,14 @@
 	 * Solo le rotte che esistono davvero: `resolve()` è tipizzato sui path
 	 * generati da SvelteKit, quindi un link a una rotta non ancora costruita
 	 * fallisce il typecheck invece di diventare un 404 silenzioso.
-	 * Conflitti arriva in Fase 3.
+	 * La voce Conflitti porta un pallino quando c'è qualcosa da trattare: un
+	 * numero sarebbe una promessa più precisa di quanto il conteggio possa
+	 * mantenere, perché si conta prima della redazione (vedi
+	 * `haConflittiDaTrattare`).
 	 */
 	const links = [
 		{ path: '/calendar', label: 'Calendario' },
+		{ path: '/conflicts', label: 'Conflitti' },
 		{ path: '/artists', label: 'Artisti' },
 		{ path: '/venues', label: 'Locali' },
 		{ path: '/org', label: 'Organizzazione' }
@@ -39,6 +43,13 @@
 							: 'text-muted-foreground hover:text-foreground text-sm'}
 					>
 						{link.label}
+						{#if link.path === '/conflicts' && data.conflittiDaTrattare}
+							<span
+								class="bg-destructive/70 ml-0.5 inline-block size-1.5 rounded-full align-middle"
+								aria-hidden="true"
+							></span>
+							<span class="sr-only">(ci sono conflitti da trattare)</span>
+						{/if}
 					</a>
 				{/each}
 

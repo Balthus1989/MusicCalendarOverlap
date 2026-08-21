@@ -1,0 +1,395 @@
+/**
+ * Riconciliazione dei conflitti (ARCHITECTURE.md §6.1 e §6.4).
+ *
+ * È l'unico file di `conflicts/` che tocca il database. Fa tre cose:
+ * seleziona i candidati con cui una data potrebbe scontrarsi, chiede al
+ * motore puro quali conflitti esistono davvero, e allinea la tabella
+ * `conflicts` al risultato.
+ *
+ * Il verbo è "riconciliare" e non "inserire" perché i conflitti spariti non si
+ * cancellano: passano a `resolved` con una nota automatica. Senza storico,
+ * l'avviso che due organizzatori hanno già chiarito al telefono
+ * riapparirebbe in eterno (ADR-0009).
+ */
+import { and, asc, between, eq, gte, inArray, lte, ne, notInArray, or, sql } from 'drizzle-orm';
+import type { Database } from '$lib/server/db/client';
+import {
+	conflicts,
+	events,
+	type ConflictSeverity,
+	type ConflictStatus,
+	type EventStatus
+} from '$lib/server/db/schema';
+import { daLocaleAIstante, giornoCivile } from '$lib/time';
+import { meritaNotifica, rilevaConflitti, type ConflittoTrovato } from './engine';
+import { boundingBox } from './geo';
+import type { EventoPerConflitti } from './rules';
+
+/**
+ * Solo `hold` e `confirmed` entrano nel motore, da entrambi i lati.
+ *
+ * Una bozza non partecipa perché nessun altro sa che esiste: persistere un
+ * conflitto con una bozza significherebbe avvisare un'organizzazione di una
+ * data che non ha il diritto di vedere — cioè bucare ADR-0005 dal lato meno
+ * sorvegliato. Una data annullata non partecipa perché non si contende più
+ * niente: ha liberato lo slot, che è tutto il contrario di un conflitto.
+ */
+export const STATI_IN_CONFLITTO: readonly EventStatus[] = ['hold', 'confirmed'];
+
+export function partecipaAiConflitti(stato: EventStatus): boolean {
+	return STATI_IN_CONFLITTO.includes(stato);
+}
+
+/**
+ * Margine della finestra SQL oltre i sette giorni della regola R2 (ADR-0021).
+ *
+ * Tre giorni, e non zero, perché il confronto avviene su **giorni civili** in
+ * `Europe/Rome` mentre il filtro SQL lavora su istanti: un concerto alle 23:30
+ * del settimo giorno è ancora dentro la regola pur essendo quasi otto giorni
+ * più in là in millisecondi.
+ */
+const MARGINE_GIORNI = 3;
+const FINESTRA_CANDIDATI_GIORNI = 7 + MARGINE_GIORNI;
+const GIORNO_MS = 86_400_000;
+
+/**
+ * Distanza massima oltre cui nessuna regola può scattare: è il limite di R2,
+ * il più largo dei quattro. Serve al prefiltro con bounding box, che fa
+ * scartare al database la gran parte delle righe prima dell'haversine
+ * (ADR-0008).
+ */
+const RAGGIO_MASSIMO_KM = 200;
+
+/* ------------------------------------------------------------------ *
+ * Lettura
+ * ------------------------------------------------------------------ */
+
+const CON_DATI_CONFLITTO = {
+	organization: { columns: { id: true, defaultConflictRadiusKm: true } },
+	eventGenres: { with: { genre: { columns: { path: true } } } },
+	lineup: { columns: { artistId: true, isAnnounced: true } }
+} as const;
+
+type RigaConflitto = {
+	id: string;
+	organizationId: string;
+	venueId: string | null;
+	status: EventStatus;
+	startsAt: Date;
+	endsAt: Date | null;
+	doorsAt: Date | null;
+	lat: number | null;
+	lon: number | null;
+	conflictRadiusKm: number | null;
+	organization: { id: string; defaultConflictRadiusKm: number };
+	eventGenres: { isPrimary: boolean; genre: { path: string } }[];
+	lineup: { artistId: string | null; isAnnounced: boolean }[];
+};
+
+export type EventoCaricato = EventoPerConflitti & { status: EventStatus };
+
+/**
+ * Dalla riga letta alla forma che il motore si aspetta.
+ *
+ * Qui si risolve il raggio effettivo — override dell'evento, altrimenti
+ * predefinito dell'organizzazione — così il motore non deve sapere che le
+ * organizzazioni esistono.
+ */
+function aEventoPerConflitti(r: RigaConflitto): EventoCaricato {
+	return {
+		id: r.id,
+		organizationId: r.organizationId,
+		venueId: r.venueId,
+		status: r.status,
+		startsAt: r.startsAt,
+		endsAt: r.endsAt,
+		doorsAt: r.doorsAt,
+		lat: r.lat,
+		lon: r.lon,
+		raggioKm: r.conflictRadiusKm ?? r.organization.defaultConflictRadiusKm,
+		generi: r.eventGenres.map((eg) => ({ path: eg.genre.path, isPrimary: eg.isPrimary })),
+		// Una voce senza `artist_id` non è confrontabile: "Death SS" scritto a
+		// mano da due organizzatori diversi non è la stessa band finché
+		// qualcuno non la collega all'anagrafica (ADR-0006).
+		lineup: r.lineup
+			.filter((v): v is { artistId: string; isAnnounced: boolean } => v.artistId !== null)
+			.map((v) => ({ artistId: v.artistId, isAnnounced: v.isAnnounced }))
+	};
+}
+
+/** Un evento con tutto ciò che serve al motore, o `null` se non esiste. */
+export async function caricaPerConflitti(
+	db: Database,
+	eventId: string
+): Promise<EventoCaricato | null> {
+	const riga = await db.query.events.findFirst({
+		where: eq(events.id, eventId),
+		with: CON_DATI_CONFLITTO
+	});
+	return riga ? aEventoPerConflitti(riga as RigaConflitto) : null;
+}
+
+/**
+ * I candidati con cui una data può entrare in conflitto (§6.1).
+ *
+ * La finestra temporale è ±10 giorni attorno al **giorno civile** della data,
+ * non ±10 giorni dall'istante di inizio: è la stessa unità in cui ragiona la
+ * regola R2, e mescolare le due sarebbe il modo più rapido di perdere un
+ * conflitto al bordo.
+ *
+ * Il prefiltro geografico è largo di proposito: un falso positivo costa una
+ * chiamata a `distanzaKm`, un falso negativo costa un conflitto non rilevato.
+ * Gli eventi senza coordinate restano fuori — nessuna regola può scattare su
+ * di loro, quindi caricarli sarebbe lavoro sprecato.
+ */
+export async function candidati(
+	db: Database,
+	evento: EventoPerConflitti
+): Promise<EventoCaricato[]> {
+	const giorno = giornoCivile(evento.startsAt);
+	const inizioGiorno = daLocaleAIstante(`${giorno}T00:00`).getTime();
+	const fineGiorno = inizioGiorno + GIORNO_MS;
+
+	const da = new Date(inizioGiorno - FINESTRA_CANDIDATI_GIORNI * GIORNO_MS);
+	const a = new Date(fineGiorno + FINESTRA_CANDIDATI_GIORNI * GIORNO_MS);
+
+	const condizioni = [
+		inArray(events.status, [...STATI_IN_CONFLITTO]),
+		// La stessa organizzazione non entra mai in conflitto con sé stessa:
+		// se un circolo mette due date la stessa sera, lo sa già.
+		ne(events.organizationId, evento.organizationId),
+		ne(events.id, evento.id),
+		between(events.startsAt, da, a)
+	];
+
+	if (evento.lat !== null && evento.lon !== null) {
+		const box = boundingBox({ lat: evento.lat, lon: evento.lon }, RAGGIO_MASSIMO_KM);
+		condizioni.push(
+			gte(events.lat, box.latMin),
+			lte(events.lat, box.latMax),
+			gte(events.lon, box.lonMin),
+			lte(events.lon, box.lonMax)
+		);
+	}
+
+	const righe = await db.query.events.findMany({
+		where: and(...condizioni),
+		with: CON_DATI_CONFLITTO,
+		orderBy: asc(events.startsAt),
+		limit: 500
+	});
+
+	return (righe as RigaConflitto[]).map(aEventoPerConflitti);
+}
+
+/* ------------------------------------------------------------------ *
+ * Scrittura
+ * ------------------------------------------------------------------ */
+
+export const NOTA_RISOLUZIONE_AUTOMATICA =
+	'Risolto dal ricalcolo: una delle due date è cambiata e le condizioni del conflitto non ci sono più.';
+
+export type EsitoRiconciliazione = {
+	eventId: string;
+	/** Conflitti che prima non c'erano, o che erano stati risolti dal ricalcolo. */
+	nuovi: ConflittoTrovato[];
+	confermati: number;
+	risolti: number;
+};
+
+const vuoto = (eventId: string): EsitoRiconciliazione => ({
+	eventId,
+	nuovi: [],
+	confermati: 0,
+	risolti: 0
+});
+
+/** Chiave di identità di un conflitto: la coppia ordinata più la regola. */
+const chiaveDi = (c: { eventAId: string; eventBId: string; kind: string }) =>
+	`${c.eventAId}|${c.eventBId}|${c.kind}`;
+
+const testo = (v: number | null): string | null => (v === null ? null : String(v));
+
+/**
+ * Ricalcola i conflitti di una data e allinea la tabella.
+ *
+ * Va chiamata a ogni salvataggio e a ogni cambio di stato. Non solleva mai:
+ * un errore nel ricalcolo non deve far perdere all'utente la data che aveva
+ * appena inserito — la stessa scelta che si è fatta per il registro di audit.
+ * Il ricalcolo notturno recupera comunque le derive (§6.4).
+ */
+export async function riconciliaConflitti(
+	db: Database,
+	eventId: string
+): Promise<EsitoRiconciliazione> {
+	const evento = await caricaPerConflitti(db, eventId);
+	if (!evento) return vuoto(eventId);
+
+	// Una data che esce da `hold`/`confirmed` non si contende più niente: i
+	// suoi conflitti aperti vanno chiusi, non lasciati a invecchiare in una
+	// dashboard.
+	const trovati = partecipaAiConflitti(evento.status)
+		? rilevaConflitti(evento, await candidati(db, evento))
+		: [];
+
+	const esistenti = await db
+		.select({
+			id: conflicts.id,
+			eventAId: conflicts.eventAId,
+			eventBId: conflicts.eventBId,
+			kind: conflicts.kind,
+			status: conflicts.status,
+			resolvedBy: conflicts.resolvedBy
+		})
+		.from(conflicts)
+		.where(or(eq(conflicts.eventAId, eventId), eq(conflicts.eventBId, eventId)));
+
+	const primaPerChiave = new Map(esistenti.map((c) => [chiaveDi(c), c]));
+
+	/**
+	 * "Nuovo" è ciò che merita di far scattare una notifica: un conflitto mai
+	 * visto, oppure uno che era stato chiuso dal ricalcolo e che è tornato
+	 * perché una data si è rimessa in mezzo. Un conflitto già `acknowledged`,
+	 * `dismissed` o risolto **da una persona** non è nuovo: quei due si sono
+	 * già parlati, e ripresentarglielo è il modo di far ignorare anche gli
+	 * avvisi veri (ADR-0021).
+	 */
+	const nuovi = trovati.filter((c) => {
+		const prima = primaPerChiave.get(chiaveDi(c));
+		if (!prima) return true;
+		return prima.status === 'resolved' && prima.resolvedBy === null;
+	});
+
+	const adesso = new Date();
+	let risolti = 0;
+
+	try {
+		await db.transaction(async (tx) => {
+			let idSalvati: string[] = [];
+
+			if (trovati.length) {
+				const salvati = await tx
+					.insert(conflicts)
+					.values(
+						trovati.map((c) => ({
+							eventAId: c.eventAId,
+							eventBId: c.eventBId,
+							kind: c.kind,
+							severity: c.severity,
+							distanceKm: testo(c.distanzaKm),
+							genreAffinity: testo(c.affinita),
+							daysApart: c.giorniDiDistanza,
+							details: c.dettagli
+						}))
+					)
+					.onConflictDoUpdate({
+						target: [conflicts.eventAId, conflicts.eventBId, conflicts.kind],
+						set: {
+							severity: sql`excluded.severity`,
+							distanceKm: sql`excluded.distance_km`,
+							genreAffinity: sql`excluded.genre_affinity`,
+							daysApart: sql`excluded.days_apart`,
+							details: sql`excluded.details`,
+							updatedAt: adesso,
+							// Un conflitto chiuso dal ricalcolo si riapre se
+							// torna: è di nuovo una notizia. Uno chiuso da una
+							// persona resta chiuso, perché quella persona
+							// sapeva qualcosa che il software non sa.
+							status: sql`case
+								when ${conflicts.status} = 'resolved' and ${conflicts.resolvedBy} is null
+								then 'open'::conflict_status
+								else ${conflicts.status}
+							end`,
+							resolutionNote: sql`case
+								when ${conflicts.status} = 'resolved' and ${conflicts.resolvedBy} is null
+								then null
+								else ${conflicts.resolutionNote}
+							end`
+						}
+					})
+					.returning({ id: conflicts.id });
+
+				idSalvati = salvati.map((s) => s.id);
+			}
+
+			const daChiudere = [
+				or(eq(conflicts.eventAId, eventId), eq(conflicts.eventBId, eventId)),
+				inArray(conflicts.status, ['open', 'acknowledged'] satisfies ConflictStatus[])
+			];
+			if (idSalvati.length) daChiudere.push(notInArray(conflicts.id, idSalvati));
+
+			const chiusi = await tx
+				.update(conflicts)
+				.set({
+					status: 'resolved',
+					// `resolvedBy` resta `NULL`: è ciò che distingue questa
+					// chiusura da quella scritta da una persona.
+					resolutionNote: NOTA_RISOLUZIONE_AUTOMATICA,
+					updatedAt: adesso
+				})
+				.where(and(...daChiudere))
+				.returning({ id: conflicts.id });
+
+			risolti = chiusi.length;
+		});
+	} catch (err) {
+		// Come per l'audit: perdere un ricalcolo è spiacevole, perdere il
+		// lavoro dell'utente no. Il cron notturno rimette a posto.
+		console.error(`Ricalcolo dei conflitti non riuscito per l'evento ${eventId}:`, err);
+		return vuoto(eventId);
+	}
+
+	return { eventId, nuovi, confermati: trovati.length - nuovi.length, risolti };
+}
+
+/** I conflitti nuovi che, in Fase 6, faranno partire un'email (§6.4 punto 3, §10). */
+export function daNotificare(esito: EsitoRiconciliazione): ConflittoTrovato[] {
+	return esito.nuovi.filter((c) => meritaNotifica(c.severity));
+}
+
+/* ------------------------------------------------------------------ *
+ * Ricalcolo massivo
+ * ------------------------------------------------------------------ */
+
+export type EsitoRicalcolo = {
+	eventiEsaminati: number;
+	conflittiNuovi: number;
+	conflittiRisolti: number;
+};
+
+/**
+ * Ricalcola l'intera finestra futura (§6.4 punto 4).
+ *
+ * Serve a recuperare le derive: un ricalcolo fallito in silenzio, una riga
+ * scritta a mano, una migrazione che ha cambiato i raggi predefiniti. Gira di
+ * notte da GitHub Actions, quando nessuno lo guarda.
+ *
+ * Ogni evento viene riconciliato per intero, quindi ogni coppia viene
+ * esaminata due volte: è lavoro sprecato per metà, ma su qualche centinaio di
+ * date costa secondi, e la versione furba avrebbe bisogno di tenere traccia
+ * delle coppie già viste per un guadagno che nessuno noterebbe.
+ */
+export async function ricalcolaFinestra(db: Database, da: Date, a: Date): Promise<EsitoRicalcolo> {
+	const daRicalcolare = await db
+		.select({ id: events.id })
+		.from(events)
+		.where(and(inArray(events.status, [...STATI_IN_CONFLITTO]), between(events.startsAt, da, a)))
+		.orderBy(asc(events.startsAt));
+
+	let conflittiNuovi = 0;
+	let conflittiRisolti = 0;
+
+	for (const { id } of daRicalcolare) {
+		const esito = await riconciliaConflitti(db, id);
+		conflittiNuovi += esito.nuovi.length;
+		conflittiRisolti += esito.risolti;
+	}
+
+	return { eventiEsaminati: daRicalcolare.length, conflittiNuovi, conflittiRisolti };
+}
+
+/** Severity in ordine decrescente, per le query che devono mostrare il peggio prima. */
+export const ORDINE_SEVERITA_SQL = sql`case ${conflicts.severity}
+	when 'high' then 0 when 'medium' then 1 else 2 end`;
+
+export type { ConflictSeverity };

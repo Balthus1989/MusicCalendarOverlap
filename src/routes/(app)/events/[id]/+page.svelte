@@ -2,7 +2,9 @@
 	import { enhance } from '$app/forms';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
+	import ConflictWarning from '$lib/components/ConflictWarning.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { ORDINE_SEVERITA } from '$lib/conflicts';
 	import { ETICHETTE_LOCANDINA, ETICHETTE_STATO } from '$lib/events';
 	import type { ActionData, PageData } from './$types';
 
@@ -32,6 +34,19 @@
 
 	const prezzo = (v: string | null) =>
 		v === null ? null : `${Number(v).toFixed(2).replace('.', ',')} €`;
+
+	/**
+	 * I conflitti stanno **prima** di tutto il resto, non in fondo alla
+	 * colonna laterale.
+	 *
+	 * ADR-0022 ha deciso che un conflitto aperto non impedisce di confermare
+	 * una data, e in cambio ha assunto un impegno di interfaccia: che chi
+	 * conferma l'abbia visto. Un avviso sotto la piega non mantiene
+	 * quell'impegno.
+	 */
+	const conflitti = $derived(
+		[...data.conflitti].sort((a, b) => ORDINE_SEVERITA[a.severity] - ORDINE_SEVERITA[b.severity])
+	);
 </script>
 
 <svelte:head>
@@ -80,6 +95,26 @@
 	<p class="border-border mb-6 rounded-md border p-3 text-sm">
 		Questa data è stata annullata. Resta visibile perché lo slot è di nuovo libero.
 	</p>
+{/if}
+
+{#if conflitti.length}
+	<section class="mb-8 space-y-3" aria-labelledby="titolo-conflitti">
+		<h2 id="titolo-conflitti" class="text-sm font-medium">
+			{conflitti.length === 1
+				? 'C’è un conflitto aperto su questa data'
+				: `Ci sono ${conflitti.length} conflitti aperti su questa data`}
+		</h2>
+		{#each conflitti as c (c.id)}
+			<ConflictWarning conflitto={c} />
+		{/each}
+		<p class="text-muted-foreground text-xs">
+			Nessuno di questi avvisi ti impedisce di confermare: la decisione è vostra, e con essa la
+			responsabilità di esservi sentiti.
+			<a href={resolve('/conflicts')} class="underline underline-offset-4">
+				Gestiscili dalla dashboard
+			</a>.
+		</p>
+	</section>
 {/if}
 
 <div class="grid gap-8 lg:grid-cols-[2fr_1fr]">
@@ -341,6 +376,13 @@
 						</form>
 					{/each}
 				</div>
+				{#if conflitti.length && data.transizioni.includes('confirmed')}
+					<p class="text-muted-foreground mt-3 text-xs">
+						Confermare significa annunciare: il conflitto qui sopra diventa definitivo. Puoi farlo
+						comunque — il calendario non decide al posto vostro — ma è il momento giusto per una
+						telefonata.
+					</p>
+				{/if}
 				{#if completo?.announceAt}
 					<p class="text-muted-foreground mt-3 text-xs">
 						Annuncio previsto per il {new Intl.DateTimeFormat('it-IT', {

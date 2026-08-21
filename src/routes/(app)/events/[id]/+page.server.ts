@@ -1,5 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { canDeleteEvent, canEditEvent } from '$lib/server/auth/permissions';
+import { conflittiDellEvento } from '$lib/server/conflicts/queries';
 import { getDb } from '$lib/server/db/client';
 import { caricaEvento } from '$lib/server/events/queries';
 import {
@@ -17,7 +18,8 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	const viewer = locals.viewer;
 	if (!viewer) error(401, 'Sessione non valida.');
 
-	const evento = await caricaEvento(getDb(), params.id);
+	const db = getDb();
+	const evento = await caricaEvento(db, params.id);
 	if (!evento) error(404, 'Data non trovata.');
 
 	// Il serializzatore è l'unica via d'uscita dei dati (ADR-0005). Un `null`
@@ -31,7 +33,12 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		evento: serializzato,
 		puoModificare,
 		puoEliminare: canDeleteEvent(viewer, evento),
-		transizioni: puoModificare ? transizioniAmmesse(evento.status) : []
+		transizioni: puoModificare ? transizioniAmmesse(evento.status) : [],
+		// ADR-0022 non mette nessun cancello davanti alla conferma, e in
+		// cambio pretende che l'avviso sia impossibile da non vedere proprio
+		// lì. Si caricano solo per chi la data la può modificare: a chi guarda
+		// la serata di un altro, i conflitti di quello non interessano.
+		conflitti: puoModificare ? await conflittiDellEvento(db, viewer, params.id) : []
 	};
 };
 

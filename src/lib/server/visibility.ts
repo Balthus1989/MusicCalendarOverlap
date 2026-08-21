@@ -13,7 +13,15 @@
  * cella contro la matrice di §5, ed è la suite più importante del progetto.
  */
 import { giornoCivile } from '$lib/time';
-import type { BillingRole, EventStatus, MemberRole } from '$lib/server/db/schema';
+import type {
+	BillingRole,
+	ConflictKind,
+	ConflictSeverity,
+	ConflictStatus,
+	EventStatus,
+	MemberRole
+} from '$lib/server/db/schema';
+import type { DettagliConflitto } from '$lib/server/conflicts/rules';
 
 export type ViewerContext = {
 	profileId: string;
@@ -299,4 +307,203 @@ export function titoloVisibile(evento: EventoSerializzato): string {
 	if (evento.visibilita === 'completa') return evento.title;
 	const genere = evento.generePrimario?.name;
 	return genere ? `${genere} · ${evento.organizzazione.name}` : evento.organizzazione.name;
+}
+
+/* ------------------------------------------------------------------ *
+ * Conflitti (ADR-0024)
+ * ------------------------------------------------------------------ */
+
+/**
+ * La riga `conflicts` come esce dal database, con i dettagli tipizzati.
+ *
+ * `details` è `jsonb` e Drizzle lo restituisce come `unknown`: la forma vera
+ * la conosce `conflicts/rules.ts`, che l'ha scritta.
+ */
+export type ConflittoGrezzo = {
+	id: string;
+	eventAId: string;
+	eventBId: string;
+	kind: ConflictKind;
+	severity: ConflictSeverity;
+	status: ConflictStatus;
+	distanceKm: string | null;
+	genreAffinity: string | null;
+	daysApart: number | null;
+	details: DettagliConflitto | null;
+	acknowledgedByA: boolean;
+	acknowledgedByB: boolean;
+	resolutionNote: string | null;
+	computedAt: Date;
+	updatedAt: Date;
+};
+
+export type ArtistaNominabile = { id: string; nome: string };
+
+export type ConflittoSerializzato = {
+	id: string;
+	kind: ConflictKind;
+	severity: ConflictSeverity;
+	status: ConflictStatus;
+	distanzaKm: number | null;
+	affinita: number | null;
+	giorniDiDistanza: number | null;
+	/** La data del viewer. Sempre in visibilità completa: è sua. */
+	mia: EventoCompleto;
+	/** La controparte, redatta secondo la matrice di §5. */
+	controparte: EventoSerializzato;
+	/** Vero se il *proprio* lato ha già preso atto del conflitto. */
+	presoAtto: boolean;
+	/** Vero se ne ha preso atto la controparte: dice se la telefonata è partita. */
+	presoAttoDallAltro: boolean;
+	/**
+	 * Le band condivise di cui questo viewer può sentire il nome. Mai le
+	 * altre, e mai quante sono: il numero di band segrete della controparte è
+	 * esso stesso un'informazione riservata.
+	 */
+	artisti: ArtistaNominabile[];
+	/** Il locale in comune, quando la regola è R1 e il viewer può vederlo. */
+	venue: VenueEvento | null;
+	resolutionNote: string | null;
+};
+
+const numero = (v: string | null): number | null => (v === null ? null : Number(v));
+
+/** Ciò che di un conflitto un dato viewer può effettivamente sapere. */
+export type RedazioneConflitto = {
+	artisti: ArtistaNominabile[];
+	venue: VenueEvento | null;
+	affinita: number | null;
+};
+
+/**
+ * Il nucleo della redazione, condiviso da `serializeConflict` e
+ * dall'anteprima nel form.
+ *
+ * Il principio, uno solo per tutte e quattro le regole: **un conflitto si
+ * racconta a un organizzatore solo nella misura in cui il dato che lo produce
+ * gli è già visibile** (ADR-0024). Restituisce `null` quando non gli si può
+ * raccontare niente, e allora il conflitto per lui non esiste affatto.
+ *
+ * `sonoLatoA` dice da che parte della coppia ordinata sta chi guarda: serve a
+ * leggere i flag di annuncio dal lato giusto.
+ */
+export function redigiConflitto(
+	kind: ConflictKind,
+	dettagli: DettagliConflitto | null,
+	affinitaGrezza: number | null,
+	controparte: EventoSerializzato,
+	sonoLatoA: boolean,
+	nomiArtisti: Record<string, string> = {}
+): RedazioneConflitto | null {
+	const completa = controparte.visibilita === 'completa' ? controparte : null;
+
+	// Un conflitto di locale *è* il locale, e in `hold` il locale è
+	// riservato. Chi lo riceve conosce il proprio, quindi dedurrebbe l'altro:
+	// non c'è modo di raccontarglielo a metà. Se ne accorge comunque chi ha
+	// tenuto il locale riservato, che è anche l'unico dei due a poterlo
+	// cambiare senza rimangiarsi un annuncio.
+	if (kind === 'venue_clash' && !completa) return null;
+
+	let artisti: ArtistaNominabile[] = [];
+	if (kind === 'artist_overlap') {
+		// "Annunciata dalla controparte": se chi guarda sta dal lato A conta
+		// `annunciatoB`, e viceversa. Una band che *lui* ha annunciato ma la
+		// controparte no resta muta, perché nominarla direbbe che la
+		// controparte l'ha ingaggiata — cioè esattamente il segreto di `hold`.
+		artisti = (dettagli?.artisti ?? [])
+			.filter((x) => (sonoLatoA ? x.annunciatoB : x.annunciatoA))
+			.map((x) => ({ id: x.artistId, nome: nomiArtisti[x.artistId] ?? 'Band non in anagrafica' }));
+
+		// Nemmeno il *numero* di band condivise può uscire: chi guarda conosce
+		// la propria lineup, e sapere che tre sue band sono in cartellone da
+		// un'altra parte gli direbbe quali. Se non se ne può nominare
+		// nessuna, il conflitto non gli si mostra.
+		if (!artisti.length) return null;
+	}
+
+	return {
+		artisti,
+		venue: kind === 'venue_clash' ? (completa?.venue ?? null) : null,
+		// L'affinità è calcolata anche sui generi secondari, che in `hold`
+		// restano riservati: esce solo quando la controparte è tutta visibile.
+		affinita: completa ? affinitaGrezza : null
+	};
+}
+
+/**
+ * Serializza un conflitto per un viewer.
+ *
+ * Il motore rileva su dati completi, perché una rilevazione filtrata non
+ * sarebbe simmetrica: i conflitti comparirebbero e sparirebbero a seconda di
+ * quale delle due date viene salvata per ultima. La redazione avviene qui, in
+ * uscita, come per gli eventi — la fa `redigiConflitto` (ADR-0024).
+ *
+ * Restituisce `null` quando il conflitto, per questo viewer, non deve
+ * risultare esistente: non è membro di nessuna delle due organizzazioni, la
+ * controparte è una bozza (non capita, ma la garanzia non costa nulla), o
+ * `redigiConflitto` non gli lascia niente da raccontare.
+ */
+export function serializeConflict(
+	conflitto: ConflittoGrezzo,
+	eventi: { a: EventWithRelations; b: EventWithRelations },
+	viewer: ViewerContext,
+	nomiArtisti: Record<string, string> = {}
+): ConflittoSerializzato | null {
+	const sonoA = ownsOrganization(viewer, eventi.a.organizationId);
+	const sonoB = ownsOrganization(viewer, eventi.b.organizationId);
+	// Un estraneo alle due organizzazioni non ha titolo per sapere che due
+	// date si danno fastidio: non è un'informazione del calendario, è una
+	// conversazione fra due persone.
+	if (!sonoA && !sonoB) return null;
+
+	// Se per qualche motivo appartenesse a entrambe, il lato A fa da "suo":
+	// vedrebbe comunque tutto di tutte e due.
+	const mioGrezzo = sonoA ? eventi.a : eventi.b;
+	const altroGrezzo = sonoA ? eventi.b : eventi.a;
+
+	const mia = serializeEvent(mioGrezzo, viewer);
+	const controparte = serializeEvent(altroGrezzo, viewer);
+	if (!mia || !controparte || mia.visibilita !== 'completa') return null;
+
+	const redazione = redigiConflitto(
+		conflitto.kind,
+		conflitto.details,
+		numero(conflitto.genreAffinity),
+		controparte,
+		sonoA,
+		nomiArtisti
+	);
+	if (!redazione) return null;
+
+	return {
+		id: conflitto.id,
+		kind: conflitto.kind,
+		severity: conflitto.severity,
+		status: conflitto.status,
+		distanzaKm: numero(conflitto.distanceKm),
+		affinita: redazione.affinita,
+		giorniDiDistanza: conflitto.daysApart,
+		mia,
+		controparte,
+		presoAtto: sonoA ? conflitto.acknowledgedByA : conflitto.acknowledgedByB,
+		presoAttoDallAltro: sonoA ? conflitto.acknowledgedByB : conflitto.acknowledgedByA,
+		artisti: redazione.artisti,
+		venue: redazione.venue,
+		resolutionNote: conflitto.resolutionNote
+	};
+}
+
+/** Serializza una lista, scartando ciò che il viewer non deve vedere. */
+export function serializeConflicts(
+	righe: {
+		conflitto: ConflittoGrezzo;
+		a: EventWithRelations;
+		b: EventWithRelations;
+	}[],
+	viewer: ViewerContext,
+	nomiArtisti: Record<string, string> = {}
+): ConflittoSerializzato[] {
+	return righe
+		.map((r) => serializeConflict(r.conflitto, { a: r.a, b: r.b }, viewer, nomiArtisti))
+		.filter((c): c is ConflittoSerializzato => c !== null);
 }

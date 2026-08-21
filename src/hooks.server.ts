@@ -5,12 +5,12 @@
  * punto in cui Supabase viene usato: i dati di dominio passano da Drizzle.
  * `authGuard` protegge il gruppo di rotte `(app)`.
  */
-import { env as privateEnv } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
 import { createServerClient } from '@supabase/ssr';
 import { redirect, type Handle } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { loadViewer } from '$lib/server/auth/viewer';
+import { autorizzaCron } from '$lib/server/cron';
 import { getDb } from '$lib/server/db/client';
 
 /**
@@ -102,14 +102,21 @@ const authGuard: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 
-/** Endpoint cron protetti da header segreto (ARCHITECTURE.md §7, ADR-0013). */
+/**
+ * Endpoint cron protetti da header segreto (ARCHITECTURE.md §7, ADR-0013).
+ *
+ * Il controllo sta in un hook e non nei singoli endpoint per la stessa
+ * ragione per cui `authGuard` guarda il gruppo di rotte invece di una lista:
+ * basta creare un file sotto `/api/cron/` perché sia protetto, e nessuno può
+ * aggiungere un job dimenticandosi il controllo.
+ *
+ * Risponde 403 e non 401: non c'è nessuna autenticazione da rinegoziare, c'è
+ * un segreto condiviso che o si ha o non si ha.
+ */
 const cronGuard: Handle = async ({ event, resolve }) => {
 	if (event.url.pathname.startsWith('/api/cron/')) {
-		const expected = privateEnv.CRON_SECRET;
-		const provided = event.request.headers.get('x-cron-secret');
-		if (!expected || provided !== expected) {
-			return new Response('Forbidden', { status: 403 });
-		}
+		const esito = autorizzaCron(event.request);
+		if (!esito.ok) return new Response('Forbidden', { status: 403 });
 	}
 	return resolve(event);
 };

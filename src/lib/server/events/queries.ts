@@ -28,7 +28,13 @@ import type { EventWithRelations, ViewerContext } from '$lib/server/visibility';
  * Forma delle righe lette
  * ------------------------------------------------------------------ */
 
-const CON_RELAZIONI = {
+/**
+ * Le relazioni che `serializeEvent` pretende. Esportata perché la dashboard
+ * dei conflitti carica gli eventi delle due parti dalla stessa forma: due
+ * definizioni divergerebbero, e la seconda a divergere passerebbe al
+ * serializzatore un evento senza generi.
+ */
+export const CON_RELAZIONI = {
 	organization: {
 		columns: {
 			id: true,
@@ -86,7 +92,7 @@ type RigaGrezza = Awaited<ReturnType<typeof trovaConRelazioni>>[number];
  * libero altrimenti. Chi legge la lineup non deve preoccuparsi di quale dei
  * due casi sia (ADR-0006).
  */
-function mappaEvento(r: RigaGrezza): EventWithRelations {
+export function mappaEvento(r: RigaGrezza): EventWithRelations {
 	return {
 		id: r.id,
 		organizationId: r.organizationId,
@@ -371,4 +377,18 @@ export async function nomiArtisti(db: Database, ids: string[]): Promise<Record<s
 		.from(artists)
 		.where(inArray(artists.id, ids));
 	return Object.fromEntries(righe.map((r) => [r.id, r.name]));
+}
+
+/**
+ * Più eventi con le loro relazioni, per id.
+ *
+ * Serve all'anteprima dei conflitti: il motore lavora su una forma leggera,
+ * ma per mostrare la controparte di un conflitto serve un evento completo da
+ * passare a `serializeEvent`. Si caricano solo quelli che un conflitto lo
+ * hanno davvero, che sono pochi.
+ */
+export async function caricaEventi(db: Database, ids: string[]): Promise<EventWithRelations[]> {
+	if (!ids.length) return [];
+	const righe = await trovaConRelazioni(db, inArray(events.id, ids), { limit: ids.length });
+	return righe.map(mappaEvento);
 }

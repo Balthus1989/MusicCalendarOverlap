@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	aLocaleInput,
 	daLocaleAIstante,
+	distanzaInGiorniCivili,
 	fineEffettiva,
 	giornoCivile,
 	oraCivile
@@ -92,5 +93,64 @@ describe('fine effettiva', () => {
 describe('valore vuoto', () => {
 	it('un istante nullo diventa stringa vuota per il form', () => {
 		expect(aLocaleInput(null)).toBe('');
+	});
+});
+
+describe('distanza in giorni civili', () => {
+	it('due date nello stesso giorno distano zero', () => {
+		expect(
+			distanzaInGiorniCivili(
+				daLocaleAIstante('2026-10-12T09:00'),
+				daLocaleAIstante('2026-10-12T23:59')
+			)
+		).toBe(0);
+	});
+
+	it('è sempre positiva, in qualunque ordine arrivino', () => {
+		const a = daLocaleAIstante('2026-10-12T22:00');
+		const b = daLocaleAIstante('2026-10-19T22:00');
+		expect(distanzaInGiorniCivili(a, b)).toBe(7);
+		expect(distanzaInGiorniCivili(b, a)).toBe(7);
+	});
+
+	it('un’ora di distanza a cavallo della mezzanotte è un giorno', () => {
+		// La regola R2 conta serate, non ore: le 23:30 e le 00:30 sono due
+		// date diverse per chiunque le organizzi.
+		expect(
+			distanzaInGiorniCivili(
+				daLocaleAIstante('2026-10-12T23:30'),
+				daLocaleAIstante('2026-10-13T00:30')
+			)
+		).toBe(1);
+	});
+
+	it('la domenica da 25 ore resta a un giorno dal sabato', () => {
+		// ADR-0021 lo dice esplicitamente: il giorno di distanza si conta fra
+		// giorni civili, non dividendo i millisecondi per 86.400.000. Il 25
+		// ottobre 2026 finisce l'ora legale e quella domenica dura 25 ore:
+		// con la divisione, queste due date risulterebbero a 1,04 giorni —
+		// che arrotondato per difetto diventa zero, cioè "stessa sera".
+		const sabato = daLocaleAIstante('2026-10-24T23:00');
+		const domenica = daLocaleAIstante('2026-10-25T23:30');
+		expect(distanzaInGiorniCivili(sabato, domenica)).toBe(1);
+		// La controprova: la divisione ingenua darebbe meno di un giorno.
+		expect((domenica.getTime() - sabato.getTime()) / 86_400_000).toBeGreaterThan(1);
+	});
+
+	it('la domenica da 23 ore resta a un giorno dal sabato', () => {
+		// L'altro cambio, in marzo: qui la divisione darebbe 0,96 giorni.
+		const sabato = daLocaleAIstante('2026-03-28T22:00');
+		const domenica = daLocaleAIstante('2026-03-29T21:00');
+		expect(distanzaInGiorniCivili(sabato, domenica)).toBe(1);
+		expect((domenica.getTime() - sabato.getTime()) / 86_400_000).toBeLessThan(1);
+	});
+
+	it('conta i giorni anche a cavallo di un cambio di mese e di anno', () => {
+		expect(
+			distanzaInGiorniCivili(
+				daLocaleAIstante('2026-12-30T22:00'),
+				daLocaleAIstante('2027-01-02T22:00')
+			)
+		).toBe(3);
 	});
 });

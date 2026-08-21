@@ -492,6 +492,90 @@ Se succede, la domanda successiva non è tecnica: è se il problema sia la fiduc
 
 ---
 
+## ADR-0024 — I conflitti si rilevano sui dati interi e si redigono in uscita
+
+**Data:** 2026-08-21 · **Stato:** Accettata
+
+**Contesto.** `ARCHITECTURE.md` §6.2, per la regola R2, prescrive di considerare «solo lineup con `is_announced = true` oppure appartenenti alla propria organizzazione — altrimenti si rivelerebbe indirettamente una lineup segreta». Implementando il motore, quella prescrizione si è rivelata insieme **impraticabile** e **insufficiente**.
+
+Impraticabile perché non è simmetrica. Il ricalcolo parte da una data alla volta: salvando la data X si confronterebbe la lineup intera di X con le sole voci annunciate delle altre, salvando la data Y si farebbe il contrario. Se X ha una band segreta che Y ha annunciato, salvare X crea il conflitto e salvare Y lo cancella. Le due date si darebbero il cambio a ogni modifica, e la tabella `conflicts` direbbe cose diverse a seconda di chi ha salvato per ultimo.
+
+Insufficiente perché il filtro non chiude il varco che dichiara di chiudere. Se X (opzionata) e Y (confermata) condividono una band annunciata da X ma non da Y, la regola scatterebbe, e l'organizzazione di Y riceverebbe un conflitto «avete una band in comune con la data di X». Y conosce la propria lineup: se ha ingaggiato tre band, deduce quale. Il conflitto stesso, anche senza nomi, **è** l'informazione. Togliere il nome non basta, e nemmeno dire quante sono: il numero di band condivise che non si possono nominare è a sua volta il conteggio delle band segrete della controparte.
+
+**Decisione.** Il motore rileva sui dati **interi**, da entrambi i lati, e la protezione si sposta tutta in uscita, in `redigiConflitto()`, accanto a `serializeEvent`. Il principio, uno solo per tutte e quattro le regole:
+
+> **Un conflitto si racconta a un organizzatore solo nella misura in cui il dato che lo produce gli è già visibile.**
+
+Che si traduce così:
+
+| Regola               | Controparte `confirmed`/`cancelled`      | Controparte `hold`                                                                                        |
+| -------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `venue_clash`        | visibile, col nome del locale            | **non visibile affatto**: il conflitto *è* il locale, e in `hold` il locale è riservato                     |
+| `artist_overlap`     | visibile, coi nomi delle band annunciate | visibile **solo** se almeno una band condivisa è annunciata *dalla controparte*; si nominano solo quelle    |
+| `geo_genre_overlap`  | visibile, con il valore di affinità      | visibile, **senza** l'affinità e senza la coppia di generi: sono calcolate anche sui secondari, che `hold` protegge |
+| `same_day_proximity` | idem                                     | idem                                                                                                        |
+
+Una condizione resta però **nel motore**, ed è simmetrica: se una band condivisa non è annunciata da nessuna delle due parti, il conflitto non si registra affatto. Nessuno dei due potrebbe mai sentirselo raccontare, quindi sarebbe un dato commercialmente sensibile conservato in database senza che serva a niente.
+
+**Motivazioni.** È la stessa forma di ADR-0003 e ADR-0005 applicata ai conflitti invece che agli eventi: la verità sta in un posto solo, la redazione avviene al confine. Un motore che rileva "a metà" produce risultati che dipendono dall'ordine dei salvataggi, e un risultato che dipende dall'ordine dei salvataggi non si copre con un test.
+
+Sul `venue_clash` in particolare: nascondere il conflitto a una delle due parti sembra una perdita, e non lo è. Chi non lo vede è chi ha davanti una data opzionata altrui; chi lo vede è chi quella data opzionata l'ha creata — cioè l'unico dei due che può ancora spostarla senza rimangiarsi un annuncio pubblico. L'avviso arriva a chi può agire.
+
+**Alternative scartate.**
+
+- _Seguire §6.2 alla lettera_: produce il conflitto che compare e sparisce a seconda di quale data viene salvata per ultima, e lascia comunque aperto il varco su R2.
+- _Rilevare sui dati interi e mostrare tutto a entrambi_: renderebbe il motore conflitti il modo più comodo per scoprire le lineup non annunciate degli altri. Il contrario esatto di ADR-0005.
+- _Registrare due righe, una per lato, con contenuti diversi_: raddoppia lo stato da tenere allineato per ottenere ciò che una funzione di redazione ottiene senza stato.
+- _Mostrare «ci sono N band in comune» senza i nomi_: il numero è già il segreto, vedi sopra. È l'errore che sembra prudente e non lo è.
+
+**Conseguenze.**
+
+- `ARCHITECTURE.md` §6.2 è stato corretto, con rimando a questa voce. Chi rileggesse la stesura originale penserebbe a un bug: per questo la motivazione sta anche accanto al test.
+- `details` in `conflicts` contiene, per R2, i flag di annuncio dei **due** lati. È una colonna che non va mai restituita grezza, esattamente come una riga `events`.
+- Il conteggio dei conflitti per la navigazione è una **soglia superiore**: si conta prima della redazione, perché contare dopo vorrebbe dire caricare a ogni pagina le due date di ogni conflitto con tutte le relazioni. Per questo la voce di menu mostra un pallino e non una cifra.
+- `redigiConflitto()` è condivisa fra la dashboard e l'anteprima nel form: l'avviso che si vede mentre si compila è per costruzione lo stesso che poi arriva in dashboard.
+- Le email di conflitto della Fase 6 dovranno passare da qui e non dalla riga grezza. È lo stesso vincolo permanente che ADR-0005 impone al feed ICS e all'export.
+
+**Da rivedere se.** Si aggiunge una quinta regola: la tabella qui sopra ha una riga per regola, e una regola nuova senza la sua riga sarebbe un varco aperto per difetto.
+
+---
+
+## ADR-0025 — Il motore ignora le bozze, le date annullate e quelle senza coordinate
+
+**Data:** 2026-08-21 · **Stato:** Accettata
+
+**Contesto.** `ARCHITECTURE.md` §6.1 limita i **candidati** a `status IN ('hold','confirmed')`. Non dice niente sull'altro lato: se la data che si sta salvando è una bozza, o è appena stata annullata, il motore deve girare lo stesso? E che fare di una data senza `lat`/`lon`, caso che ADR-0008 ammette esplicitamente?
+
+**Decisione.** Tre esclusioni, tutte dal lato dell'ingresso al motore.
+
+1. **Solo `hold` e `confirmed` partecipano alla riconciliazione persistita**, da entrambi i lati. Una bozza non genera conflitti; una data che esce da quegli stati vede i propri conflitti aperti passare a `resolved` con nota automatica.
+2. **L'anteprima nel form gira invece per qualunque stato**, bozza compresa.
+3. **Una data senza coordinate resta fuori da tutte le regole geografiche**, R2 inclusa — quindi da tutte tranne R1.
+
+**Motivazioni.**
+
+Sulle bozze: persistere un conflitto fra una bozza e la data di un altro significherebbe scrivere in `conflicts` una riga che parla di un evento di cui quell'altra organizzazione non ha il diritto di sapere l'esistenza. `serializeConflict` la nasconderebbe, ma sarebbe difesa in profondità usata come difesa unica — e ADR-0005 dice che una bozza *non esiste* per gli altri, non che «esiste ma non si vede». Le date annullate sono il caso opposto e altrettanto semplice: hanno liberato lo slot, che è il contrario di un conflitto.
+
+Sull'anteprima: chi sta ancora decidendo è esattamente la persona a cui l'avviso serve, e mostrarglielo non scrive niente da nessuna parte. L'asimmetria fra le due — l'anteprima guarda le bozze, la riconciliazione no — non è una svista: una legge e l'altra scrive.
+
+Sulle coordinate: R2 sarebbe stata la candidata naturale a un'eccezione, perché la stessa band la stessa sera è un errore materiale indipendentemente da dove. Ma la regola pretende ≤ 200 km, e senza coordinate quella soglia non è verificabile: farla scattare comunque vorrebbe dire segnalare come doppio ingaggio una band a Palermo e una a Bolzano. Una regola sola per tutti e quattro i casi si spiega meglio di tre più un'eccezione, e la rete di sicurezza è a monte — il salvataggio geocodifica la città quando manca il locale, e `motiviCheImpediscono` la città la pretende sempre.
+
+**Alternative scartate.**
+
+- _Riconciliare anche le bozze e fidarsi del serializzatore_: usa la difesa in profondità come difesa unica.
+- _Far scattare R2 senza coordinate a zero giorni di distanza_: un'eccezione in più da spiegare a chi riceve l'avviso, per un caso che il geocoding rende raro.
+- _Impedire di salvare una data senza coordinate_: aggiungerebbe un secondo punto di blocco al prodotto — ADR-0018 ne ammette uno solo — per un dato che l'utente spesso non conosce.
+
+**Conseguenze.**
+
+- Cambiare stato è un'operazione che **ricalcola**: `cambiaStato` chiama la riconciliazione, non solo `aggiornaEvento`. È il passaggio che sposta di più, perché fa entrare o uscire una data dal motore.
+- Una data senza coordinate non compare in nessun avviso, e nessuno se ne accorgerebbe. L'anteprima nel form lo dice esplicitamente — «il luogo non è ancora risolto in coordinate» — perché «nessun conflitto» e «non ho potuto controllare» si leggono in modo molto diverso sotto un form.
+- Il ricalcolo notturno riconcilia solo `hold` e `confirmed`: una bozza con conflitti spuri non verrebbe ripulita. Non può averne, perché non ne genera mai.
+
+**Da rivedere se.** Emergono date che restano a lungo senza coordinate. Vorrebbe dire che il geocoding fallisce più di quanto si pensasse, e il problema da risolvere sarebbe quello, non il motore.
+
+---
+
 ## Template per nuove voci
 
 ```markdown

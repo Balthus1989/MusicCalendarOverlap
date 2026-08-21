@@ -1,0 +1,46 @@
+# Ricalcolo notturno dei conflitti (ARCHITECTURE.md §6.4 punto 4).
+#
+# Non è il meccanismo ordinario: i conflitti si ricalcolano a ogni salvataggio
+# di una data. Questo serve a recuperare le derive — un ricalcolo fallito in
+# silenzio, un raggio predefinito cambiato, una scheda artista unita da un
+# moderatore. È idempotente: rilanciarlo non fa danni.
+#
+# Nessuno scheduler acceso da qualche parte (ADR-0013): una GitHub Action
+# chiama un endpoint protetto da un segreto condiviso.
+#
+# Secret richiesti:
+#   APP_URL      indirizzo dell'applicazione, senza barra finale
+#   CRON_SECRET  lo stesso valore della variabile d'ambiente sul server
+name: Ricalcolo conflitti
+
+on:
+  schedule:
+    # Ogni notte alle 03:41 UTC. Minuto non tondo: gli scheduler di GitHub
+    # sono congestionati allo scoccare dell'ora, e un job che parte con
+    # quaranta minuti di ritardo qui non se ne accorge nessuno.
+    - cron: '41 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  ricalcola:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chiama /api/cron/recompute
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$APP_URL" || { echo "APP_URL mancante"; exit 1; }
+          test -n "$CRON_SECRET" || { echo "CRON_SECRET mancante"; exit 1; }
+
+          # `--fail-with-body` e non `--fail`: se il server risponde 4xx o 5xx
+          # il job deve fallire, ma il corpo della risposta è l'unica cosa che
+          # dice perché.
+          curl --fail-with-body --silent --show-error \
+            --max-time 300 \
+            --request POST \
+            --header "x-cron-secret: $CRON_SECRET" \
+            --header 'content-length: 0' \
+            "$APP_URL/api/cron/recompute"
+          echo

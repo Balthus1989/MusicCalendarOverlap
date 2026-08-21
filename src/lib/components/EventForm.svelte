@@ -20,8 +20,10 @@
 	 */
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
+	import ConflictWarning from '$lib/components/ConflictWarning.svelte';
 	import Field from '$lib/components/Field.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { ORDINE_SEVERITA, type AnteprimaConflitto } from '$lib/conflicts';
 	import {
 		DESCRIZIONI_STATO,
 		ETICHETTE_LOCANDINA,
@@ -45,6 +47,8 @@
 		erroreGenerale?: string | null;
 		etichettaInvio: string;
 		annullaHref: string;
+		/** Presente in modifica: serve a non far scontrare la data con sé stessa. */
+		eventId?: string | null;
 	};
 
 	let {
@@ -56,7 +60,8 @@
 		errori = {},
 		erroreGenerale = null,
 		etichettaInvio,
-		annullaHref
+		annullaHref,
+		eventId = null
 	}: Props = $props();
 
 	let statoScelto = $state<EventStatus | null>(null);
@@ -102,6 +107,10 @@
 
 	function rimuoviVoce(i: number) {
 		lineupModificata = lineup.filter((_, k) => k !== i);
+		// Togliere una band può far sparire un conflitto: nessun `input` parte
+		// da solo quando una riga se ne va, quindi il ricontrollo si chiede a
+		// mano. Vedi `pianificaAnteprima`.
+		pianificaAnteprima();
 	}
 
 	function spostaVoce(i: number, delta: number) {
@@ -121,10 +130,16 @@
 		suggerimenti = esito.locali ?? [];
 
 		// Se il nome scritto coincide con una scheda dell'anagrafica, si
-		// aggancia l'id: è quello che permetterà alla regola sugli artisti
-		// sovrapposti, in Fase 3, di accorgersi che è la stessa band.
+		// aggancia l'id: è quello che permette alla regola R2 di accorgersi
+		// che è la stessa band. Senza `artistId` due nomi uguali scritti a
+		// mano restano due band diverse (ADR-0006).
 		const esatto = suggerimenti.find((a) => a.name.toLowerCase() === q.trim().toLowerCase());
 		aggiornaVoce(i, { artistId: esatto ? esatto.id : null });
+
+		// `lineup.N.artistId` è un campo nascosto: quando lo riempie Svelte
+		// non parte nessun evento, quindi `forseRicontrolla` non lo vedrebbe
+		// mai — ed è proprio il campo da cui dipende R2.
+		pianificaAnteprima();
 	}
 
 	function suNomeBand(i: number, valore: string) {
@@ -151,13 +166,126 @@
 	);
 
 	const generiSecondari = $derived(generi.filter((g) => g.slug !== primario));
+
+	/* ---------------- Anteprima dei conflitti (§6.5) ---------------- */
+
+	/**
+	 * Il controllo gira mentre si compila, non dopo il salvataggio: un
+	 * conflitto scoperto dopo è già una telefonata imbarazzante, uno scoperto
+	 * mentre si sceglie la data è solo una data diversa.
+	 *
+	 * Si manda il form **intero**, con `new FormData(elemento)`, e non un
+	 * oggetto ricostruito a mano: il server lo legge con le stesse funzioni con
+	 * cui legge un salvataggio, quindi l'anteprima parla per forza della stessa
+	 * data che si sta per salvare.
+	 */
+	let elementoForm: HTMLFormElement;
+	let conflitti = $state<AnteprimaConflitto[]>([]);
+	let incompleto = $state<string | null>(null);
+	let controlloInCorso = $state(false);
+	let controlloFatto = $state(false);
+
+	const RITARDO_MS = 600;
+	let timerAnteprima: ReturnType<typeof setTimeout> | undefined;
+	let ultimaAnteprima = 0;
+
+	async function chiediAnteprima() {
+		if (!elementoForm) return;
+
+		const dati = new FormData(elementoForm);
+		if (eventId) dati.set('eventId', eventId);
+
+		const richiesta = ++ultimaAnteprima;
+		controlloInCorso = true;
+		try {
+			const risposta = await fetch('/api/conflicts/preview', { method: 'POST', body: dati });
+			// Una risposta sorpassata da una più recente si butta: senza questo
+			// controllo, la lenta che arriva per ultima sovrascriverebbe la
+			// veloce che è arrivata prima.
+			if (richiesta !== ultimaAnteprima) return;
+
+			if (!risposta.ok) {
+				conflitti = [];
+				incompleto = 'Il controllo dei conflitti non ha risposto. Riprova fra un momento.';
+				return;
+			}
+
+			const esito = await risposta.json();
+			conflitti = (esito.conflitti ?? []).sort(
+				(a: AnteprimaConflitto, b: AnteprimaConflitto) =>
+					ORDINE_SEVERITA[a.severity] - ORDINE_SEVERITA[b.severity]
+			);
+			incompleto = esito.incompleto ?? null;
+			controlloFatto = true;
+		} catch {
+			if (richiesta !== ultimaAnteprima) return;
+			// Degradazione elegante: il motore conflitti è un avviso, non un
+			// prerequisito del salvataggio (ADR-0009).
+			conflitti = [];
+			incompleto =
+				'Il controllo dei conflitti non è raggiungibile. Il salvataggio funziona lo stesso.';
+		} finally {
+			if (richiesta === ultimaAnteprima) controlloInCorso = false;
+		}
+	}
+
+	/**
+	 * Solo i campi che entrano davvero nelle quattro regole fanno ripartire il
+	 * controllo. Il titolo, i prezzi e la locandina non cambiano nessun
+	 * conflitto, e rilanciare la richiesta a ogni tasto sarebbe un modo di
+	 * usare il geocoder senza motivo.
+	 */
+	const CAMPI_RILEVANTI = [
+		'startsAtLocal',
+		'endsAtLocal',
+		'doorsAtLocal',
+		'venueId',
+		'city',
+		'province',
+		'conflictRadiusKm',
+		'primaryGenreSlug',
+		'secondaryGenreSlugs'
+	];
+
+	function rilevante(nome: string): boolean {
+		return CAMPI_RILEVANTI.includes(nome) || /^lineup\.\d+\.isAnnounced$/.test(nome);
+	}
+
+	/** Ricontrolla fra poco, annullando la richiesta già in coda. */
+	function pianificaAnteprima() {
+		clearTimeout(timerAnteprima);
+		timerAnteprima = setTimeout(chiediAnteprima, RITARDO_MS);
+	}
+
+	function forseRicontrolla(evento: Event) {
+		const bersaglio = evento.target as HTMLElement & { name?: string };
+		if (!bersaglio?.name || !rilevante(bersaglio.name)) return;
+		pianificaAnteprima();
+	}
+
+	// Un primo controllo all'apertura: in modifica la data c'è già, e chi apre
+	// il form per cambiare qualcosa deve vedere subito com'è messa.
+	$effect(() => {
+		if (eventId) chiediAnteprima();
+		return () => clearTimeout(timerAnteprima);
+	});
 </script>
 
 {#if erroreGenerale}
 	<p class="text-destructive mb-4 text-sm" role="alert">{erroreGenerale}</p>
 {/if}
 
-<form method="POST" class="space-y-8" use:enhance>
+<!-- I due gestori stanno sul form e non sui singoli campi: la lineup si
+     costruisce mentre si compila, e agganciare a mano ogni input nuovo
+     significherebbe dimenticarsene uno. `forseRicontrolla` filtra per nome. -->
+<form
+	method="POST"
+	class="space-y-8"
+	use:enhance
+	bind:this={elementoForm}
+	oninput={forseRicontrolla}
+	onchange={forseRicontrolla}
+>
 	<!-- Dati indispensabili --------------------------------------------- -->
 	<fieldset class="border-border space-y-5 rounded-lg border p-4">
 		<legend class="px-1 text-sm font-medium">La serata</legend>
@@ -326,6 +454,50 @@
 			{/if}
 		</div>
 	</fieldset>
+
+	<!-- Conflitti ------------------------------------------------------- -->
+	<!--
+		Sta qui, subito dopo data e luogo, e non in fondo alla pagina: sono
+		questi due campi a produrre quasi tutti i conflitti, e serve saperlo
+		*prima* di compilare gli altri venticinque. Un avviso alla fine
+		arriverebbe quando la data è già stata scelta nella testa di chi scrive.
+
+		Non blocca niente e non ha caselle da spuntare per proseguire
+		(ADR-0009, ADR-0022): mostra, e propone di sentirsi.
+	-->
+	<section
+		class="border-border space-y-3 rounded-lg border border-dashed p-4"
+		aria-live="polite"
+		aria-busy={controlloInCorso}
+	>
+		<div class="flex flex-wrap items-baseline justify-between gap-2">
+			<h2 class="text-sm font-medium">Sovrapposizioni</h2>
+			{#if controlloInCorso}
+				<span class="text-muted-foreground text-xs">controllo in corso…</span>
+			{/if}
+		</div>
+
+		{#if conflitti.length}
+			{#each conflitti as c (c.chiave)}
+				<ConflictWarning conflitto={c} />
+			{/each}
+			<p class="text-muted-foreground text-xs">
+				Puoi salvare lo stesso: questi avvisi non impediscono niente. Servono a farvi sentire
+				adesso, invece che dopo l'annuncio.
+			</p>
+		{:else if controlloFatto}
+			<p class="text-sm">Nessuna sovrapposizione con le date già inserite dagli altri.</p>
+		{:else}
+			<p class="text-muted-foreground text-sm">
+				Scegli data e luogo: il controllo parte da solo e ti dice se qualcun altro ha già qualcosa
+				in quella sera.
+			</p>
+		{/if}
+
+		{#if incompleto}
+			<p class="text-muted-foreground text-xs">{incompleto}</p>
+		{/if}
+	</section>
 
 	<!-- Generi ---------------------------------------------------------- -->
 	<fieldset class="border-border space-y-5 rounded-lg border p-4">
@@ -611,6 +783,15 @@
 			hint="Cachet, accordi, promemoria. Non escono mai dalla tua organizzazione, in nessuno stato."
 		/>
 	</fieldset>
+
+	{#if conflitti.length}
+		<p class="text-sm">
+			{conflitti.length === 1
+				? 'C’è una sovrapposizione'
+				: `Ci sono ${conflitti.length} sovrapposizioni`}
+			con le date di altri, più su in questa pagina. Il salvataggio procede comunque.
+		</p>
+	{/if}
 
 	<div class="flex flex-wrap items-center gap-3">
 		<Button type="submit">{etichettaInvio}</Button>

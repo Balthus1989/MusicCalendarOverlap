@@ -34,4 +34,5 @@
 	erroreGenerale={form?.erroreGenerale ?? null}
 	etichettaInvio="Salva le modifiche"
 	annullaHref={dettaglio}
+	eventId={page.params.id}
 />

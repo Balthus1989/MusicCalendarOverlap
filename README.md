@@ -13,14 +13,28 @@ delle sovrapposizioni tra date.
 | 0 — Fondazioni          | codice completo, manca il deploy |
 | 1 — Anagrafiche         | codice completo, manca il deploy |
 | 2 — Eventi e calendario | codice completo, manca il deploy |
-| 3 — Motore conflitti    | da iniziare                      |
+| 3 — Motore conflitti    | codice completo, manca il deploy |
 | 4 — Interoperabilità    | da iniziare                      |
 | 5 — Import assistito    | da iniziare                      |
 | 6 — Rifinitura          | da iniziare                      |
 
-Fasi 0, 1 e 2 complete sul codice. Il progetto Supabase esiste, le migrazioni
-fino a `0002_fase2_eventi` sono applicate e i generi sono seminati. Resta il
-primo deploy su Cloudflare. Vedi [Setup](#setup).
+Fasi 0, 1, 2 e 3 complete sul codice. Il progetto Supabase esiste, le
+migrazioni fino a `0003_fase3_conflitti` sono applicate e i generi sono
+seminati. Resta il primo deploy su Cloudflare. Vedi [Setup](#setup).
+
+**Il criterio di fine della Fase 3 è stato verificato sui dati reali**
+(21 agosto 2026). Con i dati di `npm run db:seed:demo`, `POST
+/api/cron/recompute` ha rilevato e persistito due conflitti, ed è idempotente:
+la seconda esecuzione ne trova zero di nuovi. Uno dei due è esattamente il
+caso che [ADR-0024](docs/DECISIONS.md) protegge — una band opzionata in
+segreto da un'organizzazione e già annunciata da un'altra la stessa sera — e
+si comporta come deve: **l'organizzazione che tiene la band segreta riceve
+l'avviso col nome della band, l'altra non vede il conflitto affatto**, perché
+vederlo le direbbe chi ha ingaggiato la controparte.
+
+Resta da provare in un browser con due sessioni vere l'anteprima live nel form
+e le azioni della dashboard: come per le Fasi 0 e 1, il collo di bottiglia è
+la posta, non il codice.
 
 **Il criterio di fine della Fase 2 è stato verificato nell'applicazione in
 esecuzione** (21 agosto 2026), non solo dai test: con i dati di
@@ -77,8 +91,17 @@ se non è già presente nella query string.
 npm run db:migrate
 ```
 
-Le migrazioni usano `DIRECT_DATABASE_URL` (porta 5432), mai il pooler, e girano
-da locale o da CI — mai a runtime.
+Le migrazioni usano `DIRECT_DATABASE_URL` (porta 5432), mai il pooler in
+transaction mode, e girano da locale o da CI — mai a runtime.
+
+> **Attenzione all'host.** Supabase offre due stringhe sulla 5432: la
+> connessione diretta `db.<ref>.supabase.co` e il **pooler in session mode**
+> `aws-<n>-<region>.pooler.supabase.com`. La prima oggi risponde **solo su
+> IPv6**, e da una rete senza IPv6 `drizzle-kit migrate` resta appeso su
+> `applying migrations...` finché non lo si interrompe, senza mai stampare un
+> errore di rete. Usa la seconda: è la forma già scritta in `.env.example`, ha
+> lo stesso comportamento per le migrazioni, e la 5432 basta a distinguerla
+> dalla 6543 del transaction mode.
 
 Poi il seed della tassonomia generi, che è versionata e non si inserisce a mano
 (ADR-0007). È idempotente: si può rilanciare a ogni deploy.
@@ -207,7 +230,26 @@ permessi e fallisce con `42501`.
 ### Endpoint cron
 
 Gli endpoint sotto `/api/cron/` richiedono l'header `x-cron-secret` uguale al
-secret `CRON_SECRET`. Senza header valido rispondono `403`, sempre.
+secret `CRON_SECRET`. Senza header valido rispondono `403`, sempre. Il
+controllo sta in `cronGuard` dentro `src/hooks.server.ts` e copre l'intero
+prefisso: un endpoint nuovo sotto `/api/cron/` è protetto senza doverci
+pensare, ed è il motivo per cui i singoli handler non ricontrollano.
+
+Se `CRON_SECRET` non è configurata sul server, gli endpoint restano **chiusi**.
+L'alternativa — aprirli quando la variabile manca — trasformerebbe una
+dimenticanza di configurazione in un endpoint pubblico che riscrive mezzo
+database.
+
+`POST /api/cron/recompute` ricalcola i conflitti di tutte le date `hold` e
+`confirmed` nella finestra futura (18 mesi di default, `?mesi=N` per
+cambiarla). È idempotente: si può rilanciare a mano senza pensarci, e la
+risposta dice quanti eventi ha esaminato, quanti conflitti sono nuovi e quanti
+ne ha chiusi. Lo schedula `.github/workflows/recompute-conflicts.yml`, che ha
+bisogno dei secret `APP_URL` e `CRON_SECRET`.
+
+Il ricalcolo ordinario non passa da qui: avviene a ogni salvataggio di una
+data. Il job notturno serve a recuperare le derive, perché la riconciliazione
+è progettata per non sollevare mai e quindi può fallire in silenzio.
 
 ### Il dev server parte ma la pagina non finisce mai di caricare
 

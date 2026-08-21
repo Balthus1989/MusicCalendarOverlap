@@ -108,9 +108,13 @@ export function aLocaleInput(istante: Date | null, fuso: string = FUSO_APP): str
 /**
  * Il giorno civile di un istante, come `YYYY-MM-DD`.
  *
- * È l'equivalente in codice di `date_trunc('day', starts_at AT TIME ZONE
- * 'Europe/Rome')`: un concerto che inizia all'una di notte del 13 ottobre
- * appartiene, per chiunque lo organizzi, alla serata del 12.
+ * È l'equivalente esatto in codice di `date_trunc('day', starts_at AT TIME
+ * ZONE 'Europe/Rome')`, e come quello segue l'orologio: un concerto che
+ * comincia all'una di notte del 13 ottobre appartiene al 13, anche se per chi
+ * lo organizza è la coda della serata del 12. Non si corregge con un'ora di
+ * taglio, per quanto sarebbe più fedele al modo di ragionare di un
+ * organizzatore: il filtro SQL e le regole R2/R3 devono rispondere lo stesso
+ * giorno, e il database sa fare solo `date_trunc`.
  */
 export function giornoCivile(istante: Date, fuso: string = FUSO_APP): string {
 	const l = partiLocali(istante, fuso);
@@ -126,4 +130,27 @@ export function oraCivile(istante: Date, fuso: string = FUSO_APP): string {
 /** Fine dell'evento, esplicita o assunta a +4h. */
 export function fineEffettiva(startsAt: Date, endsAt: Date | null): Date {
 	return endsAt ?? new Date(startsAt.getTime() + DURATA_PREDEFINITA_MS);
+}
+
+/**
+ * Giorni civili di distanza fra due istanti, sempre positivo.
+ *
+ * È la misura su cui poggia la regola R2 del motore conflitti (ADR-0021), e
+ * va calcolata **fra giorni civili**, non dividendo la differenza di
+ * millisecondi per 86.400.000: le due domeniche del cambio d'ora durano 23 e
+ * 25 ore, e con la divisione un sabato e la domenica successiva
+ * risulterebbero a 0 giorni di distanza invece che a 1.
+ *
+ * Si passa dai giorni civili in `Europe/Rome` a due mezzanotti UTC, che sono
+ * distanti multipli esatti di 24 ore per costruzione.
+ */
+export function distanzaInGiorniCivili(a: Date, b: Date, fuso: string = FUSO_APP): number {
+	const aUtc = mezzanotteUtcDelGiorno(giornoCivile(a, fuso));
+	const bUtc = mezzanotteUtcDelGiorno(giornoCivile(b, fuso));
+	return Math.abs(Math.round((aUtc - bUtc) / 86400000));
+}
+
+function mezzanotteUtcDelGiorno(giorno: string): number {
+	const [anno, mese, giornoDelMese] = giorno.split('-').map(Number);
+	return Date.UTC(anno, mese - 1, giornoDelMese);
 }

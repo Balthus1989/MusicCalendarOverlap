@@ -12,6 +12,7 @@ import { and, eq, inArray, notInArray } from 'drizzle-orm';
 import type { EventInput } from '$lib/schemas/event';
 import { generiInOrdine } from '$lib/schemas/event';
 import { calcolaDiff, registraAudit } from '$lib/server/audit';
+import { riconciliaConflitti } from '$lib/server/conflicts/reconcile';
 import type { Database } from '$lib/server/db/client';
 import {
 	eventGenres,
@@ -216,6 +217,11 @@ export async function creaEvento(
 		diff: { status: [null, dati.status], title: [null, dati.title] }
 	});
 
+	// Il ricalcolo sta **fuori** dalla transazione e non solleva mai: un
+	// motore conflitti che non risponde non deve far perdere la data appena
+	// inserita (ARCHITECTURE.md §6.4, e il cron notturno recupera).
+	await riconciliaConflitti(db, id);
+
 	return id;
 }
 
@@ -265,6 +271,11 @@ export async function aggiornaEvento(
 			diff
 		});
 	}
+
+	// Sempre, non solo quando `diff` è valorizzato: il ricalcolo dipende anche
+	// da lineup, generi e raggio, che in `diff` non compaiono perché al
+	// registro di audit non servono.
+	await riconciliaConflitti(db, id);
 }
 
 /** Cambia solo lo stato. La transizione è già stata validata da `status.ts`. */
@@ -293,6 +304,11 @@ export async function cambiaStato(
 		action: 'status_change',
 		diff: { status: [da, a] }
 	});
+
+	// È il cambio che sposta di più: entrando in `hold` o `confirmed` una data
+	// comincia a contendersi il pubblico, uscendone smette. Vedi
+	// `partecipaAiConflitti`.
+	await riconciliaConflitti(db, id);
 }
 
 /** Cancellazione vera. Lineup, generi e link se ne vanno in cascata. */

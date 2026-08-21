@@ -466,6 +466,96 @@ export const eventLinks = pgTable(
 ).enableRLS();
 
 /* ------------------------------------------------------------------ *
+ * §4.5 Conflitti
+ * ------------------------------------------------------------------ */
+
+/** Le quattro regole di ARCHITECTURE.md §6.2. */
+export const conflictKind = pgEnum('conflict_kind', [
+	'venue_clash',
+	'artist_overlap',
+	'geo_genre_overlap',
+	'same_day_proximity'
+]);
+
+export const conflictSeverity = pgEnum('conflict_severity', ['low', 'medium', 'high']);
+
+/**
+ * `open` è appena rilevato, `acknowledged` è "l'abbiamo visto", `resolved` è
+ * "non c'è più" (per scelta di qualcuno o perché una delle due date è
+ * cambiata), `dismissed` è "lo sappiamo e va bene così".
+ */
+export const conflictStatus = pgEnum('conflict_status', [
+	'open',
+	'acknowledged',
+	'resolved',
+	'dismissed'
+]);
+
+/**
+ * I conflitti sono **persistiti**, non ricalcolati a ogni vista (ADR-0009).
+ *
+ * Il motivo non è la prestazione: è che senza storico l'avviso riapparirebbe
+ * in eterno anche dopo che i due organizzatori si sono già telefonati e hanno
+ * deciso che va bene così. `acknowledged_by_a/b` e `resolution_note` sono il
+ * posto dove si legge che quella conversazione è avvenuta.
+ *
+ * La coppia è ordinata (`event_a_id < event_b_id`, con un CHECK) perché una
+ * sovrapposizione fra due date non ha un verso: senza l'ordinamento la stessa
+ * situazione entrerebbe due volte, e l'indice unico non servirebbe a niente.
+ */
+export const conflicts = pgTable(
+	'conflicts',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		eventAId: uuid('event_a_id')
+			.notNull()
+			.references(() => events.id, { onDelete: 'cascade' }),
+		eventBId: uuid('event_b_id')
+			.notNull()
+			.references(() => events.id, { onDelete: 'cascade' }),
+		kind: conflictKind('kind').notNull(),
+		severity: conflictSeverity('severity').notNull(),
+		distanceKm: numeric('distance_km', { precision: 6, scale: 1 }),
+		/** 0.00–1.00, come lo calcola `genre-affinity.ts`. */
+		genreAffinity: numeric('genre_affinity', { precision: 3, scale: 2 }),
+		/** Giorni civili in `Europe/Rome`, mai millisecondi divisi (ADR-0021). */
+		daysApart: integer('days_apart'),
+		/**
+		 * Artisti condivisi, generi che hanno prodotto l'affinità, minuti di
+		 * sovrapposizione. **Contiene dati che non tutti possono vedere**: per
+		 * la regola R2 registra anche quali voci di lineup erano annunciate su
+		 * ciascun lato, ed è `serializeConflict` a decidere cosa esce
+		 * (ADR-0024). Non va mai restituito grezzo.
+		 */
+		details: jsonb('details'),
+		status: conflictStatus('status').notNull().default('open'),
+		acknowledgedByA: boolean('acknowledged_by_a').notNull().default(false),
+		acknowledgedByB: boolean('acknowledged_by_b').notNull().default(false),
+		resolutionNote: text('resolution_note'),
+		/**
+		 * `NULL` distingue la risoluzione automatica — il conflitto è sparito
+		 * perché una data è cambiata — da quella scritta da una persona. Serve
+		 * al ricalcolo: il primo caso si riapre se il conflitto ritorna, il
+		 * secondo no.
+		 */
+		resolvedBy: uuid('resolved_by').references(() => profiles.id, { onDelete: 'set null' }),
+		computedAt: timestamp('computed_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [
+		// L'ordinamento della coppia è un invariante del dato, non una
+		// convenzione del codice: qui il database lo fa rispettare.
+		check('conflicts_coppia_ordinata', sql`${t.eventAId} < ${t.eventBId}`),
+		unique('conflicts_coppia_kind_key').on(t.eventAId, t.eventBId, t.kind),
+		index('conflicts_event_a_idx').on(t.eventAId),
+		index('conflicts_event_b_idx').on(t.eventBId),
+		// La dashboard chiede sempre "cosa è aperto, dal più grave": è la sola
+		// query che gira su questa tabella con una certa frequenza.
+		index('conflicts_status_idx').on(t.status, t.severity)
+	]
+).enableRLS();
+
+/* ------------------------------------------------------------------ *
  * §4.6 Supporto
  * ------------------------------------------------------------------ */
 
@@ -577,6 +667,23 @@ export const eventLinksRelations = relations(eventLinks, ({ one }) => ({
 	event: one(events, { fields: [eventLinks.eventId], references: [events.id] })
 }));
 
+/**
+ * Le due relazioni hanno nomi diversi perché puntano alla stessa tabella:
+ * senza, Drizzle non saprebbe quale delle due foreign key seguire.
+ */
+export const conflictsRelations = relations(conflicts, ({ one }) => ({
+	eventA: one(events, {
+		fields: [conflicts.eventAId],
+		references: [events.id],
+		relationName: 'conflitto_evento_a'
+	}),
+	eventB: one(events, {
+		fields: [conflicts.eventBId],
+		references: [events.id],
+		relationName: 'conflitto_evento_b'
+	})
+}));
+
 /* ------------------------------------------------------------------ *
  * Tipi
  * ------------------------------------------------------------------ */
@@ -603,4 +710,9 @@ export type EventGenre = typeof eventGenres.$inferSelect;
 export type EventLineupRow = typeof eventLineup.$inferSelect;
 export type NewEventLineupRow = typeof eventLineup.$inferInsert;
 export type EventLink = typeof eventLinks.$inferSelect;
+export type Conflict = typeof conflicts.$inferSelect;
+export type NewConflict = typeof conflicts.$inferInsert;
+export type ConflictKind = (typeof conflictKind.enumValues)[number];
+export type ConflictSeverity = (typeof conflictSeverity.enumValues)[number];
+export type ConflictStatus = (typeof conflictStatus.enumValues)[number];
 export type AuditLogRow = typeof auditLog.$inferSelect;

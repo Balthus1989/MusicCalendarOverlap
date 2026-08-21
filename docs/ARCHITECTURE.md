@@ -255,7 +255,11 @@ Vincolo CHECK: `artist_id IS NOT NULL OR artist_name_raw IS NOT NULL`.
 | `resolved_by`                            | uuid FK, nullable        |                                                                            |
 | `computed_at`, `updated_at`              | timestamptz              |                                                                            |
 
-UNIQUE `(event_a_id, event_b_id, kind)`. I conflitti sono **persistiti** (non solo calcolati a volo) perché servono per notifiche, dashboard e per ricordare che due organizzatori si sono già parlati.
+UNIQUE `(event_a_id, event_b_id, kind)`, più un CHECK `event_a_id < event_b_id`: la coppia è ordinata perché una sovrapposizione fra due date non ha un verso, e senza ordinamento la stessa situazione entrerebbe due volte. I conflitti sono **persistiti** (non solo calcolati a volo) perché servono per notifiche, dashboard e per ricordare che due organizzatori si sono già parlati.
+
+> **Precisazione (2026-08-21).** `resolved_by` a `NULL` su un conflitto `resolved` significa "chiuso dal ricalcolo perché le condizioni non ci sono più"; valorizzato significa "chiuso da una persona, con la sua nota". La differenza conta al ricalcolo successivo: il primo si riapre se il conflitto ritorna, il secondo no. Vedi §6.4.
+>
+> `details` **non è un campo di presentazione**: per la regola R2 registra quali band erano annunciate su ciascun lato, ed è ciò su cui `redigiConflitto()` decide chi può sapere cosa. Non va mai restituito grezzo, esattamente come una riga `events` ([ADR-0024](DECISIONS.md)).
 
 ### 4.6 Supporto
 
@@ -361,7 +365,11 @@ Almeno un `artist_id` in comune, entro **±7 giorni civili** e distanza ≤ 200 
 | 3–5                | `medium` | il pubblico è in larga parte lo stesso, ma qualcuno viene a entrambe      |
 | 6–7                | `low`    | informativo                                                               |
 | oltre 7            | —        | nessun conflitto                                                          |
- Considera solo lineup con `is_announced = true` oppure appartenenti alla propria organizzazione — altrimenti si rivelerebbe indirettamente una lineup segreta. **Attenzione: questa è la regola dove è più facile creare un leak di informazione.** Il messaggio all'utente deve dire _"un altro organizzatore ha già una data con una band della tua lineup"_ senza specificare quale band, se quell'evento è in `hold`.
+**Attenzione: questa è la regola dove è più facile creare un leak di informazione.**
+
+> **Modifica (2026-08-21, implementando il motore).** La stesura originale diceva di considerare «solo lineup con `is_announced = true` oppure appartenenti alla propria organizzazione». Quel filtro non è simmetrico — salvando una delle due date il conflitto compare, salvando l'altra sparisce — e non chiude comunque il varco, perché ricevere un conflitto "su una band in comune" basta a dedurne il nome quando si conosce la propria lineup. **Il confronto usa le lineup intere e la protezione sta tutta in uscita**, in `redigiConflitto()`: la band si nomina solo se la controparte l'ha annunciata, e se non se ne può nominare nessuna il conflitto a quel lato non si mostra affatto. Non si espone nemmeno il *numero* di band condivise. Vedi [ADR-0024](DECISIONS.md).
+
+Lo stesso giorno (`days_apart = 0`) va raccontato con parole diverse dagli altri casi: non è concorrenza, è un doppio ingaggio o una data digitata male ([ADR-0021](DECISIONS.md)).
 
 **R3 — `geo_genre_overlap`** (severity `medium` o `high`)
 Stesso giorno civile (`Europe/Rome`), distanza ≤ raggio effettivo, affinità di genere ≥ 0.4.
@@ -393,11 +401,26 @@ Su ogni salvataggio di evento (o cambio di stato/data/luogo/lineup/generi):
 3. Genera notifiche per **entrambe** le organizzazioni coinvolte sui conflitti nuovi con severity ≥ `medium`.
 4. Un job notturno (GitHub Actions) ricalcola tutta la finestra futura, per recuperare eventuali derive.
 
+Precisazioni emerse implementandola (2026-08-21):
+
+- **Solo `hold` e `confirmed` entrano nel motore**, da entrambi i lati. Una data che esce da quegli stati vede i propri conflitti aperti chiudersi con la nota automatica. Vedi [ADR-0025](DECISIONS.md).
+- Un conflitto che **ritorna** si riapre solo se era stato chiuso dal ricalcolo (`resolved_by IS NULL`). Se lo aveva chiuso una persona, resta chiuso: quella persona sapeva qualcosa che il motore non sa.
+- "Nuovo", ai fini del punto 3, significa mai visto oppure riaperto. Un conflitto già `acknowledged` o `dismissed` non rilancia notifiche: quei due si sono già parlati, e ripresentarglielo è il modo di far ignorare anche gli avvisi veri ([ADR-0021](DECISIONS.md)).
+- La riconciliazione **non solleva mai**: un motore che non risponde non deve far perdere all'utente la data appena inserita. È la stessa scelta del registro di audit, e il job notturno rimedia.
+- Il punto 3 in Fase 3 si ferma al calcolo: `daNotificare()` restituisce l'elenco, i canali di consegna arrivano in Fase 6 (§10).
+
 ### 6.5 Preview live nel form
 
 `POST /api/conflicts/preview` riceve la bozza del form (non ancora salvata), esegue lo stesso motore in sola lettura, restituisce l'elenco dei conflitti. Chiamata con debounce di 600 ms sui campi rilevanti (data, città/venue, generi, lineup).
 
-**Il warning non blocca mai il salvataggio.** Mostra: severity, controparte, distanza, giorno, e un pulsante di contatto diretto. L'obiettivo è la telefonata, non il divieto.
+**Il warning non blocca mai il salvataggio.** Mostra: severity, controparte, distanza, giorno, e un pulsante di contatto diretto. L'obiettivo è la telefonata, non il divieto. Vale anche al momento della conferma: nessun cancello, ma l'avviso dev'essere impossibile da non vedere ([ADR-0022](DECISIONS.md)).
+
+> **Precisazioni (2026-08-21).**
+>
+> - L'endpoint riceve **lo stesso `FormData` del form evento**, non un JSON costruito a parte, e lo legge con le stesse funzioni del salvataggio (`formValues`, `righeIndicizzate`). Due lettori diversi dello stesso form divergono, e il primo conflitto che l'anteprima manca insegna a non fidarsene più.
+> - Lo schema di validazione è deliberatamente più permissivo di `eventSchema`: un form incompleto è la condizione normale mentre si compila, non un errore. Manca la data → si risponde 200 spiegando che non si è potuto controllare.
+> - L'anteprima gira per **qualunque** stato, bozza compresa, mentre la riconciliazione persistita ignora le bozze ([ADR-0025](DECISIONS.md)): una legge, l'altra scrive.
+> - La redazione è la stessa della dashboard (`redigiConflitto`), così l'avviso mostrato mentre si compila è per costruzione quello che poi arriverà in dashboard.
 
 ---
 
@@ -563,8 +586,10 @@ src/
   lib/
     server/
       db/            schema.ts, migrations/, seeds/, client.ts
-      conflicts/     engine.ts, rules.ts, genre-affinity.ts, geo.ts, reconcile.ts
-      visibility.ts
+      conflicts/     engine.ts, rules.ts, genre-affinity.ts, geo.ts,
+                     reconcile.ts, preview.ts, queries.ts, actions.ts
+      visibility.ts  serializeEvent + serializeConflict/redigiConflitto
+      cron.ts        segreto condiviso dei job periodici
       ics/
       parse/
       geocode/
@@ -610,7 +635,11 @@ PUBLIC_APP_URL
 
 - `genre-affinity`: tabella di casi attesi, inclusi quelli di §6.3
 - `conflicts/rules`: una suite per regola, con casi limite — mezzanotte, eventi a cavallo di due giorni, `ends_at` nullo, raggi asimmetrici tra le due organizzazioni, DST
+- `conflicts/engine`: ordinamento della coppia, stessa organizzazione esclusa, più regole sulla stessa coppia
 - `visibility`: una asserzione per cella della matrice §5, più il caso specifico "R2 non deve rivelare quale band"
+- `conflict-visibility`: la redazione in uscita di §6.2 — chi vede quale conflitto e con quali nomi ([ADR-0024](DECISIONS.md)). Il caso obbligatorio è "band annunciata solo da me": il conflitto non deve comparire affatto, perché togliere il nome non basta
+- `conflict-messages`: i testi degli avvisi. Lo stesso giorno con la stessa band si racconta con parole diverse dagli altri casi, e nessun testo dà ordini ([ADR-0021](DECISIONS.md), [ADR-0022](DECISIONS.md))
+- `time`: la distanza in giorni civili attraverso i due cambi d'ora, dove la divisione dei millisecondi sbaglierebbe
 - `ics`: snapshot dell'output, validazione con un parser ICS
 - `geo/haversine`: distanze note
 
@@ -629,10 +658,12 @@ PUBLIC_APP_URL
 
 ---
 
-## 17. Punti aperti da decidere prima della Fase 2
+## 17. Punti aperti (stato al 21 agosto 2026)
 
-1. **Raggio di default** di 60 km: è il valore giusto per l'area geografica reale del gruppo? Va tarato su come ragionano davvero gli organizzatori.
-2. **Finestra artisti** di ±14 giorni per R2: dipende dalle clausole di esclusiva tipiche nei loro contratti di booking.
-3. La lineup in `hold` è **completamente** invisibile ad altre organizzazioni: sufficiente a farli fidare, o serve anche poter marcare un intero evento come "non mostrare nemmeno la data"? (Quest'ultima opzione svuoterebbe però il senso del calendario.)
-4. Serve un ruolo di **moderatore** che possa correggere anagrafiche band e venue di tutti?
+1. ~~**Raggio di default** di 60 km~~ — chiuso: confermato, [ADR-0021](DECISIONS.md).
+2. ~~**Finestra artisti** di ±14 giorni per R2~~ — chiuso: scesa a ±7 giorni civili con severity graduata, [ADR-0021](DECISIONS.md).
+3. ~~La lineup in `hold` è **completamente** invisibile ad altre organizzazioni: sufficiente a farli fidare?~~ — chiuso **per assunzione, non verificato**: [ADR-0023](DECISIONS.md). Il segnale che la smentirebbe si legge da `audit_log` (§1).
+4. ~~Serve un ruolo di **moderatore**?~~ — chiuso: sì, [ADR-0016](DECISIONS.md).
 5. Verificare, in Fase 5, lo stato attuale delle API Meta: la conclusione di §9 è solida ma va riconfermata al momento dell'implementazione.
+
+Restano aperte, fuori da questo elenco perché non hanno una scadenza di fase: il titolare del trattamento dei dati (§16, prima del lancio) e il canale Telegram come sink di notifica (Fase 6). Sono tracciate in `DECISIONS.md`.
