@@ -447,6 +447,51 @@ Il vincolo di distanza ≤ 200 km resta invariato e continua a fare da soglia: l
 
 ---
 
+## ADR-0022 — Una data si conferma anche con un conflitto aperto
+
+**Data:** 2026-08-21 · **Stato:** Accettata
+
+**Contesto.** ADR-0009 stabilisce che un avviso di conflitto non blocca mai il **salvataggio**. Non diceva però niente sul passaggio a `confirmed` di una data che ha un conflitto ancora `open`, ed è un punto diverso: confermare significa annunciare, cioè rendere definitivo proprio lo scontro che l'avviso segnalava. La macchina a stati ha già un punto in cui qualcosa viene bloccato (`motiviCheImpediscono`, che pretende un locale per confermare), quindi il gancio per aggiungere un cancello esisteva già ed era comodo.
+
+**Decisione.** Nessun cancello. Un conflitto aperto **non** impedisce di passare a `confirmed`, e nemmeno richiede di prenderne atto prima. Lo strumento segnala, i due organizzatori si parlano, e se scelgono di confermare entrambi le rispettive date è una loro decisione — comprese le conseguenze.
+
+**Motivazioni.** È la stessa ragione di ADR-0009, applicata al momento in cui la tentazione di intervenire è più forte. Il calendario mette in contatto due pari: non ha titolo per decidere quale delle due serate ha diritto a quella data, e non ha modo di sapere se si sono già parlati e hanno concluso che va bene così. Due date dello stesso genere a quaranta chilometri possono coesistere benissimo se i pubblici sono diversi, e chi lo sa sono loro, non il software.
+
+Anche un cancello morbido — "spunta questa casella per confermare lo stesso" — sposterebbe il messaggio da *"guarda che c'è questo"* a *"ti autorizzo a procedere"*. È una postura che questo prodotto non deve avere: il primo organizzatore che si sente messo sotto tutela smette di caricare le date in anticipo, e a quel punto il calendario non serve più a niente.
+
+**Alternative scartate.**
+
+- _Richiedere un acknowledge prima di confermare_: sembra innocuo, ma introduce un passaggio obbligato per un problema che nella gran parte dei casi è già stato risolto al telefono.
+- _Bloccare solo i conflitti `high`_: la severity dice quanto è probabile che due serate si diano fastidio, non chi ha ragione. Nemmeno un `high` autorizza il software a decidere.
+
+**Conseguenze.**
+
+- `motiviCheImpediscono` resta l'unico punto che blocca qualcosa, e continua a occuparsi solo di dati mancanti — un locale, una città — mai di conflitti.
+- La responsabilità di una sovrapposizione confermata è degli organizzatori che non si sono contattati. Perché sia una responsabilità reale e non una scusa, l'avviso deve essere impossibile da non vedere al momento della conferma: è un requisito di interfaccia della Fase 3, non un dettaglio grafico.
+- Lo storico dei conflitti (`status`, `acknowledged_by_a/b`, `resolution_note`) resta il posto dove si legge se una conversazione c'è stata. Serve a ricostruire, non a impedire.
+
+**Da rivedere se.** Compaiono sovrapposizioni confermate che nessuno aveva notato. In quel caso il problema è che l'avviso non si vedeva abbastanza, e si interviene sull'interfaccia — non aggiungendo un blocco.
+
+---
+
+## ADR-0023 — La fiducia nello stato `hold` è assunta, non verificata
+
+**Data:** 2026-08-21 · **Stato:** Provvisoria — da confermare con i dati d'uso
+
+**Contesto.** Era la decisione #4 del registro, in scadenza con la Fase 2: *la visibilità ridotta in `hold` è sufficiente a far fidare gli organizzatori?* Il registro prescriveva di chiuderla **parlando con loro**, perché è una previsione sul comportamento di altre persone. La Fase 2 si è chiusa senza che quella conversazione avvenisse.
+
+**Decisione.** Si assume di sì, e si procede. La Fase 3 viene costruita dando per buono che gli organizzatori carichino le date non ancora annunciate.
+
+**Motivazioni.** È la convinzione del manutentore, che conosce le persone coinvolte: la prospettiva di gestire un conflitto in anticipo vale più del rischio percepito di esporre una data. Aspettare la conferma empirica bloccherebbe la fase più importante del prodotto in attesa di una telefonata che può arrivare in qualunque momento, e nulla di ciò che si scrive in Fase 3 andrebbe buttato se l'assunzione si rivelasse sbagliata: cambierebbe il valore del prodotto, non il codice del motore.
+
+**Perché provvisoria.** Nessuno l'ha verificata. È l'assunzione su cui poggia l'intero prodotto — `ARCHITECTURE.md` §1 la enuncia come metrica di successo: *"gli organizzatori inseriscono le date in stato provvisorio prima di confermarle. Se lo usano solo dopo l'annuncio, il prodotto ha fallito il suo scopo"*.
+
+**Come si scopre di aver sbagliato.** Il segnale è misurabile e i dati per misurarlo esistono già, perché `audit_log` registra ogni cambio di stato: **la quota di eventi che passano da `hold` prima di arrivare a `confirmed`**, contro quelli che nascono già confermati. Se dopo qualche mese la gran parte delle date compare direttamente in `confirmed`, l'assunzione è falsa — e non serve chiederlo a nessuno, si legge dal registro.
+
+Se succede, la domanda successiva non è tecnica: è se il problema sia la fiducia nello strumento (e allora si può ridurre ancora ciò che `hold` mostra — la sola provincia invece della città, per esempio) o la fiducia fra le persone, che il software non risolve.
+
+---
+
 ## Template per nuove voci
 
 ```markdown
@@ -478,6 +523,6 @@ Non ancora decise, elencate per non perderle di vista. Vanno chiuse **parlando c
 | 1   | ~~Raggio di conflitto di default~~ **Chiusa: 60 km confermati, vedi ADR-0021.** | ~~Fase 3~~ chiusa |
 | 2   | ~~Finestra di ±14 giorni per la sovrapposizione artisti~~ **Chiusa: ±7 giorni civili con severity graduata, vedi ADR-0021.** | ~~Fase 3~~ chiusa |
 | 3   | ~~Serve un ruolo di moderatore con poteri di correzione e merge su anagrafiche artisti e venue?~~ **Chiusa: sì, vedi ADR-0016.** Resta da capire con gli organizzatori chi nominare, e se lo strumento di merge serva davvero. | ~~Fase 1~~ chiusa |
-| 4   | La visibilità ridotta in `hold` è sufficiente a far fidare gli organizzatori? Va verificata con loro prima di costruirci sopra. **Scaduta:** la Fase 2 è chiusa e la domanda è ancora aperta. Il `hold` ora si può *mostrare* a qualcuno — è il momento di farlo, invece di descriverlo | ~~Fase 2~~ **aperta** |
+| 4   | ~~La visibilità ridotta in `hold` è sufficiente a far fidare gli organizzatori?~~ **Chiusa per assunzione, non verificata: vedi ADR-0023.** Il segnale che la smentisce è misurabile da `audit_log`: la quota di date che passano da `hold` prima di `confirmed` | ~~Fase 2~~ assunta |
 | 5   | Chi è formalmente titolare del trattamento dei dati: una delle associazioni o il manutentore a titolo personale?               | Prima del lancio |
 | 6   | Canale Telegram come sink di notifica aggiuntivo, dato che la community esiste già?                                            | Fase 6           |

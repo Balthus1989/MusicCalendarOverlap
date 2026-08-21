@@ -12,6 +12,8 @@ Un gruppo di organizzatori di concerti e festival (club, associazioni culturali,
 
 **Metrica di successo:** gli organizzatori inseriscono le date in stato provvisorio _prima_ di confermarle. Se lo usano solo dopo l'annuncio, il prodotto ha fallito il suo scopo.
 
+> **Come si misura (2026-08-21).** `audit_log` registra ogni cambio di stato, quindi la metrica si legge dai dati e non da un sondaggio: è la quota di eventi che passano da `hold` prima di arrivare a `confirmed`, contro quelli che nascono già confermati. Se la seconda prevale, l'assunzione di [ADR-0023](DECISIONS.md) è sbagliata.
+
 **Contesto operativo:** meno di 20 organizzazioni nel primo anno, contesto di alta fiducia, budget minimo, un solo manutentore part-time. Ogni decisione architetturale privilegia la semplicità operativa sulla scalabilità.
 
 ---
