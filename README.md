@@ -336,14 +336,29 @@ dev server e fai **una** richiesta.
 
 ### Il browser resta in attesa e non arriva mai nessun errore
 
-Sintomo diverso dal precedente: il server risponde a `curl`, ma la scheda del
-browser gira a vuoto per sempre, senza nemmeno un messaggio di errore.
+Sintomo: la scheda del browser gira a vuoto per sempre, senza nemmeno un
+messaggio di errore. Su Windows un pacchetto verso una porta loopback senza
+listener viene **scartato invece che rifiutato**, e senza un rifiuto non c'è
+errore da mostrare: il browser aspetta all'infinito.
 
-Causa: su questa macchina `localhost` risolve in `::1`, e Vite di default si
-lega **solo** a quello. Un browser che punta a `127.0.0.1` non trova nessuno in
-ascolto — e su Windows il pacchetto verso una porta loopback IPv4 senza
-listener viene **scartato invece che rifiutato**. Senza un rifiuto non c'è
-errore da mostrare, e il browser aspetta all'infinito.
+**Controlla per prima cosa che ci sia qualcosa in ascolto.** È la causa più
+banale e la più facile da non sospettare, perché non produce nessun segnale:
+
+```bash
+netstat -ano | findstr :5173
+```
+
+Nessuna riga vuol dire che il dev server non è in esecuzione, o gira su
+un'altra porta perché la 5173 era occupata quando è partito — Vite in quel caso
+ripiega sulla 5174 e lo scrive solo nella riga `Local:` del suo avvio. Capita
+soprattutto **dopo un magic link**: `PUBLIC_APP_URL` fissa `localhost:5173`
+nell'email, quindi il link punta lì anche se il server nel frattempo è morto o
+si è spostato. Il login non c'entra: è la porta a essere muta.
+
+Se invece una riga c'è, il problema è un altro: su questa macchina `localhost`
+risolve in `::1`, e Vite senza configurazione si lega **solo** a quello. Un
+browser che punta a `127.0.0.1` ricade allora nel caso di sopra — nessun
+listener a quell'indirizzo, nessun rifiuto, attesa infinita.
 
 Il rimedio è già in `vite.config.ts` (`server.host: true`): il dev server
 ascolta su entrambi gli stack, quindi `localhost`, `127.0.0.1` e `[::1]`
@@ -352,15 +367,21 @@ dispositivi della rete locale — comodo per provare l'interfaccia dal telefono,
 e ininfluente sul deploy. Al primo avvio Windows può chiedere di sbloccare
 Node nel firewall: è quello.
 
-Per controllare su cosa sta ascoltando:
+Per controllare su cosa sta ascoltando, guarda l'indirizzo nelle righe
+`LISTENING` di `netstat`:
 
-```bash
-netstat -ano | findstr :5173
-```
+- `[::]` da solo va **bene**: è un socket dual-stack, e serve anche l'IPv4.
+  `localhost`, `127.0.0.1` e `[::1]` rispondono tutti e tre. È quello che
+  produce `server.host: true`, ed è la configurazione corrente.
+- `[::1]` da solo è il caso rotto: il socket è legato al solo loopback IPv6, e
+  chi arriva da `127.0.0.1` non trova nessuno. Il dev server sta girando con
+  una configurazione vecchia: fermalo e riavvialo.
 
-Devono comparire **due** righe in `LISTENING`, una su `0.0.0.0` e una su
-`[::]`. Se ne vedi una sola su `[::1]`, il dev server sta girando con una
-configurazione vecchia: fermalo e riavvialo.
+> **Correzione (2026-08-22).** Questa voce diceva che dovevano comparire _due_
+> righe, una su `0.0.0.0` e una su `[::]`. Non è vero su Windows con Node: il
+> socket dual-stack ne mostra una sola. Chi seguiva l'istruzione alla lettera
+> concludeva che la configurazione fosse vecchia e riavviava senza motivo,
+> mentre il problema era altrove — quasi sempre nessun listener affatto.
 
 ## Convenzioni di codice
 
