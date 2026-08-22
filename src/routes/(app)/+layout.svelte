@@ -9,10 +9,11 @@
 	 * Solo le rotte che esistono davvero: `resolve()` è tipizzato sui path
 	 * generati da SvelteKit, quindi un link a una rotta non ancora costruita
 	 * fallisce il typecheck invece di diventare un 404 silenzioso.
-	 * La voce Conflitti porta un pallino quando c'è qualcosa da trattare: un
-	 * numero sarebbe una promessa più precisa di quanto il conteggio possa
-	 * mantenere, perché si conta prima della redazione (vedi
-	 * `haConflittiDaTrattare`).
+	 * La voce Conflitti non porta nessun segnalino. Ne aveva uno, alimentato da
+	 * una query nel layout: girava su **ogni** pagina autenticata, ed è la
+	 * query che si è vista restare bloccata su `wait_event = ClientRead`
+	 * occupando l'unica connessione del pool. Un pallino non vale il percorso
+	 * critico di tutta l'applicazione.
 	 */
 	const links = [
 		{ path: '/calendar', label: 'Calendario' },
@@ -43,13 +44,6 @@
 							: 'text-muted-foreground hover:text-foreground text-sm'}
 					>
 						{link.label}
-						{#if link.path === '/conflicts' && data.conflittiDaTrattare}
-							<span
-								class="bg-destructive/70 ml-0.5 inline-block size-1.5 rounded-full align-middle"
-								aria-hidden="true"
-							></span>
-							<span class="sr-only">(ci sono conflitti da trattare)</span>
-						{/if}
 					</a>
 				{/each}
 

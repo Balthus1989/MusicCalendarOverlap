@@ -1,7 +1,6 @@
 import { error, redirect } from '@sveltejs/kit';
 import { inArray } from 'drizzle-orm';
 import { canModerateCatalog } from '$lib/server/auth/permissions';
-import { haConflittiDaTrattare } from '$lib/server/conflicts/queries';
 import { getDb } from '$lib/server/db/client';
 import { organizations } from '$lib/server/db/schema';
 import type { LayoutServerLoad } from './$types';
@@ -56,10 +55,6 @@ export const load: LayoutServerLoad = async ({ locals, route }) => {
 			isPlatformAdmin: profile.isPlatformAdmin
 		},
 		organizations: orgs.map((o) => ({ ...o, role: viewer.roles[o.id] })),
-		puoModerare: canModerateCatalog(viewer),
-		// Un booleano e non un conteggio: la query gira su ogni pagina, e per
-		// contare *quelli che si vedono davvero* servirebbe caricare le due
-		// date di ogni conflitto e passarle dal serializzatore.
-		conflittiDaTrattare: await haConflittiDaTrattare(db, viewer)
+		puoModerare: canModerateCatalog(viewer)
 	};
 };

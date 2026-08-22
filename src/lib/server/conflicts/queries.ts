@@ -31,16 +31,29 @@ export const STATI_ARCHIVIATI: readonly ConflictStatus[] = ['resolved', 'dismiss
  *
  * La sottoquery sugli eventi evita di far viaggiare in memoria l'elenco degli
  * id di tutte le date proprie solo per rimetterlo dentro un `IN`.
+ *
+ * **La sottoquery si costruisce due volte, e non è uno spreco.** Passando lo
+ * *stesso* costruttore a entrambi gli `inArray`, la query prodotta arriva a
+ * Postgres con una sequenza di parametri che non corrisponde al testo: il
+ * server la analizza, si mette in attesa del resto del dialogo e non lo riceve
+ * mai. Dal lato database si vede una sessione `active` ferma su
+ * `wait_event = ClientRead`, che con `max: 1` blocca la sola connessione
+ * disponibile e fa morire in coda, dopo il `statement_timeout`, la prima query
+ * innocente che capita — di solito quella su `profiles` in `ensureProfile`.
+ *
+ * Due costruttori distinti producono due sottoquery indipendenti e il dialogo
+ * resta allineato. Costa una manciata di oggetti in memoria.
  */
 function filtroDiAppartenenza(viewer: ViewerContext, db: Database): SQL | undefined {
 	if (!viewer.organizationIds.length) return undefined;
 
-	const mieiEventi = db
-		.select({ id: events.id })
-		.from(events)
-		.where(inArray(events.organizationId, viewer.organizationIds));
+	const mieiEventi = () =>
+		db
+			.select({ id: events.id })
+			.from(events)
+			.where(inArray(events.organizationId, viewer.organizationIds));
 
-	return or(inArray(conflicts.eventAId, mieiEventi), inArray(conflicts.eventBId, mieiEventi));
+	return or(inArray(conflicts.eventAId, mieiEventi()), inArray(conflicts.eventBId, mieiEventi()));
 }
 
 const CON_LE_DUE_DATE = {
