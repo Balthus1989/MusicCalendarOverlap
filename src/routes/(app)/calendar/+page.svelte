@@ -226,12 +226,61 @@
 </p>
 
 <style>
-	/* FullCalendar porta il proprio CSS via JS. Qui si allinea solo ciò che
-	   deve parlare la lingua del resto dell'interfaccia. */
+	/* FullCalendar porta il proprio CSS via JS, con una tavolozza chiara
+	   cablata nei valori predefiniti: `--fc-page-bg-color` è `#fff`,
+	   `--fc-neutral-bg-color` un grigio chiaro, i pulsanti un blu scuro.
+	   Il testo invece eredita il colore del resto della pagina.
+
+	   In tema scuro le due cose si scontrano: l'intestazione delle colonne sta
+	   in una riga "appiccicata" che usa `--fc-page-bg-color`, quindi restava
+	   bianca sotto un testo bianco — illeggibile.
+
+	   Si rimappano quindi **tutte** le variabili sui token del progetto, non
+	   solo quelle che danno fastidio oggi. I token cambiano già da soli con
+	   `prefers-color-scheme`, quindi non serve un blocco separato per il tema
+	   scuro: mappate una volta, seguono il tema in entrambi i versi. */
 	.calendario :global(.fc) {
+		--fc-page-bg-color: var(--background);
+		--fc-neutral-bg-color: var(--muted);
+		--fc-neutral-text-color: var(--muted-foreground);
 		--fc-border-color: var(--border);
 		--fc-today-bg-color: color-mix(in oklab, var(--accent) 40%, transparent);
+		--fc-highlight-color: color-mix(in oklab, var(--accent) 50%, transparent);
+		--fc-non-business-color: color-mix(in oklab, var(--muted) 50%, transparent);
+		--fc-now-indicator-color: var(--destructive);
+
+		--fc-button-bg-color: var(--secondary);
+		--fc-button-border-color: var(--border);
+		--fc-button-text-color: var(--secondary-foreground);
+		--fc-button-hover-bg-color: var(--accent);
+		--fc-button-hover-border-color: var(--border);
+		--fc-button-active-bg-color: var(--accent);
+		--fc-button-active-border-color: var(--border);
+
+		--fc-event-bg-color: var(--primary);
+		--fc-event-border-color: var(--primary);
+		--fc-event-text-color: var(--primary-foreground);
+		--fc-more-link-bg-color: var(--muted);
+		--fc-more-link-text-color: var(--muted-foreground);
+		--fc-list-event-hover-bg-color: var(--muted);
+
+		color: var(--foreground);
 		font-size: 0.875rem;
+	}
+
+	/* Le intestazioni di colonna e di giorno sono ancore: senza questo
+	   ereditano il colore dei link del browser, che sul fondo scuro è quasi
+	   invisibile quanto il bianco su bianco di prima. */
+	.calendario :global(.fc-col-header-cell-cushion),
+	.calendario :global(.fc-daygrid-day-number),
+	.calendario :global(.fc-list-day-text),
+	.calendario :global(.fc-list-day-side-text) {
+		color: var(--foreground);
+		text-decoration: none;
+	}
+
+	.calendario :global(.fc-col-header-cell) {
+		font-weight: 600;
 	}
 
 	.calendario :global(.fc-event) {
