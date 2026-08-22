@@ -296,14 +296,25 @@
 	}
 
 	/* Lo stato si legge dal bordo e dal tratteggio, non dal solo colore:
-	   il colore da solo esclude chi non lo distingue. */
+	   il colore da solo esclude chi non lo distingue.
+
+	   Queste due voci hanno sfondo trasparente, quindi il testo poggia sulla
+	   cella e va tinto di conseguenza. Non basta però `color` sull'elemento
+	   esterno: gli eventi resi a blocco — le date opzionate altrui, che sono
+	   "tutto il giorno" perché l'orario non si vede — contengono un
+	   `.fc-event-main` che FullCalendar dipinge con `--fc-event-text-color`,
+	   pensato per il testo *sopra* uno sfondo pieno. Quel valore vince sul
+	   `color` ereditato. Si riscrive quindi la variabile sull'evento stesso,
+	   così scende anche nell'elemento interno. */
 	.calendario :global(.evento--hold) {
+		--fc-event-text-color: var(--muted-foreground);
 		background: transparent;
 		border: 1px dashed currentColor;
 		color: var(--muted-foreground);
 	}
 
 	.calendario :global(.evento--draft) {
+		--fc-event-text-color: var(--muted-foreground);
 		background: transparent;
 		border: 1px dotted currentColor;
 		color: var(--muted-foreground);
