@@ -29,8 +29,29 @@ export function getDb(): Database {
 		// Transaction mode del pooler: le prepared statement non sopravvivono
 		// alla transazione, vanno disattivate.
 		prepare: false,
-		// Una connessione per isolate: il pooler fa il resto.
-		max: 1,
+		/**
+		 * **Più di una connessione, e non è un'ottimizzazione: è correttezza.**
+		 *
+		 * Con `max: 1` postgres.js accoda in *pipeline* le query concorrenti
+		 * sulla stessa connessione. È lecito verso un Postgres diretto, non
+		 * verso Supavisor in transaction mode, che assegna una connessione di
+		 * servizio per transazione: il dialogo si desincronizza, la sessione
+		 * resta `active` su `wait_event = ClientRead` — Postgres ha finito e
+		 * aspetta un client che non parlerà più — e dopo il `statement_timeout`
+		 * di due minuti muore una query a caso fra quelle in coda.
+		 *
+		 * La concorrenza non è un caso raro: SvelteKit esegue in parallelo la
+		 * `load` del layout e quella della pagina, e un browser apre più
+		 * richieste insieme. Misurato: una richiesta sola a `/calendar`
+		 * rispondeva 200 in 870 ms, tre in parallelo restavano appese tutte e
+		 * tre. Con dieci connessioni, cinque richieste insieme tornano 200 in
+		 * circa 1,4 secondi.
+		 *
+		 * Dieci e non una: bastano a coprire le `load` in parallelo con
+		 * margine, e moltiplicare le connessioni client è esattamente il
+		 * lavoro per cui esiste un pooler. Vedi ADR-0026.
+		 */
+		max: 10,
 		idle_timeout: 20,
 		connect_timeout: 10
 	});

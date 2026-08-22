@@ -374,11 +374,41 @@ Come riconoscerlo in fretta: se lo stesso `select` gira in millisecondi da uno
 script `tsx` e non torna dall'applicazione, non è il database — è l'ambiente
 SSR.
 
-Attenzione anche alle misure: il pool ha **una sola connessione**
-(`max: 1` in `db/client.ts`, obbligatorio con il pooler in transaction mode).
-Una richiesta lenta accoda tutte le successive, quindi provando più volte di
-seguito si misura la propria coda invece del problema. Ferma tutto, riavvia il
-dev server e fai **una** richiesta.
+> **Correzione (2026-08-22).** Qui c'era il consiglio opposto: «il pool ha una
+> sola connessione, quindi prova **una** richiesta alla volta, altrimenti
+> misuri la tua stessa coda». Seguirlo nascondeva il guasto invece di
+> mostrarlo — il blocco si manifesta **solo** con richieste concorrenti, ed è
+> per questo che è rimasto inspiegato per mezza giornata. La causa era `max: 1`
+> col pooler in transaction mode: vedi [ADR-0026](docs/DECISIONS.md), il pool
+> ora ha dieci connessioni.
+
+### Le pagine autenticate non rispondono, poi il dev server muore
+
+Sintomo: `/calendar` resta appesa circa due minuti, poi nel terminale compare
+un `[500]` con `Failed query: select … from "profiles"` seguito da
+`PostgresError: canceling statement due to statement timeout` (`57014`), e il
+processo termina con `triggerUncaughtException`.
+
+La query su `profiles` è quasi sempre **innocente**: è solo la prima della coda
+quando la connessione è già bloccata da un'altra. Per vedere la colpevole
+bisogna guardare dal lato del database mentre il blocco è in corso:
+
+```sql
+select pid, state, wait_event_type, wait_event,
+       round(extract(epoch from now() - query_start)) as secondi,
+       left(query, 90)
+from pg_stat_activity
+where datname = current_database() and state = 'active';
+```
+
+Una sessione `active` ferma su `wait_event = ClientRead` significa che Postgres
+ha finito e sta aspettando un client che non parlerà più: è una
+desincronizzazione del protocollo, non una query lenta.
+
+La causa nota è `max: 1` col pooler in transaction mode ([ADR-0026](docs/DECISIONS.md)),
+corretta. Se il sintomo tornasse, la prova che lo isola è confrontare **una**
+richiesta con **tre in parallelo**: se la prima passa e le altre no, è di nuovo
+il pipelining sulla connessione condivisa.
 
 ### Il browser resta in attesa e non arriva mai nessun errore
 

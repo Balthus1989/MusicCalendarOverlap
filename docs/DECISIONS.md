@@ -576,6 +576,50 @@ Sulle coordinate: R2 sarebbe stata la candidata naturale a un'eccezione, perché
 
 ---
 
+## ADR-0026 — Il pool ha più di una connessione, perché il pooler non tollera il pipelining
+
+**Data:** 2026-08-22 · **Stato:** Accettata · **Modifica** `ARCHITECTURE.md` §3
+
+**Contesto.** `ARCHITECTURE.md` §3 prescrive `max: 1` sul client `postgres`, con la motivazione «una connessione per isolate: il pooler fa il resto». È il consiglio standard per gli ambienti serverless, e il runbook ci aveva perfino costruito sopra un avvertimento: «una richiesta lenta accoda tutte le successive, quindi provando più volte di seguito si misura la propria coda invece del problema».
+
+Con la Fase 3 le pagine autenticate hanno cominciato a non rispondere. Il sintomo: `/calendar` restava appesa due minuti, poi Postgres uccideva una query — quasi sempre quella su `profiles` in `ensureProfile`, che non c'entrava niente — con `57014, canceling statement due to statement timeout`, e il rifiuto non gestito terminava il processo del dev server.
+
+Le stesse query eseguite da uno script giravano in centinaia di millisecondi, il database non aveva né lock né transazioni appese, e le connessioni erano tredici su sessanta.
+
+**La misura che ha chiuso la questione.** Interrogando `pg_stat_activity` mentre l'applicazione era bloccata, la sessione colpevole risultava `state = active` con `wait_event = ClientRead`: Postgres aveva finito la sua parte e aspettava che il client gli parlasse. Non stava calcolando, stava aspettando. Poi, sullo stesso server:
+
+| Prova | Esito |
+| ----- | ----- |
+| Una richiesta a `/calendar` | 200 in 870 ms |
+| Tre richieste in parallelo | tutte e tre appese oltre 35 s |
+| Cinque in parallelo, con `max: 10` | tutte 200, circa 1,4 s |
+
+**Decisione.** `max: 10`, in sviluppo e in produzione.
+
+**Motivazioni.** Con una connessione sola, postgres.js accoda in *pipeline* le query concorrenti sulla medesima connessione. Verso un Postgres diretto è lecito. Verso Supavisor in transaction mode no: il pooler assegna una connessione di servizio **per transazione**, e messaggi di richieste diverse intrecciati sulla stessa connessione client desincronizzano il dialogo. Da lì la sessione ferma in `ClientRead` e la coda che muore per timeout.
+
+La concorrenza non è un caso di punta da cui ci si può difendere andando piano: **SvelteKit esegue in parallelo la `load` del layout e quella della pagina**, e un browser apre più richieste insieme. Ogni pagina autenticata la produce, sempre. Con `max: 1` il guasto non era eccezionale, era garantito — e passava inosservato solo finché lo si provava con una richiesta alla volta, che è precisamente l'errore di misura che il runbook consigliava di commettere.
+
+`max: 1` risolveva un problema che qui non esiste. Serve dove ogni isolate è effimero e i client sono migliaia; qui i client sono un dev server e un Worker, e moltiplicare le connessioni client su poche di servizio è il mestiere del pooler.
+
+**Alternative scartate.**
+
+- _Tenere `max: 1` e serializzare le query applicative_: impossibile: il parallelismo lo introduce SvelteKit fra `load` del layout e della pagina, non il nostro codice.
+- _Passare al pooler in session mode (5432) a runtime_: rinuncia al multiplexing proprio dove serve, cioè in produzione su Worker, e contraddice ADR-0002 senza guadagno.
+- _Un timeout lato client come rete di sicurezza_: verificato che non è disponibile — `connection: { statement_timeout }` attraverso Supavisor viene **ignorato in silenzio**: un `pg_sleep(9)` con timeout dichiarato a 5 secondi gira per intero.
+- _Alzare `max` solo in sviluppo_: il parallelismo delle `load` esiste identico in produzione. Un guasto che si manifesta solo là dove non lo si può osservare è la versione peggiore di questo stesso problema.
+
+**Conseguenze.**
+
+- `ARCHITECTURE.md` §3 è stato corretto: la riga sul driver diceva `max: 1` come vincolo.
+- La nota del runbook sulla coda («una richiesta lenta accoda tutte le successive») non vale più, e va tolta: consigliava di misurare in un modo che nascondeva proprio questo guasto.
+- Resta vero che il numero di connessioni non è gratis. Dieci per client è un tetto, non un obiettivo: `idle_timeout` le chiude quando non servono.
+- Il rifiuto non gestito che termina il processo non è stato affrontato. Con questa correzione non dovrebbe più scattare, ma è una fragilità indipendente: una query che fallisce non dovrebbe poter abbattere il server.
+
+**Da rivedere se.** Supabase segnala saturazione del pooler, o si passa a un runtime dove ogni richiesta ha il proprio isolate e le connessioni non si condividono. In quel caso la domanda giusta non è «quante connessioni» ma «postgres.js è il driver adatto a un pooler in transaction mode».
+
+---
+
 ## Template per nuove voci
 
 ```markdown
