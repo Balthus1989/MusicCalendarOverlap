@@ -95,7 +95,17 @@
 
 						{#if c.resolutionNote}
 							<p class="border-border rounded border p-2 text-xs">
-								<span class="text-muted-foreground">Nota:</span>
+								<span class="text-muted-foreground">
+									{#if c.status === 'open' || c.status === 'acknowledged'}
+										<!-- Una nota su un conflitto aperto viene per forza da una
+										     chiusura precedente: la data è rientrata in cartellone e
+										     il conflitto è tornato (ADR-0027). Dirlo evita di far
+										     leggere quella nota come se descrivesse l'oggi. -->
+										L'avevate chiuso così, ed è tornato:
+									{:else}
+										Nota:
+									{/if}
+								</span>
 								{c.resolutionNote}
 							</p>
 						{/if}

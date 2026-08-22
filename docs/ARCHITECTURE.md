@@ -404,7 +404,7 @@ Su ogni salvataggio di evento (o cambio di stato/data/luogo/lineup/generi):
 Precisazioni emerse implementandola (2026-08-21):
 
 - **Solo `hold` e `confirmed` entrano nel motore**, da entrambi i lati. Una data che esce da quegli stati vede i propri conflitti aperti chiudersi con la nota automatica. Vedi [ADR-0025](DECISIONS.md).
-- Un conflitto che **ritorna** si riapre solo se era stato chiuso dal ricalcolo (`resolved_by IS NULL`). Se lo aveva chiuso una persona, resta chiuso: quella persona sapeva qualcosa che il motore non sa.
+- Un conflitto che **ritorna** si riapre se era stato chiuso dal ricalcolo (`resolved_by IS NULL`). Se lo aveva chiuso una persona resta chiuso, **salvo quando la data rientra in cartellone** — arriva in `hold` o `confirmed` da uno stato diverso: lì la nota di risoluzione descrive una situazione che non c'è più, e confermare significa annunciare. Vedi [ADR-0027](DECISIONS.md). `dismissed` non si riapre mai.
 - "Nuovo", ai fini del punto 3, significa mai visto oppure riaperto. Un conflitto già `acknowledged` o `dismissed` non rilancia notifiche: quei due si sono già parlati, e ripresentarglielo è il modo di far ignorare anche gli avvisi veri ([ADR-0021](DECISIONS.md)).
 - La riconciliazione **non solleva mai**: un motore che non risponde non deve far perdere all'utente la data appena inserita. È la stessa scelta del registro di audit, e il job notturno rimedia.
 - Il punto 3 in Fase 3 si ferma al calcolo: `daNotificare()` restituisce l'elenco, i canali di consegna arrivano in Fase 6 (§10).

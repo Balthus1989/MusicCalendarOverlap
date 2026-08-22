@@ -620,6 +620,45 @@ La concorrenza non è un caso di punta da cui ci si può difendere andando piano
 
 ---
 
+## ADR-0027 — Una data che rientra in cartellone riapre i conflitti già risolti
+
+**Data:** 2026-08-22 · **Stato:** Accettata
+
+**Contesto.** La riconciliazione riapriva un conflitto `resolved` solo se a chiuderlo era stato il ricalcolo (`resolved_by is null`). Una chiusura scritta da una persona restava chiusa per sempre, sul principio — giusto — che quella persona sapeva qualcosa che il software non sa, e che ripresentarle un avviso già discusso è il modo migliore per farle ignorare anche quelli veri (ADR-0009, ADR-0021).
+
+Provando la Fase 3 è emerso il caso che quel principio non copre. Una data era stata chiusa con la nota «sentiti al telefono, loro spostano»; poi è stata annullata; poi rimessa in opzione sulla stessa sera. Il conflitto esisteva di nuovo, materialmente — due date opzionate, stessa sera, otto chilometri — e **non compariva da nessuna parte**: né in dashboard, che mostra solo gli aperti, né sulla pagina della data, che chiede gli stessi stati.
+
+Il che stride con ADR-0022, che in cambio del non mettere cancelli davanti alla conferma ha assunto un impegno preciso: che l'avviso sia impossibile da non vedere proprio lì.
+
+**Decisione.** Quando una data **rientra in cartellone** — arriva in `hold` o `confirmed` venendo da uno stato diverso — i conflitti che la riguardano e che risultano `resolved` tornano `open`, **anche se a chiuderli era stata una persona**.
+
+Rientrare in cartellone copre tre movimenti: una data annullata che si recupera, una bozza che viene opzionata, e un'opzione che viene confermata. Restare fermi nello stesso stato non è un rientro: salvare una modifica alla descrizione non riapre niente.
+
+Alla riapertura la nota di chi aveva chiuso **si conserva**, e l'interfaccia la presenta per quello che è — «l'avevate chiuso così, ed è tornato». Si azzerano invece `resolved_by` e le due prese d'atto: si riferivano alla situazione precedente.
+
+`dismissed` non si tocca mai. Significa «lo sappiamo e va bene così», ed è una decisione presa proprio sul conflitto che continua a esistere: riaprirla sarebbe contraddirla.
+
+**Motivazioni.** Una nota di risoluzione descrive una situazione, non una data. «Loro spostano» era vero al momento in cui è stato scritto; dopo un annullamento e una riopzione quella frase non descrive più niente di verificabile, e lasciarla a tenere chiuso un conflitto reale trasforma lo storico in un modo per farlo sparire.
+
+Il caso che conta di più è però il terzo. **Confermare significa annunciare**: è il momento in cui una sovrapposizione diventa definitiva, e in cui ADR-0022 pretende che chi conferma abbia visto l'avviso. Un conflitto chiuso settimane prima, in una situazione diversa, non può coprire quel momento.
+
+**Alternative scartate.**
+
+- _Lasciare tutto com'era e mostrare i conflitti chiusi sulla pagina della data_, in tono minore. Risolveva il requisito di interfaccia senza toccare la logica, ed era la proposta iniziale. Scartata su indicazione del manutentore: un conflitto che torna a esistere è un conflitto aperto, e chiamarlo diversamente per non disturbare è la stessa reticenza che questo prodotto evita altrove.
+- _Riaprire a ogni ricalcolo_: riporterebbe l'avviso in eterno, che è esattamente ciò che ADR-0009 vuole evitare.
+- _Riaprire quando cambia la sostanza_ (giorno, luogo, lineup) invece che allo stato: più preciso in teoria, ma «sostanza» andrebbe definita campo per campo, e il caso che ha fatto emergere il problema — una data tornata identica — non rientrerebbe.
+
+**Conseguenze.**
+
+- `riconciliaConflitti` accetta `rientroInCartellone`. Non può dedurlo: quando gira, la riga dell'evento è già aggiornata e lo stato precedente non esiste più. Lo passano `cambiaStato` e `aggiornaEvento`, che lo conoscono.
+- Il ricalcolo notturno **non** riapre niente di chiuso da una persona: non c'è nessun rientro, sta solo ricontrollando. Giusto così.
+- Un conflitto riaperto risulta nuovo anche ai fini delle notifiche di Fase 6. È voluto: se torna al momento della conferma, è quello il momento in cui serve saperlo.
+- Verificato sui dati reali rifacendo il giro che l'ha fatto emergere: `resolved` chiuso da una persona → annullamento (resta chiuso) → riopzione (`open`, prese d'atto azzerate, nota conservata).
+
+**Da rivedere se.** Gli organizzatori si trovano a richiudere sempre lo stesso conflitto a ogni cambio di stato. Vorrebbe dire che `dismissed` — «lo sappiamo e va bene così» — non è abbastanza visibile come alternativa a `resolved`, e il rimedio sarebbe sull'interfaccia, non su questa regola.
+
+---
+
 ## Template per nuove voci
 
 ```markdown

@@ -210,6 +210,19 @@ const chiaveDi = (c: { eventAId: string; eventBId: string; kind: string }) =>
 
 const testo = (v: number | null): string | null => (v === null ? null : String(v));
 
+export type OpzioniRiconciliazione = {
+	/**
+	 * La data sta **entrando** in `hold` o `confirmed` da uno stato che non
+	 * partecipava, oppure passa fra i due. In quel caso i conflitti chiusi come
+	 * `resolved` tornano aperti anche se a chiuderli era stata una persona
+	 * (ADR-0027).
+	 *
+	 * Chi chiama lo sa e lo dice: qui non si può dedurre, perché a questo punto
+	 * la riga è già stata aggiornata e lo stato precedente non c'è più.
+	 */
+	rientroInCartellone?: boolean;
+};
+
 /**
  * Ricalcola i conflitti di una data e allinea la tabella.
  *
@@ -220,7 +233,8 @@ const testo = (v: number | null): string | null => (v === null ? null : String(v
  */
 export async function riconciliaConflitti(
 	db: Database,
-	eventId: string
+	eventId: string,
+	opzioni: OpzioniRiconciliazione = {}
 ): Promise<EsitoRiconciliazione> {
 	const evento = await caricaPerConflitti(db, eventId);
 	if (!evento) return vuoto(eventId);
@@ -257,7 +271,11 @@ export async function riconciliaConflitti(
 	const nuovi = trovati.filter((c) => {
 		const prima = primaPerChiave.get(chiaveDi(c));
 		if (!prima) return true;
-		return prima.status === 'resolved' && prima.resolvedBy === null;
+		if (prima.status !== 'resolved') return false;
+		// Rientrando in cartellone torna una notizia anche ciò che aveva
+		// chiuso una persona: la sua nota parlava di una situazione che nel
+		// frattempo è cambiata due volte (ADR-0027).
+		return prima.resolvedBy === null || (opzioni.rientroInCartellone ?? false);
 	});
 
 	const adesso = new Date();
@@ -291,19 +309,56 @@ export async function riconciliaConflitti(
 							daysApart: sql`excluded.days_apart`,
 							details: sql`excluded.details`,
 							updatedAt: adesso,
-							// Un conflitto chiuso dal ricalcolo si riapre se
-							// torna: è di nuovo una notizia. Uno chiuso da una
-							// persona resta chiuso, perché quella persona
-							// sapeva qualcosa che il software non sa.
+							/**
+							 * Quando un `resolved` torna aperto (ADR-0027):
+							 *
+							 * - se l'aveva chiuso **il ricalcolo**
+							 *   (`resolved_by is null`), sempre: era sparito, è
+							 *   tornato, è di nuovo una notizia;
+							 * - se l'aveva chiuso **una persona**, solo quando
+							 *   la data rientra in cartellone. La sua nota
+							 *   descriveva una situazione che nel frattempo è
+							 *   cambiata, e il rientro è il momento in cui va
+							 *   riletta — confermare, in particolare, vuol dire
+							 *   annunciare (ADR-0022).
+							 *
+							 * `dismissed` non si tocca mai: significa «lo
+							 *  sappiamo e va bene così», ed è una decisione che
+							 *  riguarda proprio il conflitto che continua a
+							 *  esistere.
+							 */
 							status: sql`case
-								when ${conflicts.status} = 'resolved' and ${conflicts.resolvedBy} is null
+								when ${conflicts.status} = 'resolved'
+									and (${conflicts.resolvedBy} is null or ${sql.raw(String(opzioni.rientroInCartellone ?? false))})
 								then 'open'::conflict_status
 								else ${conflicts.status}
 							end`,
+							// La nota di chi ha chiuso si conserva: riaperto il
+							// conflitto, sapere come lo si era risolto la volta
+							// prima è la cosa più utile che ci sia. Si butta
+							// solo quella automatica, che non dice niente.
 							resolutionNote: sql`case
 								when ${conflicts.status} = 'resolved' and ${conflicts.resolvedBy} is null
 								then null
 								else ${conflicts.resolutionNote}
+							end`,
+							// Chi ha chiuso non è più chi lo tiene chiuso, e i
+							// «preso atto» si riferivano alla situazione
+							// precedente: entrambe le parti devono rivederlo.
+							resolvedBy: sql`case
+								when ${conflicts.status} = 'resolved' and ${sql.raw(String(opzioni.rientroInCartellone ?? false))}
+								then null
+								else ${conflicts.resolvedBy}
+							end`,
+							acknowledgedByA: sql`case
+								when ${conflicts.status} = 'resolved' and ${sql.raw(String(opzioni.rientroInCartellone ?? false))}
+								then false
+								else ${conflicts.acknowledgedByA}
+							end`,
+							acknowledgedByB: sql`case
+								when ${conflicts.status} = 'resolved' and ${sql.raw(String(opzioni.rientroInCartellone ?? false))}
+								then false
+								else ${conflicts.acknowledgedByB}
 							end`
 						}
 					})

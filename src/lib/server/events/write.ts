@@ -29,6 +29,24 @@ import { daLocaleAIstante } from '$lib/time';
 type Coordinate = { lat: number | null; lon: number | null };
 
 /**
+ * Vero quando la data **rientra in cartellone**: arriva in `hold` o
+ * `confirmed` venendo da uno stato diverso.
+ *
+ * Copre tre cose che si assomigliano: una data annullata che si recupera, una
+ * bozza che viene opzionata, e un'opzione che viene confermata. In tutti e tre
+ * i casi la situazione che due organizzatori avevano discusso e chiuso non è
+ * più quella, e il conflitto risolto torna aperto (ADR-0027). Il terzo caso è
+ * il più importante: confermare significa annunciare, ed è il momento in cui
+ * ADR-0022 pretende che l'avviso si veda.
+ *
+ * Restare fermi nello stesso stato non è un rientro: salvare una modifica alla
+ * descrizione non deve riaprire una discussione chiusa.
+ */
+function rientraInCartellone(precedente: EventStatus, nuovo: EventStatus): boolean {
+	return nuovo !== precedente && (nuovo === 'hold' || nuovo === 'confirmed');
+}
+
+/**
  * Da dove vengono le coordinate di un evento, in ordine di fiducia.
  *
  * 1. il locale, se scelto: è geocodificato e verificato da chi l'ha inserito;
@@ -275,7 +293,9 @@ export async function aggiornaEvento(
 	// Sempre, non solo quando `diff` è valorizzato: il ricalcolo dipende anche
 	// da lineup, generi e raggio, che in `diff` non compaiono perché al
 	// registro di audit non servono.
-	await riconciliaConflitti(db, id);
+	await riconciliaConflitti(db, id, {
+		rientroInCartellone: rientraInCartellone(precedente.status, colonne.status)
+	});
 }
 
 /** Cambia solo lo stato. La transizione è già stata validata da `status.ts`. */
@@ -308,7 +328,7 @@ export async function cambiaStato(
 	// È il cambio che sposta di più: entrando in `hold` o `confirmed` una data
 	// comincia a contendersi il pubblico, uscendone smette. Vedi
 	// `partecipaAiConflitti`.
-	await riconciliaConflitti(db, id);
+	await riconciliaConflitti(db, id, { rientroInCartellone: rientraInCartellone(da, a) });
 }
 
 /** Cancellazione vera. Lineup, generi e link se ne vanno in cascata. */
