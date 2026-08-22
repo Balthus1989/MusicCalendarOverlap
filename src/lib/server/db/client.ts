@@ -13,10 +13,32 @@ import * as schema from './schema';
 
 export type Database = PostgresJsDatabase<typeof schema>;
 
-let cached: Database | null = null;
+/**
+ * La cache vive su `globalThis`, non in una variabile di modulo.
+ *
+ * In sviluppo Vite valuta il grafo dei moduli SSR **più di una volta**: a ogni
+ * ri-ottimizzazione delle dipendenze o ricarica di `hooks.server.ts` questo
+ * file viene rieseguito da capo. Con una `let` di modulo ogni copia si porta
+ * dietro la propria cache vuota e apre un client nuovo, mentre i precedenti
+ * restano vivi con la loro connessione — e siccome `max: 1` significa una
+ * connessione per client, si finisce con più connessioni in giro di quante il
+ * codice creda di averne, alcune appartenenti a moduli ormai scartati. Da lì
+ * le richieste che restano appese senza errore, che il runbook descrive alla
+ * voce «Ogni pagina che tocca il database resta appesa».
+ *
+ * `globalThis` sopravvive alla rivalutazione del modulo, quindi tutte le
+ * copie condividono un client solo. In produzione il grafo si valuta una
+ * volta e questo non cambia niente: è una rete di sicurezza per lo sviluppo,
+ * al costo di una proprietà con un nome esplicito.
+ */
+const CHIAVE = Symbol.for('calendario.db');
+
+type Contenitore = typeof globalThis & { [CHIAVE]?: Database };
 
 export function getDb(): Database {
-	if (cached) return cached;
+	const contenitore = globalThis as Contenitore;
+	const gia = contenitore[CHIAVE];
+	if (gia) return gia;
 
 	const url = env.DATABASE_URL;
 	if (!url) {
@@ -35,8 +57,9 @@ export function getDb(): Database {
 		connect_timeout: 10
 	});
 
-	cached = drizzle(sql, { schema });
-	return cached;
+	const db = drizzle(sql, { schema });
+	contenitore[CHIAVE] = db;
+	return db;
 }
 
 export { schema };
