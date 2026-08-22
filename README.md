@@ -22,19 +22,35 @@ Fasi 0, 1, 2 e 3 complete sul codice. Il progetto Supabase esiste, le
 migrazioni fino a `0003_fase3_conflitti` sono applicate e i generi sono
 seminati. Resta il primo deploy su Cloudflare. Vedi [Setup](#setup).
 
-**Il criterio di fine della Fase 3 è stato verificato sui dati reali**
-(21 agosto 2026). Con i dati di `npm run db:seed:demo`, `POST
-/api/cron/recompute` ha rilevato e persistito due conflitti, ed è idempotente:
-la seconda esecuzione ne trova zero di nuovi. Uno dei due è esattamente il
-caso che [ADR-0024](docs/DECISIONS.md) protegge — una band opzionata in
-segreto da un'organizzazione e già annunciata da un'altra la stessa sera — e
-si comporta come deve: **l'organizzazione che tiene la band segreta riceve
-l'avviso col nome della band, l'altra non vede il conflitto affatto**, perché
-vederlo le direbbe chi ha ingaggiato la controparte.
+**Il criterio di fine della Fase 3 è stato verificato nell'applicazione in
+esecuzione** (22 agosto 2026), non solo dai test. Il criterio chiedeva due
+cose, e sono entrambe soddisfatte: compilando una data in conflitto **l'avviso
+compare durante la compilazione**, prima di salvare, e il conflitto **è
+persistito per entrambe le parti**.
 
-Resta da provare in un browser con due sessioni vere l'anteprima live nel form
-e le azioni della dashboard: come per le Fasi 0 e 1, il collo di bottiglia è
-la posta, non il codice.
+Provato con i dati di `npm run db:seed:demo`:
+
+- l'anteprima nel form segnala la sovrapposizione digitando il 12 settembre,
+  senza aver salvato niente;
+- la dashboard mostra il conflitto, con la controparte ridotta a giorno,
+  città, genere e contatto perché la sua data è opzionata;
+- le azioni funzionano tutte — presa d'atto per lato, chiusura con nota,
+  archiviazione, riapertura dallo storico;
+- `POST /api/cron/recompute` rileva e persiste, ed è idempotente: la seconda
+  esecuzione trova zero conflitti nuovi;
+- una data annullata e poi riopzionata riapre il conflitto che era stato
+  chiuso con una nota ([ADR-0027](docs/DECISIONS.md)), azzerando le prese
+  d'atto e conservando la nota.
+
+Il caso più delicato si comporta come deve. Una band opzionata in segreto da
+un'organizzazione e già annunciata da un'altra la stessa sera produce un
+conflitto che **l'organizzazione con la band segreta vede, col nome della
+band, mentre l'altra non vede affatto** — perché vederlo le direbbe chi ha
+ingaggiato la controparte. È il leak che [ADR-0009](docs/DECISIONS.md)
+elencava come rischio noto, chiuso da [ADR-0024](docs/DECISIONS.md).
+
+Resta legato al deploy il solo ricalcolo notturno: `.github/workflows/recompute-conflicts.yml`
+ha bisogno dei secret `APP_URL` e `CRON_SECRET`, e di un `APP_URL` che esista.
 
 **Il criterio di fine della Fase 2 è stato verificato nell'applicazione in
 esecuzione** (21 agosto 2026), non solo dai test: con i dati di
