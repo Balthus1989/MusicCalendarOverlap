@@ -238,8 +238,14 @@
 	   Si rimappano quindi **tutte** le variabili sui token del progetto, non
 	   solo quelle che danno fastidio oggi. I token cambiano già da soli con
 	   `prefers-color-scheme`, quindi non serve un blocco separato per il tema
-	   scuro: mappate una volta, seguono il tema in entrambi i versi. */
-	.calendario :global(.fc) {
+	   scuro: mappate una volta, seguono il tema in entrambi i versi.
+
+	   Le variabili vanno su `.calendario` e **non** su `.calendario .fc`:
+	   FullCalendar non crea un elemento figlio, aggiunge le proprie classi al
+	   contenitore che gli si passa. Il selettore discendente non corrisponde a
+	   niente, e per un pezzo qui non ha corrisposto — motivo per cui anche
+	   `--fc-border-color`, scritto molto prima, non è mai entrato in vigore. */
+	.calendario {
 		--fc-page-bg-color: var(--background);
 		--fc-neutral-bg-color: var(--muted);
 		--fc-neutral-text-color: var(--muted-foreground);
