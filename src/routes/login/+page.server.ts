@@ -55,6 +55,24 @@ export const actions: Actions = {
 		}
 
 		const next = safeNext(String(form.get('next') ?? ''));
+
+		/**
+		 * Questo indirizzo finisce nel template email come `{{ .RedirectTo }}`,
+		 * e il template gli appende `&token_hash=…&type=magiclink`.
+		 *
+		 * Da qui due vincoli che non si leggono da nessun'altra parte:
+		 *
+		 * 1. **la query string dev'esserci sempre**, altrimenti l'`&` del
+		 *    template produce un URL rotto. `next` c'è sempre perché
+		 *    `safeNext` restituisce un valore anche quando non ne arriva
+		 *    nessuno — è quello che tiene in piedi l'invariante, non un caso;
+		 * 2. si costruisce da `url.origin`, quindi lo stesso template vale in
+		 *    locale e in produzione senza toccare niente nel pannello.
+		 *
+		 * Il template è la ragione per cui il link non passa da
+		 * `/auth/v1/verify` di Supabase e non ha bisogno del verificatore PKCE:
+		 * vedi il README, sezione Auth, e il ramo `token_hash` del callback.
+		 */
 		const redirectTo = `${url.origin}/auth/callback?next=${encodeURIComponent(next)}`;
 
 		const { error } = await locals.supabase.auth.signInWithOtp({

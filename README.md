@@ -127,6 +127,44 @@ La registrazione è **solo su invito** (ADR-0004): il form di login usa
 `shouldCreateUser: false`, quindi un indirizzo sconosciuto non crea un account.
 Un account nasce unicamente accettando un invito valido, da `/invite/[code]`.
 
+#### Il template email non è facoltativo
+
+In **Authentication → Emails → Magic Link** il corpo del messaggio va
+sostituito con questo:
+
+```html
+<h2>Accedi al Calendario Eventi Condiviso</h2>
+<p>
+	<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Accedi</a>
+</p>
+<p>Se non hai chiesto tu questo accesso, ignora questa email.</p>
+```
+
+**Con il template predefinito il login non funziona**, e vale la pena sapere
+perché prima di perderci un pomeriggio.
+
+Quello predefinito usa `{{ .ConfirmationURL }}`, che manda l'utente a
+`/auth/v1/verify` di Supabase, il quale a sua volta rimbalza sul nostro
+callback con un `?code=`. Quel codice si scambia con una sessione solo
+esibendo un **verificatore PKCE**, che il server ha messo in un cookie quando
+l'utente ha compilato il form di login. Il presupposto è che chi clicca il
+link sia lo stesso browser che l'ha richiesto — e per un link che viaggia
+dentro un'email è un presupposto sbagliato: si apre la posta dal telefono,
+dalla webmail, da un client che delega al browser di sistema. Su Windows basta
+che il browser predefinito non sia quello in cui si stava lavorando. Il cookie
+non c'è, e il callback registra `pkce_code_verifier_not_found`.
+
+Con `{{ .TokenHash }}` il link punta **direttamente** all'applicazione e non
+passa più da `/auth/v1/verify`. Il callback prende il ramo `token_hash`, che
+usa `verifyOtp` e non ha bisogno di nessun cookie: funziona da qualunque
+browser e da qualunque dispositivo. In più `next` sopravvive, perché non c'è
+più nessuno che riscrive l'URL di ritorno.
+
+L'`&` prima di `token_hash` non è un refuso: `{{ .RedirectTo }}` contiene già
+`?next=…`, che l'azione di login mette **sempre**. È una dipendenza fra un
+template che vive nel pannello Supabase e una riga di codice nel repo — per
+questo è annotata in tutti e due i posti.
+
 ### 4. Primo accesso
 
 Il calendario parte vuoto, e un invito può essere generato solo da chi è già
