@@ -58,16 +58,20 @@ export const actions: Actions = {
 
 		/**
 		 * Questo indirizzo finisce nel template email come `{{ .RedirectTo }}`,
-		 * e il template gli appende `&token_hash=…&type=magiclink`.
+		 * e il template gli appende `?token_hash=…&type=magiclink`.
 		 *
-		 * Da qui due vincoli che non si leggono da nessun'altra parte:
+		 * **Supabase scarta la query string.** Confronta `redirect_to` con la
+		 * allow-list dei Redirect URL e rende l'indirizzo così come è scritto
+		 * lì, quindi `?next=…` non arriva mai al callback: il `next` che segue
+		 * è di fatto inerte nel flusso via email, e la destinazione la decide
+		 * `safeNext(null)`, cioè `/calendar`. Lo si tiene perché costa niente e
+		 * perché la stessa funzione serve al redirect dopo il login diretto.
 		 *
-		 * 1. **la query string dev'esserci sempre**, altrimenti l'`&` del
-		 *    template produce un URL rotto. `next` c'è sempre perché
-		 *    `safeNext` restituisce un valore anche quando non ne arriva
-		 *    nessuno — è quello che tiene in piedi l'invariante, non un caso;
-		 * 2. si costruisce da `url.origin`, quindi lo stesso template vale in
-		 *    locale e in produzione senza toccare niente nel pannello.
+		 * Per questo il template usa `?` e non `&`: con l'`&` l'URL diventa
+		 * `/auth/callback&token_hash=…`, un percorso solo, e risponde 404.
+		 *
+		 * Si costruisce da `url.origin`, quindi lo stesso template vale in
+		 * locale e in produzione senza toccare niente nel pannello.
 		 *
 		 * Il template è la ragione per cui il link non passa da
 		 * `/auth/v1/verify` di Supabase e non ha bisogno del verificatore PKCE:

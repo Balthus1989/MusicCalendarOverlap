@@ -135,7 +135,7 @@ sostituito con questo:
 ```html
 <h2>Accedi al Calendario Eventi Condiviso</h2>
 <p>
-	<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Accedi</a>
+	<a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=magiclink">Accedi</a>
 </p>
 <p>Se non hai chiesto tu questo accesso, ignora questa email.</p>
 ```
@@ -160,10 +160,18 @@ usa `verifyOtp` e non ha bisogno di nessun cookie: funziona da qualunque
 browser e da qualunque dispositivo. In più `next` sopravvive, perché non c'è
 più nessuno che riscrive l'URL di ritorno.
 
-L'`&` prima di `token_hash` non è un refuso: `{{ .RedirectTo }}` contiene già
-`?next=…`, che l'azione di login mette **sempre**. È una dipendenza fra un
-template che vive nel pannello Supabase e una riga di codice nel repo — per
-questo è annotata in tutti e due i posti.
+Il `?` prima di `token_hash` non è un refuso, ed è il punto in cui è più facile
+sbagliare. L'azione di login costruisce `emailRedirectTo` come
+`/auth/callback?next=…`, ma **Supabase scarta la query string**: confronta
+`redirect_to` con la allow-list dei Redirect URL e rende l'indirizzo così come
+è scritto lì. `{{ .RedirectTo }}` arriva quindi al template senza query, e con
+un `&` si otterrebbe `/auth/callback&token_hash=…` — un percorso unico, che
+risponde **404**.
+
+Conseguenza pratica: nel flusso via email il `next` non sopravvive mai, e dopo
+l'accesso si atterra dove decide `safeNext(null)`, cioè `/calendar`. È una
+dipendenza fra un template che vive nel pannello Supabase e una riga di codice
+nel repo — per questo è annotata in tutti e due i posti.
 
 ### 4. Primo accesso
 
