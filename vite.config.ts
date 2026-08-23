@@ -52,7 +52,26 @@ export default defineConfig({
 		// accettabile per un server di sviluppo su una macchina personale, e
 		// comodo per provare l'interfaccia dal telefono. Vale solo per
 		// `vite dev`, non ha alcun effetto sul deploy.
-		host: true
+		host: true,
+		/**
+		 * Il feed ICS è l'unica cosa di questo prodotto che **non si può
+		 * provare da soli**: il criterio di fine della Fase 4 chiede che una
+		 * sottoscrizione funzioni in Google Calendar, e i server di Google
+		 * `localhost` non lo raggiungono. La prova si fa esponendo il dev
+		 * server con un tunnel `cloudflared`, che assegna un nome sotto
+		 * `trycloudflare.com`.
+		 *
+		 * Da Vite 6 il dev server **rifiuta** le richieste con un `Host` che
+		 * non sia locale — difesa contro il DNS rebinding — e risponde
+		 * `Blocked request. This host is not allowed.`. Verso il tunnel
+		 * significa che Google riceverebbe quella riga invece del calendario,
+		 * cioè un guasto che sembra un feed vuoto.
+		 *
+		 * Si autorizza il solo dominio dei tunnel usa-e-getta, non `true`: la
+		 * differenza conta il giorno in cui questa riga resta qui e qualcuno
+		 * apre il dev server su una rete che non controlla.
+		 */
+		allowedHosts: ['.trycloudflare.com']
 	},
 	environments: {
 		client: {
