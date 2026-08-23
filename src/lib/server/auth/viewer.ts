@@ -71,3 +71,20 @@ export async function loadViewer(db: Database, user: User) {
 	const roles = await loadRoles(db, profile.id);
 	return { profile, viewer: toViewerContext(profile, roles) };
 }
+
+/**
+ * Il viewer di un profilo che **non ha una sessione in corso**.
+ *
+ * Serve al feed ICS, che è servito a un client calendario senza login: lì
+ * l'identità non arriva da un cookie ma dal token, e il contenuto va redatto
+ * come lo vedrebbe il proprietario del feed (ADR-0011). Da qui non si crea
+ * nessun profilo: se non esiste, non esiste.
+ */
+export async function viewerPerProfilo(db: Database, profileId: string) {
+	const righe = await db.select().from(profiles).where(eq(profiles.id, profileId)).limit(1);
+	const profile = righe[0];
+	if (!profile) return null;
+
+	const roles = await loadRoles(db, profile.id);
+	return { profile, viewer: toViewerContext(profile, roles) };
+}

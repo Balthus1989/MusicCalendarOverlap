@@ -89,6 +89,7 @@ function evento(over: Partial<EventWithRelations> = {}): EventWithRelations {
 		externalUrl: null,
 		announceAt: daLocaleAIstante('2026-09-01T09:00'),
 		internalNotes: 'Cachet 800 €, pagamento in contanti.',
+		updatedAt: daLocaleAIstante('2026-09-01T10:00'),
 		organization: organizzazione,
 		venue,
 		genres: [metal, deathMetal],

@@ -659,6 +659,77 @@ Il caso che conta di più è però il terzo. **Confermare significa annunciare**
 
 ---
 
+## ADR-0028 — Il `SEQUENCE` del feed ICS viene da `updated_at`, e non passa dal serializzatore
+
+**Data:** 2026-08-23 · **Stato:** Accettata
+
+**Contesto.** `ARCHITECTURE.md` §8 prescrive un `SEQUENCE` «incrementato ad ogni modifica», e [ADR-0011](#adr-0011--feed-ics-in-sola-lettura-nessun-sync-bidirezionale) lo elenca per nome come **l'errore classico di questa integrazione**: senza un numero che cresce, Google non aggiorna mai un evento già importato. Si può spostare una data di un mese e nei calendari di tutti resta dov'era, senza che nessuno se ne accorga — perché il guasto non produce nessun errore, produce un calendario che sembra a posto.
+
+Nessuno dei due documenti diceva però *da dove* prendere quel numero, e la risposta non era ovvia. Le due possibilità erano una colonna contatore su `events`, incrementata a ogni scrittura, oppure una derivazione da un dato che già cambia.
+
+Ne è emersa una seconda, meno visibile: qualunque sia la fonte, quel numero deve arrivare fino al costruttore ICS, che lavora su `EventoSerializzato`. Metterlo lì significava aggiungere una riga alla matrice di §5.
+
+**Decisione.** Due cose.
+
+1. `SEQUENCE` si deriva da `events.updated_at`, in **secondi** trascorsi dal 1° gennaio 2026.
+2. `updated_at` sta su `EventWithRelations` — la riga grezza — e **non** esce da `serializeEvent()`. Il costruttore ICS lo riceve a parte, accanto all'evento serializzato: `VoceFeed = { evento, aggiornatoIl }`.
+
+**Motivazioni.**
+
+Sulla fonte: `updated_at` cambia già a ogni scrittura che conta. Evento, lineup, generi e link si salvano in una sola transazione, e anche `cambiaStato` passa di lì — cioè esattamente l'insieme di modifiche che un client calendario deve vedere. Un contatore dedicato sarebbe un secondo stato da tenere allineato al primo, con l'unico effetto possibile di divergerne: il giorno in cui qualcuno aggiungesse un percorso di scrittura dimenticandosi di incrementarlo, il guasto sarebbe di nuovo quello silenzioso di ADR-0011.
+
+I secondi e non i millisecondi perché `SEQUENCE` è un intero, e gli interi di iCalendar sono a 32 bit. Contando i millisecondi il tetto arriverebbe in tre settimane; contando i secondi da un'origine recente restano una sessantina d'anni. L'origine è il 2026 e non l'epoca Unix per la stessa ragione: dal 1970 il margine finirebbe nel 2038.
+
+Sul secondo punto: `updated_at` non è un campo dell'evento che si mostra, è **metadato del feed**. Dice "questa riga è cambiata", mai *che cosa* è cambiato. Farlo passare da `serializeEvent` avrebbe voluto dire allargare la matrice di §5 per una necessità tecnica, e le matrici si allargano una cella alla volta finché non proteggono più niente. Passarlo a parte costa una `Map` per id nella rotta del feed e lascia il serializzatore esattamente com'era.
+
+**Alternative scartate.**
+
+- _Una colonna `ics_sequence` incrementata a mano_: vedi sopra. Più stato per meno garanzie.
+- _`SEQUENCE` sempre a 0_: è il comportamento predefinito di chi non ci pensa, ed è precisamente il guasto che ADR-0011 dice di evitare.
+- _`updated_at` dentro `EventoSerializzato`_: comodo, e per una volta innocuo — l'istante di un'ultima modifica non rivela niente di commercialmente sensibile. Scartata lo stesso, perché la ragione per cui sarebbe entrato non era «la matrice lo permette» ma «serviva al feed», e quella è la ragione sbagliata per aggiungere una cella.
+- _Derivare il `SEQUENCE` dal contenuto serializzato_ (un hash): resisterebbe alle modifiche che non cambiano nulla di visibile, ma un hash non è monotòno, e `SEQUENCE` deve **crescere**: un numero che scende viene ignorato dai client.
+
+**Conseguenze.**
+
+- A parità di dati il file ICS è identico byte per byte, perché anche `DTSTAMP` e `LAST-MODIFIED` vengono da `aggiornatoIl`. Lo snapshot di `ics.test.ts` è possibile solo grazie a questo.
+- Una modifica alle sole note interne fa crescere il `SEQUENCE` anche per chi le note non le vede. È innocuo: il client rilegge una voce identica.
+- `EventWithRelations` ha un campo in più, e le fixture dei test lo dichiarano. Il test che conta è quello che verifica il negativo: `serializeEvent` **non** restituisce `updatedAt`.
+
+**Da rivedere se.** Si scopre che qualche percorso di scrittura non tocca `updated_at`. In quel caso il difetto è lì e va corretto lì: un evento che cambia senza che la riga risulti cambiata è un problema molto più grande di un feed che non si aggiorna.
+
+---
+
+## ADR-0029 — Il feed ICS non contiene le bozze
+
+**Data:** 2026-08-23 · **Stato:** Accettata
+
+**Contesto.** Il feed ICS è redatto con il viewer del profilo che lo possiede: contiene ciò che quella persona vedrebbe entrando nell'applicazione. Applicata alla lettera, quella regola ci fa entrare anche le **sue** bozze — che nell'applicazione vede eccome, sono sue.
+
+Sarebbe pure comodo: avere le date ancora in bozza nel proprio calendario è esattamente il genere di cosa per cui un organizzatore sottoscrive un feed.
+
+**Decisione.** No. `draft` non è fra gli stati che un feed può contenere, e non è nemmeno un'opzione che si possa spuntare: `statoFeed` ammette `hold`, `confirmed` e `cancelled`, e basta.
+
+**Motivazioni.** Un feed vive su un endpoint **pubblico**, autenticato da un segreto in un URL, e quell'URL finisce nei server di Google o di Apple, in una configurazione di calendario che si condivide con un collega senza pensarci, in uno screenshot di supporto.
+
+Per tutti gli altri stati questo è già stato messo in conto: `hold` e `confirmed` sono dati che altre organizzazioni vedono comunque, sia pure ridotti. La bozza no. La bozza è l'unica cosa di cui questo prodotto fa una promessa assoluta — *nessun altro l'ha mai vista* — al punto che [ADR-0018](#adr-0018--da-draft-si-esce-e-non-si-rientra) vieta perfino di rientrarci, perché una volta uscita quell'affermazione non torna vera. Un token in un URL è una difesa perfettamente adeguata per un calendario condiviso fra venti organizzazioni; non è la difesa che quella promessa merita.
+
+C'è anche una ragione più semplice: la comodità è piccola. Chi ha una bozza la sta scrivendo, ed è nell'applicazione mentre lo fa. Il feed serve per le date che stanno ferme.
+
+**Alternative scartate.**
+
+- _Ammettere `draft` come opzione, spiegando il rischio_: sposta su chi compila un modulo una decisione che ha una risposta sola. E le caselle con l'avvertenza accanto si spuntano.
+- _Un feed separato per le bozze, con un token a scadenza_: risolverebbe davvero il problema, ma aggiunge un secondo tipo di feed e una scadenza da gestire per una funzione che nessuno ha chiesto.
+
+**Conseguenze.**
+
+- La scelta è espressa **nello schema**, non in un `if` dentro la rotta: `filtriFeed` rifiuta `draft`, quindi non c'è nessun percorso — nemmeno una riga scritta a mano in `calendar_feeds.filters` — che possa farlo entrare. Il test corrispondente sta in `feeds.test.ts`.
+- Vale solo per il feed. L'export e il download `.ics` di una singola data restano dietro la sessione, e lì la bozza propria si porta via come tutto il resto: chi ha fatto login è già chi la può vedere.
+- Il modulo di creazione lo dice esplicitamente, invece di limitarsi a non mostrare la casella: una funzione assente senza spiegazione si legge come una dimenticanza.
+
+**Da rivedere se.** Gli organizzatori chiedono di vedere le proprie bozze nel calendario del telefono. La risposta giusta a quel punto non è allentare questa regola, è il feed separato scartato qui sopra.
+
+---
+
 ## Template per nuove voci
 
 ```markdown

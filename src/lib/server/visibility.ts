@@ -125,6 +125,14 @@ export type EventWithRelations = {
 	externalUrl: string | null;
 	announceAt: Date | null;
 	internalNotes: string | null;
+	/**
+	 * Ultima scrittura sulla riga. **Non esce da `serializeEvent`**, e non è
+	 * una dimenticanza: serve al `SEQUENCE` del feed ICS, che è metadato del
+	 * feed e non un campo dell'evento. Tenerlo qui e non fra i campi
+	 * serializzati evita di allargare la matrice di §5 per una necessità
+	 * tecnica (ADR-0028).
+	 */
+	updatedAt: Date;
 	organization: OrganizzazioneEvento;
 	venue: VenueEvento | null;
 	genres: GenereEvento[];

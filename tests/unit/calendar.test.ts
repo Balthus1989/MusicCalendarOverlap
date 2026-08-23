@@ -60,6 +60,9 @@ function evento(over: Partial<EventWithRelations> = {}): EventWithRelations {
 		externalUrl: null,
 		announceAt: null,
 		internalNotes: 'Cachet 800 €.',
+		// Il feed ICS ne ricava il `SEQUENCE` (ADR-0028): sta sulla riga grezza,
+		// non fra i campi che `serializeEvent` lascia uscire.
+		updatedAt: daLocaleAIstante('2026-09-01T10:00'),
 		organization: {
 			id: ORG_ALTRA,
 			name: 'Associazione X',

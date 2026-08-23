@@ -483,6 +483,14 @@ Le mutazioni di dominio usano **form actions** di SvelteKit, non endpoint REST: 
 
 Il token è un segreto in un URL: l'endpoint è pubblico senza auth (i client calendario non fanno login). Quindi il feed contiene solo ciò che quel profilo può vedere, il token è revocabile, e va servito con `Cache-Control: private, max-age=3600` e senza indicizzazione.
 
+> **Precisazioni (2026-08-23, implementando la Fase 4).**
+>
+> - Il `SEQUENCE` si deriva da `events.updated_at`, in secondi da un'origine fissata al 2026, e **non passa dal serializzatore**: è metadato del feed, non un campo dell'evento, e farlo uscire da `serializeEvent()` avrebbe voluto dire allargare la matrice di §5 per una necessità tecnica. Vedi [ADR-0028](DECISIONS.md).
+> - **Le bozze non entrano in nessun feed**, nemmeno le proprie: è l'unico stato di cui ADR-0005 promette che nessun altro l'ha mai visto, e un URL con dentro un segreto non è il posto dove tenerlo. La regola sta nello schema dei filtri, non in un controllo nella rotta. Vedi [ADR-0029](DECISIONS.md).
+> - Una data visibile in **forma ridotta** — un `hold` altrui — diventa un evento di **giornata intera**: di quella data non si conosce l'ora, e assegnargliene una plausibile significherebbe inventare dentro un file che qualcuno legge come un dato. `SUMMARY` è quello di `titoloVisibile()`, preceduto dallo stato quando non è `confirmed`, perché `STATUS:TENTATIVE` quasi nessun client lo disegna.
+> - Gli istanti si scrivono in UTC, senza `VTIMEZONE`: il client li rende nel fuso di chi guarda, e non c'è nessuna tabella di fuso da tenere aggiornata nel file.
+> - Il feed copre dai tre mesi passati ai diciotto futuri — la stessa finestra in avanti del ricalcolo notturno.
+
 L'utente incolla l'URL in Google Calendar ("Da URL") o Apple Calendar ("Nuova iscrizione calendario"). Niente OAuth, niente refresh token, niente webhook: un endpoint e un file.
 
 ### Download singolo
@@ -494,6 +502,10 @@ L'utente incolla l'URL in Google Calendar ("Da URL") o Apple Calendar ("Nuova is
 - **JSON** — schema documentato e stabile, per reimport
 - **CSV** — una riga per evento, lineup concatenata; per chi lavora in foglio di calcolo
 - **JSON-LD** `schema.org/MusicEvent` — incluso anche nella pagina dettaglio per SEO e aggregatori
+
+> **Precisazione (2026-08-23).** Il JSON-LD contiene **solo le date annunciate**, cioè `confirmed` e `cancelled` viste in visibilità completa. Le altre restano fuori per due ragioni diverse: una data in forma ridotta non ha un titolo né un luogo, e un `MusicEvent` senza `name` non è un dato incompleto ma un dato falso; una bozza o un'opzione non sono eventi pubblici, e descriverle in un formato nato apposta per essere letto dalle macchine sarebbe annunciarle. Vale sia per l'export sia per il blocco nella pagina di dettaglio, che passano dalla stessa funzione.
+>
+> L'export JSON e l'export CSV invece contengono **tutto ciò che chi li chiede può già vedere**, forme ridotte comprese. Il JSON marca ogni riga con la sua `visibilita`: senza, una data opzionata altrui si esporterebbe come un evento con dieci campi nulli, indistinguibile da un evento svuotato, e chi reimporta non saprebbe che quei campi non mancano — sono riservati.
 
 ### Copy per i social
 

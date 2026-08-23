@@ -1,8 +1,11 @@
 import { error, fail, redirect } from '@sveltejs/kit';
+import { env as publicEnv } from '$env/dynamic/public';
 import { canDeleteEvent, canEditEvent } from '$lib/server/auth/permissions';
 import { conflittiDellEvento } from '$lib/server/conflicts/queries';
 import { getDb } from '$lib/server/db/client';
 import { caricaEvento } from '$lib/server/events/queries';
+import { aMusicEvent } from '$lib/server/export/jsonld';
+import { linkAggiungiAlCalendario } from '$lib/server/ics/add-to-calendar';
 import {
 	descriviTransizione,
 	motiviCheImpediscono,
@@ -14,7 +17,7 @@ import { serializeEvent } from '$lib/server/visibility';
 import { statoEvento } from '$lib/schemas/event';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ locals, params }) => {
+export const load: PageServerLoad = async ({ locals, params, url }) => {
 	const viewer = locals.viewer;
 	if (!viewer) error(401, 'Sessione non valida.');
 
@@ -28,10 +31,19 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	if (!serializzato) error(404, 'Data non trovata.');
 
 	const puoModificare = canEditEvent(viewer, evento);
+	const baseUrl = (publicEnv.PUBLIC_APP_URL ?? url.origin).replace(/\/+$/, '');
 
 	return {
 		evento: serializzato,
 		puoModificare,
+		// I due link "aggiungi al calendario" si costruiscono lato server, come
+		// prescrive ARCHITECTURE.md §8, e a partire dall'evento **già
+		// serializzato**: di una data opzionata altrui finiscono nell'URL solo
+		// giorno, città e organizzazione.
+		linkCalendario: linkAggiungiAlCalendario(serializzato, baseUrl),
+		// JSON-LD solo per le date annunciate: `aMusicEvent` restituisce `null`
+		// per tutto il resto, e il perché sta nell'intestazione di quel file.
+		jsonLd: aMusicEvent(serializzato, baseUrl),
 		puoEliminare: canDeleteEvent(viewer, evento),
 		transizioni: puoModificare ? transizioniAmmesse(evento.status) : [],
 		// ADR-0022 non mette nessun cancello davanti alla conferma, e in

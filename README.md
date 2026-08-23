@@ -14,13 +14,52 @@ delle sovrapposizioni tra date.
 | 1 — Anagrafiche         | codice completo, manca il deploy |
 | 2 — Eventi e calendario | codice completo, manca il deploy |
 | 3 — Motore conflitti    | codice completo, manca il deploy |
-| 4 — Interoperabilità    | da iniziare                      |
+| 4 — Interoperabilità    | codice completo, manca il deploy |
 | 5 — Import assistito    | da iniziare                      |
 | 6 — Rifinitura          | da iniziare                      |
 
-Fasi 0, 1, 2 e 3 complete sul codice. Il progetto Supabase esiste, le
-migrazioni fino a `0003_fase3_conflitti` sono applicate e i generi sono
-seminati. Resta il primo deploy su Cloudflare. Vedi [Setup](#setup).
+Fasi da 0 a 4 complete sul codice. Il progetto Supabase esiste, le migrazioni
+fino a `0004_fase4_feed` sono applicate e i generi sono seminati. Resta il
+primo deploy su Cloudflare. Vedi [Setup](#setup).
+
+**Il criterio di fine della Fase 4 è verificato solo a metà** (23 agosto 2026),
+e la metà che manca non dipende dal codice. Il criterio chiede che _un feed
+sottoscritto in Google Calendar e in Apple Calendar mostri le date corrette e
+si aggiorni dopo una modifica_: sottoscriverlo richiede un URL pubblico, cioè
+il deploy. È lo stesso blocco del ricalcolo notturno.
+
+Ciò che si è potuto verificare sull'applicazione in esecuzione, con i dati di
+`npm run db:seed:demo`, è tutto il resto:
+
+- il feed risponde `text/calendar` con `X-WR-CALNAME`, `REFRESH-INTERVAL:PT12H`
+  e `SOURCE`, e **rispetta la matrice di visibilità**: la data confermata di
+  un'altra organizzazione esce intera, quella opzionata diventa un evento di
+  giornata intera intitolato _"Opzionata · Metal · Circolo Arci Lupo Bianco"_
+  senza titolo, locale, orario né generi secondari, e la **bozza altrui non
+  compare affatto**;
+- **`SEQUENCE` cresce dopo una modifica** — misurato: `20189490` prima di
+  toccare la data, `20258130` dopo. È l'errore che
+  [ADR-0011](docs/DECISIONS.md) elenca per nome, e l'unico modo di accorgersene
+  è guardarlo ([ADR-0028](docs/DECISIONS.md));
+- i filtri restringono davvero: un feed «solo metal entro 60 km da Perugia»
+  creato dal modulo geocodifica la città una volta sola e lascia fuori la
+  serata jazz e quella cantautorale, tenendo i sottogeneri (Stoner, Sludge,
+  Black Metal, Doom) — la tassonomia di [ADR-0007](docs/DECISIONS.md) all'opera;
+- disdire un feed ha effetto **subito**: lo stesso URL passa da `200` a `404`,
+  e gli altri feed dello stesso profilo continuano a funzionare;
+- gli export rispettano la stessa matrice — nel CSV la riga di una data
+  opzionata altrui ha vuote le colonne di titolo, locale, orario e lineup e
+  piene quelle di giorno, città, genere principale e organizzazione;
+- il JSON-LD contiene **solo le tre date annunciate** su sei, con
+  `EventCancelled` su quella annullata, ed è assente dalla pagina di una data
+  opzionata altrui;
+- il copy per i social si genera per le tre piattaforme e **avvisa**: su una
+  data ancora opzionata dice che pubblicare il testo equivale ad annunciarla.
+
+Il caso delicato si comporta come deve anche qui. Una band non annunciata non
+compare in **nessuna** delle quattro uscite nuove — feed, ICS singolo, export,
+copy social — e i test lo verificano cercandone il nome nel file intero, non
+nei campi in cui ci si aspetterebbe di trovarlo.
 
 **Il criterio di fine della Fase 3 è stato verificato nell'applicazione in
 esecuzione** (22 agosto 2026), non solo dai test. Il criterio chiedeva due
@@ -51,6 +90,8 @@ elencava come rischio noto, chiuso da [ADR-0024](docs/DECISIONS.md).
 
 Resta legato al deploy il solo ricalcolo notturno: `.github/workflows/recompute-conflicts.yml`
 ha bisogno dei secret `APP_URL` e `CRON_SECRET`, e di un `APP_URL` che esista.
+Con la Fase 4 si aggiunge alla stessa lista la sottoscrizione dei feed, che
+richiede un URL raggiungibile da Google e da Apple.
 
 **Il criterio di fine della Fase 2 è stato verificato nell'applicazione in
 esecuzione** (21 agosto 2026), non solo dai test: con i dati di
@@ -312,6 +353,43 @@ bisogno dei secret `APP_URL` e `CRON_SECRET`.
 Il ricalcolo ordinario non passa da qui: avviene a ogni salvataggio di una
 data. Il job notturno serve a recuperare le derive, perché la riconciliazione
 è progettata per non sollevare mai e quindi può fallire in silenzio.
+
+### Feed ICS
+
+`GET /api/ics/[token].ics` è **l'unico endpoint pubblico che restituisce dati
+di dominio**, ed è pubblico per un motivo che non si può aggirare: nessun
+client calendario sa fare login. L'autenticazione è il token nell'URL.
+
+Il feed contiene esattamente ciò che vedrebbe il profilo che lo possiede, mai
+un campo di più: è redatto da `serializeEvent()` come qualunque altra uscita.
+Le bozze non ci sono in nessun caso ([ADR-0029](docs/DECISIONS.md)).
+
+Un token si disdice da `/settings/feeds`. La revoca ha effetto immediato e non
+tocca gli altri feed della stessa persona. Le date già scaricate restano nel
+calendario di chi le aveva, ferme all'ultima lettura: un feed che smette di
+rispondere non le cancella, e non c'è modo di farlo.
+
+Un token revocato e uno inesistente rispondono **entrambi** `404`.
+Distinguerli direbbe a chi ha un URL vecchio che quell'URL era buono.
+
+**Se un calendario non si aggiorna** — le date compaiono ma restano ferme —
+guarda il `SEQUENCE` delle voci prima e dopo aver modificato una data:
+
+```bash
+curl -s https://APP_URL/api/ics/TOKEN.ics | grep -A1 "UID:ID_EVENTO" | grep SEQUENCE
+```
+
+Se non cambia, il problema è `events.updated_at` che non si muove, non il feed:
+il numero si deriva da lì ([ADR-0028](docs/DECISIONS.md)). È il guasto più
+insidioso di questa integrazione perché non produce nessun errore — produce un
+calendario che sembra a posto ed è vecchio di un mese.
+
+`last_accessed_at` sulla riga di `calendar_feeds` dice quando un client è
+passato l'ultima volta. Un feed «mai letto» dopo giorni significa che l'URL non
+è stato incollato da nessuna parte, non che il feed sia rotto.
+
+Il rate limit per token previsto da ARCHITECTURE.md §16 arriva in Fase 6,
+insieme a quelli di `/api/parse` e `/api/geocode`.
 
 ### Il dev server parte ma la pagina non finisce mai di caricare
 

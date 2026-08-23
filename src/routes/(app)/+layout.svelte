@@ -20,7 +20,8 @@
 		{ path: '/conflicts', label: 'Conflitti' },
 		{ path: '/artists', label: 'Artisti' },
 		{ path: '/venues', label: 'Locali' },
-		{ path: '/org', label: 'Organizzazione' }
+		{ path: '/org', label: 'Organizzazione' },
+		{ path: '/settings/feeds', label: 'Feed ed export' }
 	] as const;
 
 	const isActive = (path: string) =>

@@ -47,10 +47,72 @@
 	const conflitti = $derived(
 		[...data.conflitti].sort((a, b) => ORDINE_SEVERITA[a.severity] - ORDINE_SEVERITA[b.severity])
 	);
+
+	/* --- Copy per i social (ADR-0012) ------------------------------------ */
+
+	const PIATTAFORME = [
+		{ id: 'instagram', nome: 'Instagram' },
+		{ id: 'facebook', nome: 'Facebook' },
+		{ id: 'telegram', nome: 'Telegram' }
+	] as const;
+
+	let piattaforma = $state<(typeof PIATTAFORME)[number]['id'] | null>(null);
+	let copy = $state<{ testo: string; caratteri: number; avvisi: string[] } | null>(null);
+	let motivoCopy = $state<string | null>(null);
+	let caricoCopy = $state(false);
+	let testoCopiato = $state(false);
+
+	async function generaCopy(id: (typeof PIATTAFORME)[number]['id']) {
+		piattaforma = id;
+		caricoCopy = true;
+		copy = null;
+		motivoCopy = null;
+		testoCopiato = false;
+		try {
+			const res = await fetch(`/api/events/${page.params.id}/social-copy?platform=${id}`);
+			const dati = await res.json();
+			copy = dati.copy ?? null;
+			motivoCopy = dati.motivo ?? null;
+		} catch {
+			motivoCopy = 'Non sono riuscito a generare il testo. Riprova fra un momento.';
+		} finally {
+			caricoCopy = false;
+		}
+	}
+
+	async function copiaNegliAppunti() {
+		if (!copy) return;
+		try {
+			await navigator.clipboard.writeText(copy.testo);
+			testoCopiato = true;
+			setTimeout(() => (testoCopiato = false), 2500);
+		} catch {
+			// Il testo resta selezionabile nella textarea: non serve un errore.
+		}
+	}
 </script>
 
 <svelte:head>
 	<title>{completo ? completo.title : giornoEsteso} · Calendario Eventi Condiviso</title>
+	{#if data.jsonLd}
+		<!--
+			JSON-LD schema.org/MusicEvent (ARCHITECTURE.md §8).
+
+			Compare solo per le date **annunciate**: `aMusicEvent` restituisce
+			`null` per una bozza, per un'opzione e per tutto ciò che si vede in
+			visibilità ridotta. Descrivere in un formato leggibile dalle macchine
+			una data che ADR-0005 tiene riservata sarebbe annunciarla.
+
+			`{@html}` è l'unico modo di emettere un `<script>` da un template
+			Svelte, e qui non è un varco: il contenuto è `JSON.stringify` di un
+			oggetto costruito dal server, e ogni `<` viene sostituito da `\u003c`
+			— che in JSON vale esattamente lo stesso carattere. Nessuna stringa
+			proveniente dai dati può quindi chiudere il tag.
+		-->
+		<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+		{@html `<script type="application/ld+json">${JSON.stringify(data.jsonLd).replace(/</g, '\\u003c')}</` +
+			`script>`}
+	{/if}
 </svelte:head>
 
 <nav class="mb-4 text-sm">
@@ -350,6 +412,94 @@
 				</div>
 			{/if}
 		</section>
+
+		<!-- Porta via la data ------------------------------------------------ -->
+		<section class="border-border rounded-lg border p-4">
+			<h2 class="mb-2 text-sm font-medium">Nel tuo calendario</h2>
+			<ul class="space-y-1 text-sm">
+				<li>
+					<a
+						href={resolve('/api/events/[id].ics', { id: page.params.id! })}
+						data-sveltekit-reload
+						class="underline underline-offset-4">Scarica il file .ics</a
+					>
+				</li>
+				<li>
+					<a
+						href={data.linkCalendario.google}
+						rel="noreferrer noopener external"
+						class="underline underline-offset-4">Aggiungi a Google Calendar</a
+					>
+				</li>
+				<li>
+					<a
+						href={data.linkCalendario.outlook}
+						rel="noreferrer noopener external"
+						class="underline underline-offset-4">Aggiungi a Outlook</a
+					>
+				</li>
+			</ul>
+			<p class="text-muted-foreground mt-2 text-xs">
+				Un file scaricato non si aggiorna più: se la data si sposta, nel tuo calendario resta
+				dov’era. Per averle sempre allineate conviene
+				<a href={resolve('/settings/feeds')} class="underline underline-offset-4">
+					sottoscrivere un feed</a
+				>.
+			</p>
+		</section>
+
+		<!-- Copy per i social (ADR-0012) -------------------------------------- -->
+		{#if completo}
+			<section class="border-border rounded-lg border p-4">
+				<h2 class="mb-2 text-sm font-medium">Testo per i social</h2>
+				<p class="text-muted-foreground mb-3 text-xs">
+					Pronto da copiare e incollare. Il calendario non pubblica niente da solo: su Meta non è
+					possibile, e prometterlo sarebbe una bugia.
+				</p>
+
+				<div class="flex flex-wrap gap-2">
+					{#each PIATTAFORME as p (p.id)}
+						<Button
+							variant="outline"
+							onclick={() => generaCopy(p.id)}
+							aria-pressed={piattaforma === p.id}
+						>
+							{p.nome}
+						</Button>
+					{/each}
+				</div>
+
+				{#if caricoCopy}
+					<p class="text-muted-foreground mt-3 text-xs">Preparo il testo…</p>
+				{/if}
+
+				{#if motivoCopy}
+					<p class="mt-3 text-xs" role="status">{motivoCopy}</p>
+				{/if}
+
+				{#if copy}
+					<label class="mt-3 block">
+						<span class="sr-only">Testo generato</span>
+						<textarea
+							readonly
+							rows="12"
+							value={copy.testo}
+							onfocus={(ev) => ev.currentTarget.select()}
+							class="border-input bg-background w-full rounded-md border px-3 py-2 text-xs"
+						></textarea>
+					</label>
+					<div class="mt-2 flex flex-wrap items-center gap-3">
+						<Button variant="outline" onclick={copiaNegliAppunti}>
+							{testoCopiato ? 'Copiato' : 'Copia'}
+						</Button>
+						<span class="text-muted-foreground text-xs">{copy.caratteri} caratteri</span>
+					</div>
+					{#each copy.avvisi as avviso (avviso)}
+						<p class="mt-2 text-xs">{avviso}</p>
+					{/each}
+				{/if}
+			</section>
+		{/if}
 
 		{#if e.visibilita === 'ridotta'}
 			<section class="border-border rounded-lg border border-dashed p-4">

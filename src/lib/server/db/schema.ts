@@ -560,6 +560,51 @@ export const conflicts = pgTable(
  * ------------------------------------------------------------------ */
 
 /**
+ * Feed ICS sottoscrivibili (ARCHITECTURE.md §8, ADR-0011).
+ *
+ * Il `token` è un segreto in un URL: l'endpoint che serve il feed è pubblico,
+ * perché i client calendario non fanno login. Da lì tre conseguenze che sono
+ * parte del dato e non del codice:
+ *
+ * - il feed appartiene a un **profilo**, non a un'organizzazione, ed è quel
+ *   profilo il viewer con cui `serializeEvent` redige il contenuto: chi entra
+ *   in possesso del token vede esattamente ciò che vedrebbe quella persona
+ *   facendo login, mai di più;
+ * - `revoked_at` esiste perché un segreto che non si può ritirare non è un
+ *   segreto: un URL finito in una chat va disattivato senza toccare gli altri
+ *   feed della stessa persona;
+ * - `last_accessed_at` è l'unico modo per accorgersi che un feed non lo
+ *   interroga più nessuno, o che ne interroga uno che non si ricordava di aver
+ *   creato.
+ */
+export const calendarFeeds = pgTable(
+	'calendar_feeds',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		/** Random 32 caratteri URL-safe, generato con un CSPRNG. */
+		token: text('token').notNull(),
+		profileId: uuid('profile_id')
+			.notNull()
+			.references(() => profiles.id, { onDelete: 'cascade' }),
+		/** Nome dato dall'utente: si finisce ad averne più d'uno. */
+		label: text('label').notNull(),
+		/**
+		 * `{ generi, stati, organizzazioni, raggioKm, centro }`, come lo
+		 * descrive `FiltriFeed` in `$lib/schemas/feed.ts`. È un filtro, non un
+		 * permesso: restringe ciò che il profilo già vede, non lo allarga mai.
+		 */
+		filters: jsonb('filters'),
+		lastAccessedAt: timestamp('last_accessed_at', { withTimezone: true }),
+		revokedAt: timestamp('revoked_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [
+		uniqueIndex('calendar_feeds_token_idx').on(t.token),
+		index('calendar_feeds_profile_idx').on(t.profileId, t.createdAt)
+	]
+).enableRLS();
+
+/**
  * Cache dei risultati di geocoding. Photon e Nominatim hanno rate limit
  * stretti e una policy d'uso da rispettare: ogni query risolta si tiene.
  */
@@ -710,6 +755,8 @@ export type EventGenre = typeof eventGenres.$inferSelect;
 export type EventLineupRow = typeof eventLineup.$inferSelect;
 export type NewEventLineupRow = typeof eventLineup.$inferInsert;
 export type EventLink = typeof eventLinks.$inferSelect;
+export type CalendarFeed = typeof calendarFeeds.$inferSelect;
+export type NewCalendarFeed = typeof calendarFeeds.$inferInsert;
 export type Conflict = typeof conflicts.$inferSelect;
 export type NewConflict = typeof conflicts.$inferInsert;
 export type ConflictKind = (typeof conflictKind.enumValues)[number];

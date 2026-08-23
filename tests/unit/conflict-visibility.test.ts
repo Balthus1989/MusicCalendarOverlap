@@ -91,6 +91,7 @@ function evento(over: Partial<EventWithRelations> = {}): EventWithRelations {
 		externalUrl: null,
 		announceAt: null,
 		internalNotes: 'cachet 800',
+		updatedAt: daLocaleAIstante('2026-09-01T10:00'),
 		organization: organizzazione(ORG_MIA, 'Associazione Mia'),
 		venue,
 		genres: [

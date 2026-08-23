@@ -126,6 +126,7 @@ export function mappaEvento(r: RigaGrezza): EventWithRelations {
 		externalUrl: r.externalUrl,
 		announceAt: r.announceAt,
 		internalNotes: r.internalNotes,
+		updatedAt: r.updatedAt,
 		organization: r.organization,
 		venue: r.venue,
 		genres: r.eventGenres
@@ -345,9 +346,9 @@ export async function opzioniFiltri(db: Database) {
 
 /** Venue e artisti servono al form: qui solo i riferimenti minimi. */
 export async function opzioniForm(db: Database) {
-	// Sequenziali e non in `Promise.all`: il pool ha una connessione sola
-	// (vedi `db/client.ts`), quindi il parallelismo è apparente, e in cambio
-	// un errore o una lentezza si attribuiscono alla query giusta.
+	// Sequenziali e non in `Promise.all`: sono due letture piccole su un form
+	// che si apre di rado, e in cambio un errore o una lentezza si
+	// attribuiscono alla query giusta.
 	const locali = await db
 		.select({
 			id: venues.id,

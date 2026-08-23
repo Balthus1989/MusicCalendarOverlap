@@ -1,0 +1,54 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`snapshot > il feed di un estraneo, con una confermata e una opzionata 1`] = `
+"BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//calendario-eventi-condiviso//IT
+URL:https://calendario.example/api/ics/xyz.ics
+SOURCE;VALUE=URI:https://calendario.example/api/ics/xyz.ics
+NAME:Tutte le date
+X-WR-CALNAME:Tutte le date
+REFRESH-INTERVAL;VALUE=DURATION:PT12H
+X-PUBLISHED-TTL:PT12H
+BEGIN:VEVENT
+UID:e1111111-0000-0000-0000-000000000000@calendario.example
+SEQUENCE:21025800
+DTSTAMP:20260901T083000Z
+DTSTART:20261012T200000Z
+DTEND:20261013T000000Z
+SUMMARY:Notte di Death Metal
+LOCATION:Circolo Arci Il Grifo\\nVia dei Priori 3\\, Perugia (PG)
+GEO:43.1107;12.3908
+DESCRIPTION:terza edizione\\n\\nNero Sabbia — Headliner\\n\\n12\\,00 € in p
+ revendita · 15\\,00 € alla porta · riservato ai tesserati\\nPrevendita: 
+ https://biglietti.example/notte\\n\\nOrganizza: Associazione X\\nhttps://cale
+ ndario.example/events/e1111111-0000-0000-0000-000000000000
+CATEGORIES:Death Metal,Grindcore
+URL;VALUE=URI:https://calendario.example/events/e1111111-0000-0000-0000-00
+ 0000000000
+STATUS:CONFIRMED
+LAST-MODIFIED:20260901T083000Z
+END:VEVENT
+BEGIN:VEVENT
+UID:e2222222-0000-0000-0000-000000000000@calendario.example
+SEQUENCE:21106800
+DTSTAMP:20260902T070000Z
+DTSTART;VALUE=DATE:20261020
+DTEND;VALUE=DATE:20261021
+X-MICROSOFT-CDO-ALLDAYEVENT:TRUE
+X-MICROSOFT-MSNCALENDAR-ALLDAYEVENT:TRUE
+SUMMARY:Opzionata · Death Metal · Associazione X
+LOCATION:Perugia (PG)
+DESCRIPTION:Data opzionata da Associazione X\\, non ancora annunciata.\\nGio
+ rno\\, città e genere sono tutto ciò che è stato condiviso: orario\\, loc
+ ale e lineup restano riservati finché non viene confermata.\\n\\nContatto: 
+ info@associazione-x.example\\n\\nhttps://calendario.example/events/e2222222-
+ 0000-0000-0000-000000000000
+CATEGORIES:Death Metal
+URL;VALUE=URI:https://calendario.example/events/e2222222-0000-0000-0000-00
+ 0000000000
+STATUS:TENTATIVE
+LAST-MODIFIED:20260902T070000Z
+END:VEVENT
+END:VCALENDAR"
+`;
