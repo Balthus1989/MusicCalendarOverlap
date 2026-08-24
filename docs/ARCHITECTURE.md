@@ -13,6 +13,8 @@ Un gruppo di organizzatori di concerti e festival (club, associazioni culturali,
 **Metrica di successo:** gli organizzatori inseriscono le date in stato provvisorio _prima_ di confermarle. Se lo usano solo dopo l'annuncio, il prodotto ha fallito il suo scopo.
 
 > **Come si misura (2026-08-21).** `audit_log` registra ogni cambio di stato, quindi la metrica si legge dai dati e non da un sondaggio: è la quota di eventi che passano da `hold` prima di arrivare a `confirmed`, contro quelli che nascono già confermati. Se la seconda prevale, l'assunzione di [ADR-0023](DECISIONS.md) è sbagliata.
+>
+> **Dove si guarda (2026-08-24, Fase 6).** In `/audit`, sopra il registro. Restava un paragrafo di questo documento senza nessuna schermata dietro, e una metrica che per essere letta richiede una query a mano è una metrica che nessuno legge. Ogni data conta una volta sola, alla prima conferma: una serata annullata e riconfermata non deve valere doppio, altrimenti la misura premierebbe le date travagliate.
 
 **Contesto operativo:** meno di 20 organizzazioni nel primo anno, contesto di alta fiducia, budget minimo, un solo manutentore part-time. Ogni decisione architetturale privilegia la semplicità operativa sulla scalabilità.
 
@@ -275,6 +277,10 @@ UNIQUE `(event_a_id, event_b_id, kind)`, più un CHECK `event_a_id < event_b_id`
 
 **`audit_log`** — `id`, `actor_profile_id`, `entity_type`, `entity_id`, `action`, `diff` jsonb, `created_at`. Popolato per eventi, conflitti e membership.
 
+> **Precisazione (2026-08-24, Fase 6).** Le membership **non venivano scritte**: un cambio di ruolo spariva senza lasciare traccia, ed è precisamente il genere di modifica su cui mesi dopo qualcuno chiede "chi e quando", visto che il ruolo decide chi può invitare e chi può cambiare i ruoli. Ora si registrano l'ingresso in un'organizzazione e il cambio di ruolo.
+>
+> Il registro si legge da `/audit`, e **solo la propria organizzazione**: conserva i valori precedenti dei campi, fra cui il titolo, e mostrarlo altrove significherebbe raccontare il titolo che una data aveva quando era ancora opzionata. Il platform admin non fa eccezione, per la ragione di [ADR-0019](DECISIONS.md).
+
 ---
 
 ## 5. Modello di visibilità
@@ -441,6 +447,7 @@ Precisazioni emerse implementandola (2026-08-21):
 /(app)/events/[id]/edit
 /(app)/conflicts              dashboard conflitti aperti
 /(app)/notifications          casella degli avvisi ricevuti
+/(app)/audit                  registro delle modifiche e metrica di §1
 /(app)/artists                anagrafica condivisa + ricerca
 /(app)/artists/[id]
 /(app)/venues
@@ -681,6 +688,7 @@ PUBLIC_APP_URL
 - `ics`: snapshot dell'output, validazione con un parser ICS
 - `geo/haversine`: distanze note
 - `parse-ics` e `parse-csv`: i due parser deterministici di §9. I casi obbligatori sono quelli in cui l'errore non si vede — i fusi (`Z`, `TZID`, ora fluttuante) dove una data giusta scivola di due ore, il `DTEND` esclusivo delle giornate intere che allunga ogni concerto di un giorno, e una cella CSV quotata che contiene un a-capo, dove uno `split('\n')` fa slittare tutte le colonne. Più il giro di andata e ritorno con `export/csv.ts`, che è l'unica prova che le due metà non si siano allontanate
+- `audit`: il registro. `calcolaDiff` confronta per **valore serializzato** e non per identità — lineup e generi cambiano riferimento a ogni lettura dal database, e un confronto per identità farebbe risultare modificato tutto a ogni salvataggio — e `metricaHold` conta ogni data una volta sola, alla prima conferma
 - `parse-sniff`: il riconoscimento della sorgente, guardando soprattutto il verso pericoloso — un post di Instagram non deve mai passare per una tabella
 - `notifications`: le tabelle di decisione di §10 — quale avviso prevede un'email, quale interruttore lo governa — e soprattutto la redazione dei testi. Il caso obbligatorio è lo stesso di `conflict-visibility`, guardato dall'uscita che non si può ritirare: **la band annunciata da un lato solo non compare in nessuna email**, e all'organizzazione che l'ha annunciata non arriva alcun avviso. Si controlla cercando il nome nell'avviso serializzato per intero, non nei campi in cui ci si aspetterebbe di trovarlo
 - `parse-to-form`: la mappatura verso il form, e in particolare le tre cose che il parser **non** decide — stato, annuncio delle band, collegamento all'anagrafica ([ADR-0031](DECISIONS.md)). Sono i test da leggere per primi se qualcuno si chiederà perché l'import «non finisce il lavoro»

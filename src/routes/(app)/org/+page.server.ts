@@ -2,6 +2,7 @@
 import { fail } from '@sveltejs/kit';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { canCreateOrgInvite, canInviteToOrg, canManageMembers } from '$lib/server/auth/permissions';
+import { registraAudit } from '$lib/server/audit';
 import { getDb } from '$lib/server/db/client';
 import { invites, memberships, organizations, profiles } from '$lib/server/db/schema';
 import { generateInviteCode } from '$lib/server/invites/code';
@@ -180,6 +181,14 @@ export const actions: Actions = {
 
 		const db = getDb();
 
+		const [precedente] = await db
+			.select({ role: memberships.role })
+			.from(memberships)
+			.where(
+				and(eq(memberships.organizationId, organizationId), eq(memberships.profileId, profileId))
+			)
+			.limit(1);
+
 		// Un'organizzazione senza titolare non può più assegnare ruoli a
 		// nessuno: è uno stato da cui non si esce senza intervento manuale.
 		if (profileId === viewer.profileId && role !== 'owner') {
@@ -195,12 +204,28 @@ export const actions: Actions = {
 			}
 		}
 
-		await db
+		const aggiornate = await db
 			.update(memberships)
 			.set({ role: role as 'owner' | 'admin' | 'moderator' | 'member' })
 			.where(
 				and(eq(memberships.organizationId, organizationId), eq(memberships.profileId, profileId))
-			);
+			)
+			.returning({ id: memberships.id, role: memberships.role });
+
+		// §4.6 dice che il registro copre eventi, conflitti **e membership**, e
+		// fino alla Fase 6 questa terza parte non veniva scritta: un cambio di
+		// ruolo spariva senza lasciare traccia. Il ruolo decide chi puo'
+		// invitare e chi puo' cambiare i ruoli, quindi e' esattamente il genere
+		// di modifica su cui qualcuno, mesi dopo, chiede "chi e quando".
+		if (aggiornate[0]) {
+			await registraAudit(db, {
+				actorProfileId: viewer.profileId,
+				entityType: 'membership',
+				entityId: aggiornate[0].id,
+				action: 'update',
+				diff: { role: [precedente?.role ?? null, aggiornate[0].role] }
+			});
+		}
 
 		return { ruoloAggiornato: true };
 	}

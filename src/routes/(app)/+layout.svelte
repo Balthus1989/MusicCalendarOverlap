@@ -27,6 +27,7 @@
 		{ path: '/artists', label: 'Artisti' },
 		{ path: '/venues', label: 'Locali' },
 		{ path: '/org', label: 'Organizzazione' },
+		{ path: '/audit', label: 'Registro' },
 		{ path: '/settings/feeds', label: 'Feed ed export' }
 	] as const;
 

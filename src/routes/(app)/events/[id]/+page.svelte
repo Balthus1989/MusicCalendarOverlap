@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
+	import { cambi, etichettaAzione, nomeAttore } from '$lib/audit';
 	import ConflictWarning from '$lib/components/ConflictWarning.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { ORDINE_SEVERITA } from '$lib/conflicts';
@@ -541,6 +542,39 @@
 						}).format(new Date(completo.announceAt))}.
 					</p>
 				{/if}
+			</section>
+		{/if}
+
+		{#if data.storia.length}
+			<section class="border-border rounded-lg border p-4">
+				<h2 class="mb-2 text-sm font-medium">Storia della data</h2>
+				<p class="text-muted-foreground mb-3 text-xs">
+					Chi ha cambiato cosa. La vede solo la tua organizzazione.
+				</p>
+				<ol class="grid gap-2 text-xs">
+					{#each data.storia as voce (voce.id)}
+						<li>
+							<time class="text-muted-foreground" datetime={new Date(voce.createdAt).toISOString()}>
+								{new Intl.DateTimeFormat('it-IT', {
+									dateStyle: 'short',
+									timeStyle: 'short',
+									timeZone: 'Europe/Rome'
+								}).format(new Date(voce.createdAt))}
+							</time>
+							— {nomeAttore(voce.attore)}:
+							{#if cambi(voce).length}
+								{cambi(voce)
+									.map((c) => `${c.campo} ${c.prima} → ${c.dopo}`)
+									.join(', ')}
+							{:else}
+								{etichettaAzione(voce.action)}
+							{/if}
+						</li>
+					{/each}
+				</ol>
+				<p class="text-muted-foreground mt-3 text-xs">
+					<a class="underline underline-offset-4" href={resolve('/audit')}>Registro completo</a>
+				</p>
 			</section>
 		{/if}
 

@@ -3,6 +3,7 @@
  * quindi la logica sta in un punto solo e non nelle rotte.
  */
 import { and, eq, sql } from 'drizzle-orm';
+import { registraAudit } from '$lib/server/audit';
 import type { Database } from '$lib/server/db/client';
 import { invites, memberships, organizations, type Invite } from '$lib/server/db/schema';
 import { slugify } from '$lib/server/text';
@@ -124,7 +125,7 @@ export async function redeemInvite(
 		organizationId = creata[0].id;
 	}
 
-	await db
+	const creata = await db
 		.insert(memberships)
 		.values({
 			profileId,
@@ -133,7 +134,21 @@ export async function redeemInvite(
 			// l'invito: un'organizzazione senza owner non può assegnare ruoli.
 			role: invite.organizationId ? invite.role : 'owner'
 		})
-		.onConflictDoNothing();
+		.onConflictDoNothing()
+		.returning({ id: memberships.id, role: memberships.role });
+
+	// L'ingresso in un'organizzazione è la prima riga della sua storia, ed è
+	// l'unica scrittura di membership che non parte da un'azione di qualcuno
+	// che è già dentro: l'attore è chi entra (§4.6).
+	if (creata[0]) {
+		await registraAudit(db, {
+			actorProfileId: profileId,
+			entityType: 'membership',
+			entityId: creata[0].id,
+			action: 'create',
+			diff: { role: [null, creata[0].role] }
+		});
+	}
 
 	return { ok: true, organizationId, giaMembro: false };
 }

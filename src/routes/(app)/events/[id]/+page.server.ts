@@ -1,5 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { env as publicEnv } from '$env/dynamic/public';
+import { puoLeggereAudit, registroDellEvento } from '$lib/server/audit';
 import { canDeleteEvent, canEditEvent } from '$lib/server/auth/permissions';
 import { conflittiDellEvento } from '$lib/server/conflicts/queries';
 import { getDb } from '$lib/server/db/client';
@@ -50,7 +51,14 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		// cambio pretende che l'avviso sia impossibile da non vedere proprio
 		// lì. Si caricano solo per chi la data la può modificare: a chi guarda
 		// la serata di un altro, i conflitti di quello non interessano.
-		conflitti: puoModificare ? await conflittiDellEvento(db, viewer, params.id) : []
+		conflitti: puoModificare ? await conflittiDellEvento(db, viewer, params.id) : [],
+		// La storia della data, per l'organizzazione che la possiede. Il
+		// permesso non è quello di modifica ma quello di appartenenza: chi
+		// carica le date in un circolo spesso non è chi lo governa, e la
+		// domanda "chi l'ha spostata" se la fanno tutti e due.
+		storia: puoLeggereAudit(viewer, evento.organizationId)
+			? await registroDellEvento(db, viewer, params.id)
+			: []
 	};
 };
 
