@@ -8,26 +8,43 @@ delle sovrapposizioni tra date.
 
 ## Stato
 
-| Fase                    | Stato                                 |
-| ----------------------- | ------------------------------------- |
-| 0 — Fondazioni          | codice completo, manca il deploy      |
-| 1 — Anagrafiche         | codice completo, manca il deploy      |
-| 2 — Eventi e calendario | codice completo, manca il deploy      |
-| 3 — Motore conflitti    | codice completo, manca il deploy      |
-| 4 — Interoperabilità    | codice completo, manca il deploy      |
-| 5 — Import assistito    | codice completo, manca una chiave LLM |
-| 6 — Rifinitura          | da iniziare                           |
+| Fase                    | Stato                            |
+| ----------------------- | -------------------------------- |
+| 0 — Fondazioni          | codice completo, manca il deploy |
+| 1 — Anagrafiche         | codice completo, manca il deploy |
+| 2 — Eventi e calendario | codice completo, manca il deploy |
+| 3 — Motore conflitti    | codice completo, manca il deploy |
+| 4 — Interoperabilità    | codice completo, manca il deploy |
+| 5 — Import assistito    | verificata; testo libero sospeso |
+| 6 — Rifinitura          | da iniziare                      |
 
 Fasi da 0 a 5 complete sul codice. Il progetto Supabase esiste, le migrazioni
 fino a `0005_fase5_import` sono applicate e i generi sono seminati. Resta il
 primo deploy su Cloudflare. Vedi [Setup](#setup).
 
-**Il criterio di fine della Fase 5 è verificato per le due strade
-deterministiche e non per la terza** (24 agosto 2026). Il criterio chiede che
-_incollando il testo di un evento reale, il form risulti compilato in modo
-utilizzabile_.
+**Il criterio di fine della Fase 5 è verificato nell'applicazione in esecuzione
+per le due strade deterministiche, e sospeso per la terza** (24 agosto 2026).
+Il criterio chiede che _incollando il testo di un evento reale, il form risulti
+compilato in modo utilizzabile_, e per `.ics` e CSV lo è: il manutentore ha
+fatto il giro intero dal browser — incolla, form pre-compilato, proposte di
+collegamento delle band accettate e rifiutate, salvataggio — e la data esce
+giusta.
 
-Provato contro il database vero, con la tassonomia e l'anagrafica reali:
+I controlli che contavano, provati a mano e non solo dai test:
+
+- l'orario dell'`.ics` legge **22:00** e non 20:00 né 21:00, cioè l'ora legale
+  applicata all'istante giusto;
+- la data nasce in **bozza**, qualunque cosa dica il testo;
+- le band compaiono come **proposte** e non risultano già collegate.
+
+Prima del giro dal browser era emerso un difetto che i test non potevano
+vedere: il pannello mandava al server l'organizzazione dei valori di partenza
+invece di quella scelta nel menù, e chi appartiene a due circoli avrebbe potuto
+salvare la data sotto quella sbagliata. Corretto, insieme a un difetto più
+vecchio di `Field.svelte`, che dichiarava la prop `onInput` senza collegarla
+mai al ramo `<select>`.
+
+Provato prima contro il database vero, con la tassonomia e l'anagrafica reali:
 
 - un `.ics` con `DTSTART:20261012T200000Z` compila il form con **le 22:00
   italiane** — l'ora legale applicata all'istante giusto — collega il locale
@@ -42,23 +59,22 @@ Provato contro il database vero, con la tassonomia e l'anagrafica reali:
   pericoloso del riconoscimento, e non scatta;
 - il registro `parse_jobs` scrive, rilegge e scade.
 
-Restano due cose fuori, e sono di natura diversa.
+**Resta fuori l'estrazione dal testo libero**, che è il caso principale della
+fase. Senza `LLM_API_KEY` l'incolla di un post risponde che il riconoscimento
+non è configurato — provato, ed è il comportamento voluto: le due strade
+deterministiche non ne risentono, perché non passano da nessun modello.
 
-**L'estrazione dal testo libero**, che è il caso principale della fase,
-richiede una `LLM_API_KEY`. Il codice è completo e la chiamata è coperta dal
-tipo, ma **nessun post reale è ancora passato da un modello**, quindi la
-qualità dell'estrazione non è misurata. La messa a punto del prompt è
-deliberatamente **sospesa**: il manutentore valuta un LLM ospitato in locale,
-e un prompt tarato su Haiku non si trasferirebbe (decisione #7 in
+Il codice della terza strada è completo e coperto dal tipo, ma **nessun post
+reale è ancora passato da un modello**, quindi la qualità dell'estrazione non
+è misurata e il prompt non è tarato su niente. La messa a punto è
+deliberatamente **sospesa**, non dimenticata: il manutentore valuta un LLM
+ospitato in locale, e un prompt tarato su Haiku non si trasferirebbe a un
+modello da 7-14 miliardi di parametri (decisione #7 in
 [DECISIONS.md](docs/DECISIONS.md)).
 
-**Il giro nell'interfaccia non è mai stato fatto.** Le verifiche qui sopra sono
-a livello di server — moduli puri e query contro il database vero — e la build
-per Cloudflare passa, ma il pannello dell'incolla, il rimontaggio del form, i
-pulsanti di collegamento delle band e il salvataggio finale **non sono mai
-stati esercitati da un browser**: richiedono una sessione, e il login è a
-magic link. È lo stesso collo di bottiglia che tiene aperti i criteri delle
-Fasi 0 e 1.
+Quando quella strada si riaprirà, le due cose da fare in quest'ordine sono:
+provare l'estrazione su post veri leggendo `parse_jobs`, e solo dopo toccare
+`parse/prompt.ts`.
 
 La riverifica delle API Meta che [ADR-0010](docs/DECISIONS.md) rimandava a
 questa fase **è stata fatta**, e la conclusione regge: leggere gli eventi di
