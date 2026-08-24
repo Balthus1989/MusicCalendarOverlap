@@ -21,7 +21,7 @@
  * Contro un ciclo impazzito, che è il caso da cui questi limiti difendono,
  * fanno lo stesso lavoro.
  */
-import { sql } from 'drizzle-orm';
+import { lt, sql } from 'drizzle-orm';
 import type { Database } from '$lib/server/db/client';
 import { rateLimits } from '$lib/server/db/schema';
 
@@ -138,7 +138,12 @@ export async function scadiRateLimit(
 ): Promise<{ cancellate: number }> {
 	const righe = await db
 		.delete(rateLimits)
-		.where(sql`${rateLimits.expiresAt} < ${adesso}`)
+		// `lt` e non un `sql` scritto a mano: dentro un template grezzo la
+		// `Date` non passa dal codificatore della colonna e arriva a Postgres
+		// come il testo di `toString()` — "Mon Aug 24 2026 15:35:31 GMT+0200
+		// (Ora legale dell'Europa centrale)" — che nessun `timestamptz` sa
+		// leggere. La corsa notturna rispondeva 500 su questa riga.
+		.where(lt(rateLimits.expiresAt, adesso))
 		.returning({ bucket: rateLimits.bucket });
 	return { cancellate: righe.length };
 }

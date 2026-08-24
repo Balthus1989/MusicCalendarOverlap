@@ -172,6 +172,33 @@ test.describe('Beta', () => {
 		await expect(page.getByText(TITOLO_ALFA)).toHaveCount(0);
 	});
 
+	test('riceve l’avviso del conflitto nella casella', async ({ page }) => {
+		// Il layer di notifica scrive al salvataggio della data di Alfa, non da
+		// un job: se la riga non c'è, il collegamento fra `creaEvento` e il
+		// layer si è rotto, ed è una cosa che nessun test unitario vede.
+		await apri(page, '/notifications');
+
+		await expect(page.getByRole('heading', { name: 'Avvisi' })).toBeVisible();
+		await expect(page.getByText(ALFA.orgNome).first()).toBeVisible();
+		// L'avviso è redatto per Beta: la data di Alfa è opzionata, e il suo
+		// titolo non compare nemmeno qui (ADR-0035).
+		expect(await page.content()).not.toContain(TITOLO_ALFA);
+	});
+
+	test('sceglie quali email ricevere', async ({ page }) => {
+		await apri(page, '/settings/notifications');
+
+		const digest = page.getByRole('checkbox', { name: /Riepilogo settimanale/ });
+		await expect(digest).toBeChecked(); // l'assenza di riga vale "tutto acceso"
+
+		await digest.uncheck();
+		await page.getByRole('button', { name: 'Salva' }).click();
+		await expect(page.getByText('Preferenze salvate.')).toBeVisible();
+
+		await apri(page, '/settings/notifications');
+		await expect(page.getByRole('checkbox', { name: /Riepilogo settimanale/ })).not.toBeChecked();
+	});
+
 	test('sottoscrive un feed ICS che rispetta la visibilità', async ({ page }) => {
 		await apri(page, '/settings/feeds');
 		await page.getByLabel('Nome').fill('E2E feed');
@@ -208,6 +235,50 @@ test.describe('Beta', () => {
 /* ------------------------------------------------------------------ *
  * Senza sessione
  * ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ *
+ * I job periodici
+ * ------------------------------------------------------------------ */
+
+test.describe('manutenzione notturna', () => {
+	test.use({ storageState: { cookies: [], origins: [] } });
+
+	const SEGRETO = process.env.CRON_SECRET ?? '';
+
+	test('senza il segreto gli endpoint di cron non rispondono', async ({ request }) => {
+		// 403 e non 401: non c'è nessuna autenticazione da rinegoziare, c'è un
+		// segreto condiviso che o si ha o non si ha.
+		for (const job of ['recompute', 'purge', 'digest', 'notify']) {
+			const risposta = await request.post(`/api/cron/${job}`);
+			expect(risposta.status(), job).toBe(403);
+		}
+	});
+
+	test('con il segreto la corsa notturna gira ed è idempotente', async ({ request }) => {
+		test.skip(!SEGRETO, 'CRON_SECRET non configurata in .env.');
+
+		/**
+		 * `digest` resta **fuori** da questa lista di proposito: scriverebbe
+		 * una riga di riepilogo per ogni iscritto vero del database, cioè fuori
+		 * dal prefisso `e2e-` che la pulizia sa togliere. Gli altri tre in
+		 * regime stazionario non scrivono niente, ed è anche il modo in cui si
+		 * verifica che siano idempotenti.
+		 *
+		 * Il valore di questo test non è nella risposta ma nel fatto che ci
+		 * arrivi: una query scritta male in un job che gira alle tre di notte
+		 * si scopre settimane dopo, guardando perché una tabella non si svuota
+		 * mai.
+		 */
+		for (const job of ['recompute', 'purge', 'notify']) {
+			const risposta = await request.post(`/api/cron/${job}`, {
+				headers: { 'x-cron-secret': SEGRETO },
+				timeout: 120_000
+			});
+			expect(risposta.status(), job).toBe(200);
+			expect(await risposta.json(), job).toHaveProperty('durataMs');
+		}
+	});
+});
 
 test.describe('senza sessione', () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
