@@ -22,14 +22,21 @@ Fasi da 0 a 4 complete sul codice. Il progetto Supabase esiste, le migrazioni
 fino a `0004_fase4_feed` sono applicate e i generi sono seminati. Resta il
 primo deploy su Cloudflare. Vedi [Setup](#setup).
 
-**Il criterio di fine della Fase 4 è verificato solo a metà** (23 agosto 2026),
-e la metà che manca non dipende dal codice. Il criterio chiede che _un feed
+**Il criterio di fine della Fase 4 è stato verificato per intero** (23 agosto
+2026), su client veri e non solo dai test. Il criterio chiedeva che _un feed
 sottoscritto in Google Calendar e in Apple Calendar mostri le date corrette e
-si aggiorni dopo una modifica_: sottoscriverlo richiede un URL pubblico, cioè
-il deploy. È lo stesso blocco del ricalcolo notturno.
+si aggiorni dopo una modifica_, e sono entrambe soddisfatte: **le date
+compaiono giuste in tutti e due, e spostando una data nell'applicazione tutti
+e due la spostano.**
 
-Ciò che si è potuto verificare sull'applicazione in esecuzione, con i dati di
-`npm run db:seed:demo`, è tutto il resto:
+Sottoscrivere un feed richiede però un URL che Google e Apple possano
+raggiungere, e il deploy non c'è ancora: la prova si è fatta esponendo il dev
+server con un tunnel usa-e-getta, che è la stessa cosa dal punto di vista dei
+due client. Come si rifà è nel runbook, sotto [Feed ICS](#feed-ics) — servirà
+di nuovo ogni volta che si tocca il formato.
+
+Il resto, verificato sull'applicazione in esecuzione con i dati di
+`npm run db:seed:demo`:
 
 - il feed risponde `text/calendar` con `X-WR-CALNAME`, `REFRESH-INTERVAL:PT12H`
   e `SOURCE`, e **rispetta la matrice di visibilità**: la data confermata di
@@ -37,10 +44,13 @@ Ciò che si è potuto verificare sull'applicazione in esecuzione, con i dati di
   giornata intera intitolato _"Opzionata · Metal · Circolo Arci Lupo Bianco"_
   senza titolo, locale, orario né generi secondari, e la **bozza altrui non
   compare affatto**;
-- **`SEQUENCE` cresce dopo una modifica** — misurato: `20189490` prima di
-  toccare la data, `20258130` dopo. È l'errore che
-  [ADR-0011](docs/DECISIONS.md) elenca per nome, e l'unico modo di accorgersene
-  è guardarlo ([ADR-0028](docs/DECISIONS.md));
+- **`SEQUENCE` cresce solo sulla data modificata.** Spostando _Serata Bassa
+  Marea_ dal 12 al 14 settembre, la sua voce è passata a `20273183` mentre le
+  altre quattro sono rimaste ferme a `20086451`/`20086452`. Il dettaglio che
+  conta è il secondo: se il numero salisse a ogni scaricamento, i client
+  rileggerebbero tutto ogni volta e nessuno se ne accorgerebbe finché il feed
+  non diventa grande. È l'errore che [ADR-0011](docs/DECISIONS.md) elenca per
+  nome ([ADR-0028](docs/DECISIONS.md));
 - i filtri restringono davvero: un feed «solo metal entro 60 km da Perugia»
   creato dal modulo geocodifica la città una volta sola e lascia fuori la
   serata jazz e quella cantautorale, tenendo i sottogeneri (Stoner, Sludge,
@@ -90,8 +100,8 @@ elencava come rischio noto, chiuso da [ADR-0024](docs/DECISIONS.md).
 
 Resta legato al deploy il solo ricalcolo notturno: `.github/workflows/recompute-conflicts.yml`
 ha bisogno dei secret `APP_URL` e `CRON_SECRET`, e di un `APP_URL` che esista.
-Con la Fase 4 si aggiunge alla stessa lista la sottoscrizione dei feed, che
-richiede un URL raggiungibile da Google e da Apple.
+I feed non sono in questa lista — funzionano, è stato provato — ma vale per
+loro l'avvertenza su `PUBLIC_APP_URL` nella sezione [Deploy](#deploy).
 
 **Il criterio di fine della Fase 2 è stato verificato nell'applicazione in
 esecuzione** (21 agosto 2026), non solo dai test: con i dati di
@@ -289,6 +299,18 @@ npx wrangler secret put CRON_SECRET
 Le `PUBLIC_*` possono stare tra le variabili in chiaro del Worker (sono già
 esposte al browser per definizione).
 
+> **`PUBLIC_APP_URL` va fissata sul nome definitivo prima che qualcuno
+> sottoscriva un feed, e poi non si cambia.** Da Fase 4 non è più solo
+> cosmetica: il suo host finisce dentro gli `UID` degli eventi ICS, che sono
+> la chiave con cui un client calendario riconosce che una data è _la stessa_
+> di ieri. Cambiarla non aggiorna le date già scaricate — ne crea un secondo
+> set accanto alle prime, in tutti i calendari sottoscritti, e l'unico rimedio
+> è chiedere a ognuno di disdire e risottoscrivere.
+>
+> Vale anche al contrario: se si prova un feed da un tunnel (vedi il runbook),
+> quella sottoscrizione va tolta dai calendari prima di passare all'indirizzo
+> vero, per lo stesso motivo.
+
 ```bash
 npm run build
 npx wrangler deploy
@@ -390,6 +412,51 @@ passato l'ultima volta. Un feed «mai letto» dopo giorni significa che l'URL no
 
 Il rate limit per token previsto da ARCHITECTURE.md §16 arriva in Fase 6,
 insieme a quelli di `/api/parse` e `/api/geocode`.
+
+#### Provare un feed senza deployare
+
+Il feed è l'unica parte di questo prodotto che **non si può collaudare da
+soli**: che il file sia valido lo dicono i test, che un client vero lo digerisca
+lo dice solo un client vero, e i server di Google `localhost` non lo
+raggiungono. Serve un indirizzo pubblico temporaneo.
+
+```bash
+winget install --id Cloudflare.cloudflared   # una volta sola
+npm run dev
+cloudflared tunnel --url http://localhost:5173   # in un secondo terminale
+```
+
+Il tunnel stampa un indirizzo `https://<parole-a-caso>.trycloudflare.com`, nuovo
+a ogni avvio e senza bisogno di account. Poi:
+
+1. metti quell'indirizzo in `PUBLIC_APP_URL` nel `.env` e **riavvia il dev
+   server** — la variabile si legge all'avvio;
+2. crea un feed **dall'indirizzo del tunnel**, non da localhost, altrimenti
+   l'URL che la pagina mostra è ancora quello vecchio;
+3. prima di darlo a Google, controlla che risponda davvero:
+   `curl -s https://<tunnel>/api/ics/<token>.ics | head -12`.
+
+`vite.config.ts` autorizza `.trycloudflare.com` in `server.allowedHosts`: da
+Vite 6 il dev server rifiuta le richieste con un `Host` non locale, e senza
+quella riga Google riceverebbe `Blocked request. This host is not allowed.` —
+cioè un guasto che si presenta come un feed vuoto.
+
+**Per la prova di aggiornamento sposta la data nell'applicazione**, non nel
+calendario: il feed è in sola lettura ([ADR-0011](docs/DECISIONS.md)) e i due
+client non lasciano nemmeno modificare un calendario sottoscritto. Spostala di
+un **giorno** e non di un'ora, così si vede anche sulle voci che nel feed sono
+eventi di giornata intera. Apple ha un comando di aggiornamento immediato,
+Google no: per chiudere in fretta si guarda Apple, e Google conferma con i suoi
+tempi.
+
+Finita la prova: chiudi il tunnel, **togli la sottoscrizione dai calendari**
+(gli `UID` contengono l'host del tunnel — vedi l'avvertenza sotto
+[Deploy](#deploy)), disdici il feed di prova e rimetti `PUBLIC_APP_URL` a
+`http://localhost:5173`.
+
+Finché il tunnel è aperto il dev server è raggiungibile da internet, con dietro
+il database vero. Tutto è dietro sessione tranne login, invito e il feed col
+token, ma è un motivo in più per non lasciarlo su.
 
 ### Il dev server parte ma la pagina non finisce mai di caricare
 
