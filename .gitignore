@@ -151,3 +151,8 @@ vite.config.ts.timestamp-*
 
 # Impostazioni locali di Claude Code
 .claude/settings.local.json
+
+# Stati di sessione degli smoke test: contengono token veri.
+tests/e2e/.auth/
+playwright-report/
+test-results/

@@ -1017,6 +1017,48 @@ Sul valore dei limiti, che sono due numeri diversi perché difendono da due cose
 
 ---
 
+## ADR-0038 — Gli smoke test girano contro il database vero, si puliscono da soli e restano fuori dalla CI
+
+**Data:** 2026-08-24 · **Stato:** Accettata
+
+**Contesto.** `ARCHITECTURE.md` §15 chiede uno smoke E2E su «invito → registrazione → creazione evento → comparsa conflitto per la seconda organizzazione → sottoscrizione feed ICS». È il percorso che attraversa tutto il prodotto, e nessuno dei suoi passaggi si può provare con un test unitario: quello che verifica non è una funzione, è che i pezzi giusti siano collegati fra loro. Serviva decidere **contro cosa** farlo girare, dato che il progetto ha un solo database ([ADR-0002](#adr-0002--supabase-come-database-auth-e-storage)) e nessun ambiente di prova separato.
+
+**Decisione.**
+
+1. Gli smoke test girano contro il **database di sviluppo vero** e un dev server vero.
+2. Tutto ciò che creano porta il prefisso `e2e-`, e un progetto di `teardown` di Playwright lo rimuove — **anche quando i test falliscono**.
+3. Il login passa dalla **porta vera**: un `token_hash` generato con il ruolo di servizio e appeso a `/auth/callback`, cioè esattamente ciò che finisce nel magic link.
+4. **Non girano in CI.** Si lanciano da locale con `npm run test:e2e`.
+
+**Motivazioni.**
+
+Un secondo progetto Supabase per i test costerebbe un'altra istanza da migrare, da seminare e da tenere allineata a ogni cambio di schema, a un manutentore part-time che ne ha già una. Un Postgres in container in CI risolverebbe il database ma non l'auth, che è un servizio gestito: resterebbe da simulare la parte del flusso che più spesso si rompe.
+
+Il prefisso non è cosmetico: è ciò che permette alla pulizia di essere chirurgica invece che un `truncate`, e quindi di lanciare i test sul database dove il manutentore tiene i dati di demo senza portarglieli via. La verifica dopo il primo giro è stata proprio questa — zero righe residue con quel prefisso.
+
+Sul login dalla porta vera: iniettare i cookie di sessione a mano sarebbe stato più corto e avrebbe reso i test ciechi proprio su `/auth/callback`, che è il pezzo con più modi di rompersi (PKCE, template email, link già consumato — vedi il file stesso). Un test che aggira la cosa più fragile del sistema prova tutto tranne quello.
+
+Sulla CI: farli girare lì significherebbe mettere `SUPABASE_SERVICE_ROLE_KEY` fra i secret del repository. Quella chiave scavalca RLS e apre l'intero database, e in un repository che accetta pull request — anche solo teoricamente, da un fork — è un rischio sproporzionato rispetto al vantaggio. La CI continua a fare lint, typecheck, test unitari e build, che è dove stanno i controlli che devono girare a ogni commit.
+
+**Alternative scartate.**
+
+- _Un secondo progetto Supabase._ Vedi sopra: raddoppia le migrazioni e i seed.
+- _Postgres in container più auth simulata._ Risolve la metà facile.
+- _Cookie iniettati a mano._ Rende ciechi sul pezzo più fragile.
+- _Girare in CI con i secret._ Il costo è la chiave che apre tutto; il beneficio è accorgersi prima di una rottura che, a questi ritmi di rilascio, si scopre comunque prima del deploy.
+- _Nessun teardown, database di test usa e getta._ Non esiste un database usa e getta: è il punto di partenza.
+
+**Conseguenze.**
+
+- Gli smoke test sono **lenti** (una quarantina di secondi) e girano **uno alla volta**: condividono un database, e due che inseriscono la stessa data la stessa sera si darebbero fastidio a vicenda.
+- Vanno lanciati **prima di un rilascio**, non a ogni commit. Il README lo dice nel runbook.
+- Il primo giro ha già trovato una cosa che nessun test unitario poteva vedere: riempire il form evento subito dopo il caricamento non funziona, perché l'idratazione di Svelte rimette a ogni campo il valore della sua prop. Il sintomo era un fallimento lontanissimo dalla causa, con davanti lo screenshot di un modulo vuoto.
+- Servono `SUPABASE_SERVICE_ROLE_KEY` e `DATABASE_URL` in `.env`: senza, i test si fermano dicendolo invece di fallire in modo oscuro.
+
+**Da rivedere se.** Il repository si apre a contributi esterni, o il calendario va in produzione con dati di organizzatori veri. Nel primo caso serve la CI e quindi un ambiente separato; nel secondo, il database di sviluppo smette di essere un posto dove far girare qualcosa che crea e cancella righe.
+
+---
+
 ## Template per nuove voci
 
 ```markdown

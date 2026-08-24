@@ -27,6 +27,14 @@ jobs:
       - name: Test unitari
         run: npm test
 
+      # Gli smoke test Playwright **non** girano qui, ed è una scelta.
+      #
+      # Hanno bisogno di un database vero e del ruolo di servizio di Supabase
+      # per creare gli utenti di prova: metterli in CI vorrebbe dire dare a
+      # ogni pull request — comprese quelle di un fork — la chiave che apre
+      # l'intero database (ADR-0038). Si lanciano da locale con
+      # `npm run test:e2e`, prima di un rilascio, e ripuliscono da soli.
+
       - name: Build
         run: npm run build
         env:

@@ -698,6 +698,12 @@ PUBLIC_APP_URL
 
 **E2E (Playwright)**: invito → registrazione → creazione evento → comparsa conflitto per la seconda organizzazione → sottoscrizione feed ICS.
 
+> **Precisazioni (2026-08-24, Fase 6).** Il percorso è coperto quasi per intero, e la parte che manca è dichiarata: la **registrazione** di un terzo utente che riscatta un invito resta fuori — costerebbe un'identità in più creata e cancellata a ogni giro — mentre dell'invito si verifica che si generi e produca un link.
+>
+> Gli smoke test girano contro il **database di sviluppo vero** e si puliscono da soli, prefisso `e2e-` e progetto di `teardown`, anche quando falliscono. Il login passa dalla porta vera, cioè da un `token_hash` appeso a `/auth/callback`: iniettare i cookie a mano avrebbe reso i test ciechi sul pezzo con più modi di rompersi. **Non girano in CI**, perché servirebbe la chiave di servizio fra i secret del repository. Si lanciano con `npm run test:e2e` prima di un rilascio ([ADR-0038](DECISIONS.md)).
+>
+> Un caso c'è dentro apposta, ed è lo stesso di `visibility` guardato dal lato dell'interfaccia: una band che l'organizzazione proprietaria non ha annunciato non compare nella pagina della sua data vista da un'altra organizzazione, e il controllo si fa sull'HTML intero.
+
 ---
 
 ## 16. Note operative

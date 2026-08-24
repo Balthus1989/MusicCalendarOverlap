@@ -18,7 +18,9 @@
 		"db:migrate": "drizzle-kit migrate",
 		"db:studio": "drizzle-kit studio",
 		"db:seed": "tsx db/seeds/run.ts",
-		"db:seed:demo": "tsx db/seeds/demo.ts"
+		"db:seed:demo": "tsx db/seeds/demo.ts",
+		"test:e2e": "playwright test",
+		"test:e2e:ui": "playwright test --ui"
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.120.0",
@@ -34,6 +36,7 @@
 		"zod": "^4.1.13"
 	},
 	"devDependencies": {
+		"@playwright/test": "^1.62.1",
 		"@sveltejs/adapter-cloudflare": "^7.2.9",
 		"@sveltejs/kit": "^2.63.0",
 		"@sveltejs/vite-plugin-svelte": "^7.1.2",
