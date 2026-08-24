@@ -273,6 +273,8 @@ UNIQUE `(event_a_id, event_b_id, kind)`, più un CHECK `event_a_id < event_b_id`
 
 **`geocode_cache`** — `query_normalized` PK, `lat`, `lon`, `payload` jsonb, `source`, `created_at`.
 
+**`rate_limits`** (Fase 6) — `bucket` PK (`risorsa:identità:inizioFinestra`), `hits`, `expires_at`. Contatori a finestra fissa per `/api/geocode` e `/api/ics/[token]`, incrementati con un `ON CONFLICT DO UPDATE` atomico ([ADR-0037](DECISIONS.md)). Non contiene dati di nessuno: le righe smettono di servire quando la loro finestra passa, e le porta via `/api/cron/purge`.
+
 **`parse_jobs`** — `id`, `profile_id`, `raw_text`, `source_hint`, `parsed_json` jsonb, `model`, `status`, `error`, `created_at`.
 
 **`audit_log`** — `id`, `actor_profile_id`, `entity_type`, `entity_id`, `action`, `diff` jsonb, `created_at`. Popolato per eventi, conflitti e membership.
@@ -472,7 +474,7 @@ Precisazioni emerse implementandola (2026-08-21):
 | GET    | `/api/export?format=json\|csv\|jsonld&from=&to=` | export massivo                        |
 | GET    | `/api/events/[id]/social-copy?platform=`         | testo pronto per il post              |
 | POST   | `/api/cron/recompute`                            | protetto da header secret             |
-| POST   | `/api/cron/purge`                                | scadenze: `parse_jobs` a 90 giorni ([ADR-0032](DECISIONS.md)) |
+| POST   | `/api/cron/purge`                                | scadenze: `parse_jobs` a 90 giorni ([ADR-0032](DECISIONS.md)), notifiche a 180, contatori di rate limit |
 | POST   | `/api/cron/digest`                               | riepilogo settimanale, lunedì mattina                                  |
 | POST   | `/api/cron/notify`                               | solleciti di annuncio e ritentativo email |
 
@@ -687,6 +689,7 @@ PUBLIC_APP_URL
 - `time`: la distanza in giorni civili attraverso i due cambi d'ora, dove la divisione dei millisecondi sbaglierebbe
 - `ics`: snapshot dell'output, validazione con un parser ICS
 - `geo/haversine`: distanze note
+- `ratelimit`: la costruzione della chiave di finestra. È il punto in cui un errore non fallisce ma **conta male** — due richieste vicine su due righe diverse, e il limite vale il doppio di quello scritto
 - `parse-ics` e `parse-csv`: i due parser deterministici di §9. I casi obbligatori sono quelli in cui l'errore non si vede — i fusi (`Z`, `TZID`, ora fluttuante) dove una data giusta scivola di due ore, il `DTEND` esclusivo delle giornate intere che allunga ogni concerto di un giorno, e una cella CSV quotata che contiene un a-capo, dove uno `split('\n')` fa slittare tutte le colonne. Più il giro di andata e ritorno con `export/csv.ts`, che è l'unica prova che le due metà non si siano allontanate
 - `audit`: il registro. `calcolaDiff` confronta per **valore serializzato** e non per identità — lineup e generi cambiano riferimento a ogni lettura dal database, e un confronto per identità farebbe risultare modificato tutto a ogni salvataggio — e `metricaHold` conta ogni data una volta sola, alla prima conferma
 - `parse-sniff`: il riconoscimento della sorgente, guardando soprattutto il verso pericoloso — un post di Instagram non deve mai passare per una tabella
@@ -704,7 +707,7 @@ PUBLIC_APP_URL
   > **Aggiunta (2026-08-24).** C'è una categoria di dati personali che il prodotto **non raccoglie ma riceve**: `parse_jobs.raw_text`, cioè il testo che qualcuno incolla. Un annuncio di concerto contiene con regolarità il numero di chi prende le prenotazioni o il nome di chi ospita il gruppo, e nessuna di quelle persone sa che ne stiamo tenendo copia. Ha una scadenza di novanta giorni, applicata da `/api/cron/purge` ([ADR-0032](DECISIONS.md)). L'informativa dovrà nominarla.
 - **Backup.** Il free tier di Supabase non garantisce backup adeguati: schedulare un `pg_dump` settimanale via GitHub Actions su artifact cifrato. Non opzionale.
 - **Attribuzione OSM** obbligatoria dove si mostrano dati di geocoding.
-- **Rate limit** su `/api/parse`, `/api/geocode` e `/api/ics/[token]` per profilo/token. Quello su `/api/parse` esiste dalla Fase 5 ed è più stretto degli altri per una ragione che gli altri non hanno — è l'unico endpoint che costa denaro: venti riconoscimenti a modello per profilo all'ora, contati da `parse_jobs` e non da un contatore in memoria, che su Cloudflare non sopravviverebbe a un isolate ([ADR-0034](DECISIONS.md)). Gli altri due arrivano in Fase 6.
+- **Rate limit** su `/api/parse`, `/api/geocode` e `/api/ics/[token]` per profilo/token. Quello su `/api/parse` esiste dalla Fase 5 ed è più stretto degli altri per una ragione che gli altri non hanno — è l'unico endpoint che costa denaro: venti riconoscimenti a modello per profilo all'ora, contati da `parse_jobs` e non da un contatore in memoria, che su Cloudflare non sopravviverebbe a un isolate ([ADR-0034](DECISIONS.md)). Gli altri due sono arrivati in Fase 6, e con una costruzione diversa: non avendo nessuna riga già esistente da contare — `geocode_cache` è indicizzata sulla query e non sa di chi sia, `calendar_feeds.last_accessed_at` conserva l'ultimo accesso e non quanti — usano una tabella `rate_limits` con finestra fissa di un'ora, incrementata atomicamente. Sessanta ricerche l'ora per profilo sul geocoding, ventiquattro letture l'ora per token sul feed. Il feed rifiutato risponde **429 e mai un 200 vuoto**, perché un calendario vuoto servito a Google cancella le date già importate ([ADR-0037](DECISIONS.md)).
 - **Migrazione futura fuori dal free tier:** essendo Postgres standard e SvelteKit adapter-agnostico, lo spostamento su VPS o su Vercel non richiede riscritture. Nessun servizio proprietario nel percorso critico eccetto Supabase Auth, sostituibile.
 
 ---

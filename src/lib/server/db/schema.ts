@@ -687,6 +687,30 @@ export const auditLog = pgTable(
 	(t) => [index('audit_log_entity_idx').on(t.entityType, t.entityId, t.createdAt)]
 ).enableRLS();
 
+/**
+ * Contatori di rate limit (ARCHITECTURE.md §16, ADR-0037).
+ *
+ * Una riga per finestra e per soggetto: la chiave contiene già la risorsa,
+ * l'identità e l'inizio della finestra, quindi incrementare è un `INSERT … ON
+ * CONFLICT DO UPDATE` che torna il conteggio aggiornato — atomico, senza
+ * leggere-poi-scrivere.
+ *
+ * Sta nel database e non in memoria per la stessa ragione di [ADR-0034](../../../../docs/DECISIONS.md):
+ * su Cloudflare gli isolate vanno e vengono, e un limite che si azzera a ogni
+ * risveglio non è un limite. Le righe scadute le porta via `/api/cron/purge`.
+ */
+export const rateLimits = pgTable(
+	'rate_limits',
+	{
+		/** `risorsa:identità:inizioFinestra`. Vedi `chiaveFinestra()`. */
+		bucket: text('bucket').primaryKey(),
+		hits: integer('hits').notNull().default(0),
+		/** Quando la riga smette di servire a qualcosa. */
+		expiresAt: timestamp('expires_at', { withTimezone: true }).notNull()
+	},
+	(t) => [index('rate_limits_expires_idx').on(t.expiresAt)]
+).enableRLS();
+
 /* ------------------------------------------------------------------ *
  * §4.6 Notifiche (Fase 6)
  * ------------------------------------------------------------------ */
@@ -911,3 +935,4 @@ export type Notification = typeof notifications.$inferSelect;
 export type NewNotification = typeof notifications.$inferInsert;
 export type NotificationKind = (typeof notificationKind.enumValues)[number];
 export type NotificationPrefs = typeof notificationPrefs.$inferSelect;
+export type RateLimit = typeof rateLimits.$inferSelect;

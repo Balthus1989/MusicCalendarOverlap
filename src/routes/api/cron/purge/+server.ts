@@ -2,6 +2,7 @@ import { json, type RequestHandler } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db/client';
 import { GIORNI_CONSERVAZIONE_NOTIFICHE, scadiNotifiche } from '$lib/server/notifications/service';
 import { GIORNI_CONSERVAZIONE, scadiParseJobs } from '$lib/server/parse/retention';
+import { scadiRateLimit } from '$lib/server/ratelimit';
 
 /**
  * Pulizia notturna dei dati con una scadenza (ADR-0032).
@@ -29,11 +30,15 @@ export const POST: RequestHandler = async () => {
 	const db = getDb();
 	const parse = await scadiParseJobs(db);
 	const notifiche = await scadiNotifiche(db);
+	// I contatori di rate limit non sono dati di nessuno: sono righe che
+	// smettono di servire quando la loro finestra passa (ADR-0037).
+	const rateLimit = await scadiRateLimit(db);
 
 	return json(
 		{
 			parseJobs: { ...parse, giorniConservazione: GIORNI_CONSERVAZIONE },
 			notifiche: { ...notifiche, giorniConservazione: GIORNI_CONSERVAZIONE_NOTIFICHE },
+			rateLimit,
 			durataMs: Date.now() - inizio
 		},
 		{ headers: { 'Cache-Control': 'private, no-store' } }

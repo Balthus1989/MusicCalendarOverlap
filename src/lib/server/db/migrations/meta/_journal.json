@@ -50,6 +50,13 @@
       "when": 1787574032254,
       "tag": "0006_fase6_notifiche",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787576078331,
+      "tag": "0007_fase6_rate_limit",
+      "breakpoints": true
     }
   ]
 }

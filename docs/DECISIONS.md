@@ -981,6 +981,42 @@ Sulla deduplica in SQL invece che in codice: il ricalcolo notturno ripassa ogni 
 
 ---
 
+## ADR-0037 — Il rate limit degli altri due endpoint sta in una tabella, non in `parse_jobs`
+
+**Data:** 2026-08-24 · **Stato:** Accettata
+
+**Contesto.** `ARCHITECTURE.md` §16 chiede un rate limit «su `/api/parse`, `/api/geocode` e `/api/ics/[token]` per profilo/token». Il primo esiste dalla Fase 5 e si conta leggendo `parse_jobs` ([ADR-0034](#adr-0034--claude-haiku-con-schema-forzato-dallapi-musicbrainz-resta-fuori-dallincolla)), perché quelle righe esistono comunque per un altro motivo. Gli altri due non hanno nessuna riga da contare: il geocoding scrive in `geocode_cache`, che è indicizzata sulla query e non sa di chi sia; il feed aggiorna `calendar_feeds.last_accessed_at`, che conserva l'ultimo accesso e non quanti.
+
+**Decisione.** Una tabella `rate_limits` con tre colonne — `bucket` (PK), `hits`, `expires_at` — e una finestra **fissa** di un'ora codificata nella chiave. L'incremento è un `INSERT … ON CONFLICT DO UPDATE … RETURNING`, atomico. I limiti: 60 all'ora per profilo sul geocoding, 24 all'ora per token sul feed. Le righe scadute le porta via `/api/cron/purge`.
+
+**Motivazioni.**
+
+Sul perché nel database e non in memoria, vale parola per parola ADR-0034: su Cloudflare gli isolate vanno e vengono, e un limite che si azzera a ogni risveglio non è un limite — e il caso da cui difende, un ciclo impazzito, è proprio quello che genera abbastanza traffico da farne nascere di nuovi. Nessun Redis, coerentemente con [ADR-0013](#adr-0013--monolite-nessuna-coda-nessun-servizio-accessorio).
+
+Sulla finestra fissa invece che scorrevole: costa un caso limite noto — a cavallo di due finestre si possono fare quasi il doppio delle richieste — e in cambio non richiede di conservare la storia delle singole richieste. Contro un ciclo, le due fanno lo stesso lavoro; contro un attaccante paziente nessuna delle due basterebbe, e non è la minaccia di un calendario fra venti circoli.
+
+Sull'incremento atomico: la versione che viene in mente per prima — leggi il contatore, decidi, scrivi — lascia passare entrambe le richieste proprio quando arrivano insieme, cioè nell'unico momento in cui il limite serve.
+
+Sul valore dei limiti, che sono due numeri diversi perché difendono da due cose diverse. Il geocoding è un **proxy** verso Photon e Nominatim, che hanno una policy d'uso: chi esagera fa bloccare l'IP a tutto il progetto, e a rimetterci sarebbe anche l'inserimento dei locali, che funziona. Il feed è l'unico endpoint pubblico che restituisce dati, con `REFRESH-INTERVAL` a dodici ore: ventiquattro letture l'ora lasciano spazio a più client sullo stesso token — telefono, portatile, Google e Apple insieme — e a qualche ricarica a mano mentre si prova, e restano lontanissime da un uso legittimo.
+
+**Alternative scartate.**
+
+- _Riusare `calendar_feeds.last_accessed_at` come limite di frequenza_ («non più di una lettura al minuto»). Sarebbe stato zero righe di schema, ma è un limite sul ritmo e non sul volume, e con quattro client sottoscritti allo stesso feed il quinto legittimo verrebbe rifiutato.
+- _Contare per IP._ Dietro Cloudflare l'IP c'è, ma i client calendario di Google escono da un pool condiviso: si limiterebbe Google, non chi abusa.
+- _Estendere `parse_jobs` con una colonna «risorsa»._ Quella tabella esiste per il debug delle estrazioni e per misurarne la qualità; riempirla di righe che non sono estrazioni renderebbe inutile la cosa per cui è stata fatta.
+- _Nessun limite sul feed, dato che il token è un segreto._ Un segreto in un URL finisce nella cronologia, in un `Referer`, in un incolla su un gruppo. Il limite serve dopo, non prima.
+
+**Conseguenze.**
+
+- Una richiesta in più al database per ogni chiamata a `/api/geocode` e `/api/ics/[token].ics`. A questi volumi non si misura.
+- **Se il contatore non risponde, si lascia passare.** Un limite mancato è un rischio più piccolo di un feed sottoscritto che smette di aggiornarsi perché una tabella accessoria ha un problema.
+- Il feed risponde **429, mai un 200 vuoto**. La differenza non è formale: un calendario vuoto servito a Google cancella tutte le date già importate, ed è il guasto peggiore che quell'endpoint possa produrre — lo stesso motivo per cui non ha un `try` intorno.
+- `/api/parse` resta com'era. Le due strade coesistono e la ragione è la stessa in tutte e due le direzioni: si contano le righe che esistono già, e si crea una riga solo quando non esiste.
+
+**Da rivedere se.** Serve un limite su qualcosa che non ha un'identità stabile da mettere nella chiave — cioè un endpoint pubblico e anonimo. Oggi non ce ne sono: il feed ha il token.
+
+---
+
 ## Template per nuove voci
 
 ```markdown

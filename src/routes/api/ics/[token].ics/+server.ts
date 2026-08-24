@@ -6,6 +6,7 @@ import { elencaEventi } from '$lib/server/events/queries';
 import { finestraFeed, segnaAccesso, trovaFeedPerToken } from '$lib/server/feeds/service';
 import { tokenBenFormato } from '$lib/server/feeds/token';
 import { costruisciCalendario, type VoceFeed } from '$lib/server/ics/build';
+import { consumaRichiesta } from '$lib/server/ratelimit';
 import { serializeEvent } from '$lib/server/visibility';
 
 /**
@@ -40,6 +41,25 @@ export const GET: RequestHandler = async ({ params, url, setHeaders }) => {
 
 	const contesto = await viewerPerProfilo(db, feed.profileId);
 	if (!contesto) error(404, 'Feed non trovato.');
+
+	/**
+	 * Il limite per token (§16, ADR-0037), contato **dopo** aver riconosciuto
+	 * il feed: un token inesistente non deve poter riempire la tabella dei
+	 * contatori, che è il modo più semplice di trasformare una difesa in un
+	 * bersaglio.
+	 *
+	 * La risposta è un **429 e non un 200 vuoto**. La differenza non è
+	 * formale: un calendario vuoto servito a Google cancella tutte le date già
+	 * importate, che è il guasto peggiore che questo endpoint possa produrre
+	 * (vedi l'intestazione). Un 429 lo fa solo tornare più tardi.
+	 */
+	const limite = await consumaRichiesta(db, 'ics', feed.token);
+	if (!limite.consentito) {
+		return new Response('Troppe richieste per questo feed.', {
+			status: 429,
+			headers: { 'Retry-After': String(limite.riprovaFra) }
+		});
+	}
 
 	const { da, a } = finestraFeed();
 	const eventi = await elencaEventi(db, contesto.viewer, {
