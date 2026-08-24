@@ -23,10 +23,26 @@ jobs:
     steps:
       - name: Installa pg_dump 17
         run: |
+          set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y postgresql-common
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y postgresql-client-17
+
+          # `pg_dump` rifiuta di dumpare un server più recente di sé, e
+          # installare il client 17 **non basta**: su Debian e Ubuntu
+          # `/usr/bin/pg_dump` non è un binario ma `pg_wrapper`, che sceglie
+          # quale versione lanciare in base al cluster predefinito. L'immagine
+          # dei runner ha PostgreSQL 16 con il suo cluster, quindi sceglie il
+          # 16 e ignora il 17 appena installato. Il sintomo è
+          # `aborting because of server version mismatch`, con il numero del
+          # client più basso di quello del server.
+          #
+          # Mettere in testa al PATH la cartella della versione giusta è più
+          # solido del percorso assoluto in ogni comando: vale per tutti gli
+          # step successivi, `pg_restore` compreso, se un giorno se ne aggiunge
+          # uno.
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
 
       - name: Dump e cifratura
         env:
@@ -36,11 +52,24 @@ jobs:
           set -euo pipefail
           test -n "$DIRECT_DATABASE_URL" || { echo "DIRECT_DATABASE_URL mancante"; exit 1; }
           test -n "$BACKUP_PASSPHRASE" || { echo "BACKUP_PASSPHRASE mancante"; exit 1; }
+
+          # Nel registro, prima di tutto: quando la versione tornerà a non
+          # bastare — Supabase aggiorna il major del server — questa riga dice
+          # in un colpo d'occhio che cosa è partito davvero.
+          pg_dump --version
+
           stamp="$(date -u +%Y-%m-%d)"
           pg_dump --format=custom --no-owner --no-privileges \
             --file="backup-${stamp}.dump" "$DIRECT_DATABASE_URL"
+
+          # `--pinentry-mode loopback` non è decorazione: da GnuPG 2.1
+          # `--passphrase` viene **ignorata** senza, perché la passphrase la
+          # chiede l'agent, e in un runner senza terminale il risultato è
+          # `Inappropriate ioctl for device`.
           gpg --batch --yes --symmetric --cipher-algo AES256 \
+            --pinentry-mode loopback \
             --passphrase "$BACKUP_PASSPHRASE" "backup-${stamp}.dump"
+
           rm "backup-${stamp}.dump"
           ls -lh backup-*.dump.gpg
 
