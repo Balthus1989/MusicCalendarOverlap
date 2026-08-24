@@ -462,6 +462,7 @@ Precisazioni emerse implementandola (2026-08-21):
 | GET    | `/api/export?format=json\|csv\|jsonld&from=&to=` | export massivo                        |
 | GET    | `/api/events/[id]/social-copy?platform=`         | testo pronto per il post              |
 | POST   | `/api/cron/recompute`                            | protetto da header secret             |
+| POST   | `/api/cron/purge`                                | scadenze: `parse_jobs` a 90 giorni ([ADR-0032](DECISIONS.md)) |
 | POST   | `/api/cron/digest`                               | idem                                  |
 
 Le mutazioni di dominio usano **form actions** di SvelteKit, non endpoint REST: progressive enhancement gratis e validazione condivisa con lo schema Zod (ADR-0017).
@@ -526,6 +527,16 @@ L'utente incolla l'URL in Google Calendar ("Da URL") o Apple Calendar ("Nuova is
 Vincoli: modello economico (classe Haiku/Flash), timeout 20 s, rate limit per profilo, il fallimento non blocca mai l'inserimento manuale. Costo stimato: ordine di 1-2 € l'anno a questi volumi.
 
 Accetta anche l'incolla di un file `.ics` o di un CSV: parsing deterministico, nessun LLM coinvolto. Da preferire quando la fonte lo permette.
+
+> **Precisazioni (2026-08-24, implementando la Fase 5).**
+>
+> - **La riconferma di §17 punto 5 è stata fatta e la conclusione regge**, con una motivazione diversa da quella scritta qui: leggere gli eventi di Utenti e Pagine non è deprecato, è riservato ai Facebook Marketing Partner. Su Instagram non c'era niente da riverificare — non esiste un oggetto evento. Vedi [ADR-0030](DECISIONS.md).
+> - Le tre sorgenti arrivano tutte a **una forma sola** (`bersaglioParse`), e chi decide quale strada prendere è `sniff.ts`, prima di ogni altra cosa. L'asimmetria delle sue due soglie è deliberata: un testo scambiato per tabella riempie il form di spazzatura in silenzio, una tabella scambiata per testo costa una chiamata al modello. Nel dubbio, testo.
+> - Il punto 3 — «pre-compila il form, non crea l'evento» — vale per **tutte e tre** le sorgenti, `.ics` nostro compreso, e comporta tre cose che il parser non decide: lo stato, l'annuncio delle band e il collegamento all'anagrafica. I primi due non esistono proprio nello schema del bersaglio. Il criterio generale è che il parser riempie i campi il cui errore si vede rivedendo il form, e lascia stare gli altri. Vedi [ADR-0031](DECISIONS.md).
+> - Un `.ics` con quaranta `VEVENT` e un CSV con quaranta righe producono **una data**, la prima, e il totale viene detto. Un import massivo è la creazione di eventi che nessuno ha guardato, e i suoi conflitti arrivano a organizzazioni che non hanno incollato niente. Vedi [ADR-0033](DECISIONS.md).
+> - Il punto 4 nomina MusicBrainz, ma nell'incolla **non ci entra**: la sua policy ammette una richiesta al secondo, e cinque band vorrebbero dire cinque secondi sotto un form. La strada per portare una band nuova in anagrafica con il suo MBID resta `/artists/new`. Vedi [ADR-0034](DECISIONS.md).
+> - Il punto 5 ha una scadenza che qui non era scritta: `raw_text` è testo copiato da altrove e contiene regolarmente dati personali di terzi. Novanta giorni, poi la riga sparisce ([ADR-0032](DECISIONS.md)).
+> - Il fornitore è Claude Haiku 4.5 via SDK ufficiale, con lo schema **forzato dall'API** e non chiesto nel prompt. `LLM_MODEL` resta l'unica cosa da cambiare per usarne un altro. Il rate limit di §16 si legge da `parse_jobs`: venti riconoscimenti a modello per profilo all'ora, perché a differenza degli altri endpoint questo costa denaro ([ADR-0034](DECISIONS.md)).
 
 ---
 
@@ -603,7 +614,8 @@ src/
       visibility.ts  serializeEvent + serializeConflict/redigiConflitto
       cron.ts        segreto condiviso dei job periodici
       ics/
-      parse/
+      parse/         sniff.ts, ics.ts, csv.ts, to-form.ts, prompt.ts (puri),
+                     llm.ts, match.ts, service.ts, retention.ts (con I/O)
       geocode/
       musicbrainz/
       notifications/  sinks/{email,inapp,telegram}.ts
@@ -654,6 +666,9 @@ PUBLIC_APP_URL
 - `time`: la distanza in giorni civili attraverso i due cambi d'ora, dove la divisione dei millisecondi sbaglierebbe
 - `ics`: snapshot dell'output, validazione con un parser ICS
 - `geo/haversine`: distanze note
+- `parse-ics` e `parse-csv`: i due parser deterministici di §9. I casi obbligatori sono quelli in cui l'errore non si vede — i fusi (`Z`, `TZID`, ora fluttuante) dove una data giusta scivola di due ore, il `DTEND` esclusivo delle giornate intere che allunga ogni concerto di un giorno, e una cella CSV quotata che contiene un a-capo, dove uno `split('\n')` fa slittare tutte le colonne. Più il giro di andata e ritorno con `export/csv.ts`, che è l'unica prova che le due metà non si siano allontanate
+- `parse-sniff`: il riconoscimento della sorgente, guardando soprattutto il verso pericoloso — un post di Instagram non deve mai passare per una tabella
+- `parse-to-form`: la mappatura verso il form, e in particolare le tre cose che il parser **non** decide — stato, annuncio delle band, collegamento all'anagrafica ([ADR-0031](DECISIONS.md)). Sono i test da leggere per primi se qualcuno si chiederà perché l'import «non finisce il lavoro»
 
 **E2E (Playwright)**: invito → registrazione → creazione evento → comparsa conflitto per la seconda organizzazione → sottoscrizione feed ICS.
 
@@ -663,19 +678,22 @@ PUBLIC_APP_URL
 
 - **Timezone.** Tutto `timestamptz`. Il "giorno civile" per la regola R3 si calcola con `date_trunc('day', starts_at AT TIME ZONE 'Europe/Rome')`. I test devono includere una data in DST e una fuori.
 - **GDPR.** Dati personali minimi (nome, email, telefono opzionale). Hosting EU. Privacy policy e informativa necessarie, con il titolare del trattamento identificato prima del lancio pubblico: va deciso chi è formalmente titolare (una delle associazioni, presumibilmente) e non lasciato implicito.
+  > **Aggiunta (2026-08-24).** C'è una categoria di dati personali che il prodotto **non raccoglie ma riceve**: `parse_jobs.raw_text`, cioè il testo che qualcuno incolla. Un annuncio di concerto contiene con regolarità il numero di chi prende le prenotazioni o il nome di chi ospita il gruppo, e nessuna di quelle persone sa che ne stiamo tenendo copia. Ha una scadenza di novanta giorni, applicata da `/api/cron/purge` ([ADR-0032](DECISIONS.md)). L'informativa dovrà nominarla.
 - **Backup.** Il free tier di Supabase non garantisce backup adeguati: schedulare un `pg_dump` settimanale via GitHub Actions su artifact cifrato. Non opzionale.
 - **Attribuzione OSM** obbligatoria dove si mostrano dati di geocoding.
-- **Rate limit** su `/api/parse`, `/api/geocode` e `/api/ics/[token]` per profilo/token.
+- **Rate limit** su `/api/parse`, `/api/geocode` e `/api/ics/[token]` per profilo/token. Quello su `/api/parse` esiste dalla Fase 5 ed è più stretto degli altri per una ragione che gli altri non hanno — è l'unico endpoint che costa denaro: venti riconoscimenti a modello per profilo all'ora, contati da `parse_jobs` e non da un contatore in memoria, che su Cloudflare non sopravviverebbe a un isolate ([ADR-0034](DECISIONS.md)). Gli altri due arrivano in Fase 6.
 - **Migrazione futura fuori dal free tier:** essendo Postgres standard e SvelteKit adapter-agnostico, lo spostamento su VPS o su Vercel non richiede riscritture. Nessun servizio proprietario nel percorso critico eccetto Supabase Auth, sostituibile.
 
 ---
 
-## 17. Punti aperti (stato al 21 agosto 2026)
+## 17. Punti aperti (stato al 24 agosto 2026)
+
+Con la chiusura del punto 5, **l'elenco è esaurito**: tutti e cinque i punti che avevano una scadenza di fase sono stati chiusi. Restano in coda le due questioni senza scadenza, in fondo alla sezione.
 
 1. ~~**Raggio di default** di 60 km~~ — chiuso: confermato, [ADR-0021](DECISIONS.md).
 2. ~~**Finestra artisti** di ±14 giorni per R2~~ — chiuso: scesa a ±7 giorni civili con severity graduata, [ADR-0021](DECISIONS.md).
 3. ~~La lineup in `hold` è **completamente** invisibile ad altre organizzazioni: sufficiente a farli fidare?~~ — chiuso **per assunzione, non verificato**: [ADR-0023](DECISIONS.md). Il segnale che la smentirebbe si legge da `audit_log` (§1).
 4. ~~Serve un ruolo di **moderatore**?~~ — chiuso: sì, [ADR-0016](DECISIONS.md).
-5. Verificare, in Fase 5, lo stato attuale delle API Meta: la conclusione di §9 è solida ma va riconfermata al momento dell'implementazione.
+5. ~~Verificare, in Fase 5, lo stato attuale delle API Meta~~ — chiuso: verificato il 24 agosto 2026, la conclusione regge. Non è una deprecazione: leggere gli eventi di Utenti e Pagine è riservato ai Facebook Marketing Partner, e su Instagram non esiste un oggetto evento da leggere. [ADR-0030](DECISIONS.md).
 
 Restano aperte, fuori da questo elenco perché non hanno una scadenza di fase: il titolare del trattamento dei dati (§16, prima del lancio) e il canale Telegram come sink di notifica (Fase 6). Sono tracciate in `DECISIONS.md`.

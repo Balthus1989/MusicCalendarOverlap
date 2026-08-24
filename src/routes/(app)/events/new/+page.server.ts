@@ -4,6 +4,7 @@ import { getDb } from '$lib/server/db/client';
 import { validaEvento, valoriDaForm, valoriPredefiniti } from '$lib/server/events/form';
 import { opzioniForm } from '$lib/server/events/queries';
 import { motiviCheImpediscono, transizioniAmmesse } from '$lib/server/events/status';
+import { llmConfigurato } from '$lib/server/parse/llm';
 import { creaEvento } from '$lib/server/events/write';
 import { daLocaleAIstante } from '$lib/time';
 import type { Actions, PageServerLoad } from './$types';
@@ -24,7 +25,11 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 		generi,
 		// Da una bozza si può già scegliere qualunque stato: capita di
 		// inserire una data che è confermata da settimane.
-		statiAmmessi: transizioniAmmesse('draft')
+		statiAmmessi: transizioniAmmesse('draft'),
+		// Senza `LLM_API_KEY` il testo libero non si legge, ma `.ics` e CSV sì:
+		// il pannello lo dice invece di offrire una funzione che non risponde
+		// (Fase 5, ADR-0034).
+		llmDisponibile: llmConfigurato()
 	};
 };
 

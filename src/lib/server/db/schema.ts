@@ -617,6 +617,50 @@ export const geocodeCache = pgTable('geocode_cache', {
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 }).enableRLS();
 
+export const parseSource = pgEnum('parse_source', ['testo', 'ics', 'csv']);
+
+export const parseStatus = pgEnum('parse_status', ['ok', 'vuoto', 'errore']);
+
+/**
+ * Registro degli incolla passati dal parser (ARCHITECTURE.md §9).
+ *
+ * Serve a due cose, entrambe scritte nella specifica: **debug** — quando
+ * qualcuno dice "me l'ha compilato male" la domanda è cosa aveva incollato — e
+ * **misura della qualità dell'estrazione**, che senza il testo di partenza
+ * accanto al risultato non si può calcolare.
+ *
+ * Un job non è mai un evento: nessuna riga qui dentro diventa una data senza
+ * che una persona abbia rivisto e salvato il form ([ADR-0031](../../../../docs/DECISIONS.md)).
+ *
+ * `raw_text` è testo che l'utente ha copiato da altrove e può contenere dati
+ * personali di terzi — un numero di telefono nella locandina, il nome di chi
+ * gestisce le prenotazioni. Ha quindi una **scadenza**, non una vita
+ * indefinita: il ricalcolo notturno cancella i job più vecchi di 90 giorni
+ * ([ADR-0032](../../../../docs/DECISIONS.md)).
+ */
+export const parseJobs = pgTable(
+	'parse_jobs',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		profileId: uuid('profile_id')
+			.notNull()
+			.references(() => profiles.id, { onDelete: 'cascade' }),
+		/** Il testo incollato, così com'era. Cancellato dopo 90 giorni. */
+		rawText: text('raw_text').notNull(),
+		/** Come è stato letto: `ics` e `csv` non passano da nessun modello. */
+		source: parseSource('source').notNull(),
+		/** Il risultato conforme a `bersaglioParse`, prima della revisione umana. */
+		parsedJson: jsonb('parsed_json'),
+		/** `null` per le sorgenti deterministiche: non c'è nessun modello di mezzo. */
+		model: text('model'),
+		status: parseStatus('status').notNull(),
+		/** Perché è andata male, in chiaro: serve a chi legge il registro, non all'utente. */
+		error: text('error'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [index('parse_jobs_profile_idx').on(t.profileId, t.createdAt)]
+).enableRLS();
+
 /**
  * Traccia di chi ha cambiato cosa. Serve soprattutto sugli eventi: quando due
  * organizzatori si accorgono che una data è cambiata sotto i piedi, la domanda
@@ -763,3 +807,7 @@ export type ConflictKind = (typeof conflictKind.enumValues)[number];
 export type ConflictSeverity = (typeof conflictSeverity.enumValues)[number];
 export type ConflictStatus = (typeof conflictStatus.enumValues)[number];
 export type AuditLogRow = typeof auditLog.$inferSelect;
+export type ParseJob = typeof parseJobs.$inferSelect;
+export type NewParseJob = typeof parseJobs.$inferInsert;
+export type ParseSource = (typeof parseSource.enumValues)[number];
+export type ParseStatus = (typeof parseStatus.enumValues)[number];

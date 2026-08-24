@@ -40,6 +40,10 @@ npm run db:migrate # applica (usa DIRECT_DATABASE_URL, porta 5432)
   da test unitari. L'accesso al database sta accanto, in `reconcile.ts`,
   `queries.ts`, `actions.ts` e `preview.ts`, e non deve rientrare nelle
   regole: è ciò che le rende testabili caso per caso.
+- L'import assistito **compila un form, non crea una data**. Il parser non
+  decide lo stato, non marca nessuna band come annunciata e non collega
+  nessuna riga di lineup all'anagrafica: `status` e `isAnnounced` non
+  esistono proprio in `bersaglioParse`. Vedi ADR-0031.
 - Le migrazioni Drizzle sono versionate: mai modificare una migrazione
   già committata.
 - Prefisso `PUBLIC_` in SvelteKit = esposto al browser. Mai usarlo per

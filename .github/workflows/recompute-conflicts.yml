@@ -1,5 +1,6 @@
-# Ricalcolo notturno dei conflitti (ARCHITECTURE.md §6.4 punto 4).
+# La corsa notturna di manutenzione. Fa due cose, in due endpoint distinti.
 #
+# **Ricalcolo dei conflitti** (ARCHITECTURE.md §6.4 punto 4).
 # Non è il meccanismo ordinario: i conflitti si ricalcolano a ogni salvataggio
 # di una data. Questo serve a recuperare le derive — un ricalcolo fallito in
 # silenzio, un raggio predefinito cambiato, una scheda artista unita da un
@@ -8,10 +9,16 @@
 # Nessuno scheduler acceso da qualche parte (ADR-0013): una GitHub Action
 # chiama un endpoint protetto da un segreto condiviso.
 #
+# Dalla Fase 5 la stessa corsa notturna fa anche la pulizia dei dati con una
+# scadenza (`/api/cron/purge`, ADR-0032). Due endpoint distinti e non uno solo,
+# perché ricalcolare e cancellare sono cose diverse e un ricalcolo che cancella
+# righe è la sorpresa che nessuno vuole trovare mesi dopo; un solo workflow,
+# perché aggiungere uno scheduler per un `curl` sarebbe il contrario di ADR-0013.
+#
 # Secret richiesti:
 #   APP_URL      indirizzo dell'applicazione, senza barra finale
 #   CRON_SECRET  lo stesso valore della variabile d'ambiente sul server
-name: Ricalcolo conflitti
+name: Manutenzione notturna
 
 on:
   schedule:
@@ -43,4 +50,18 @@ jobs:
             --header "x-cron-secret: $CRON_SECRET" \
             --header 'content-length: 0' \
             "$APP_URL/api/cron/recompute"
+          echo
+
+      - name: Chiama /api/cron/purge
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            --max-time 120 \
+            --request POST \
+            --header "x-cron-secret: $CRON_SECRET" \
+            --header 'content-length: 0' \
+            "$APP_URL/api/cron/purge"
           echo

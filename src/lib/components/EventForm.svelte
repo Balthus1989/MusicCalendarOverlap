@@ -31,6 +31,7 @@
 		type ValoriEvento,
 		type VoceLineupForm
 	} from '$lib/events';
+	import { ETICHETTE_MOTIVO, type PropostaArtista } from '$lib/parse';
 	import type { EventStatus } from '$lib/server/db/schema';
 
 	type Genere = { slug: string; name: string; path: string; depth: number };
@@ -49,6 +50,16 @@
 		annullaHref: string;
 		/** Presente in modifica: serve a non far scontrare la data con sé stessa. */
 		eventId?: string | null;
+		/**
+		 * Band lette da un incolla che **potrebbero** essere schede
+		 * dell'anagrafica (Fase 5, §9 punto 4).
+		 *
+		 * Sono proposte, non collegamenti: `artistId` resta vuoto finché
+		 * qualcuno non sceglie. Un collegamento sbagliato non si vedrebbe —
+		 * il campo mostra comunque il nome giusto — e falserebbe la regola R2,
+		 * che confronta gli id e non i nomi (ADR-0031).
+		 */
+		proposteArtisti?: PropostaArtista[];
 	};
 
 	let {
@@ -61,8 +72,34 @@
 		erroreGenerale = null,
 		etichettaInvio,
 		annullaHref,
-		eventId = null
+		eventId = null,
+		proposteArtisti = []
 	}: Props = $props();
+
+	/**
+	 * Le proposte già evase: una scelta fatta, o messa da parte.
+	 *
+	 * Sparire dopo la scelta è il comportamento giusto — la proposta ha
+	 * esaurito il suo scopo — ma sparire senza che nessuno abbia scelto no:
+	 * `Ignora` è un modo di rispondere, e va reso possibile.
+	 */
+	let proposteEvase = $state<number[]>([]);
+
+	function propostaPer(i: number): PropostaArtista | null {
+		if (proposteEvase.includes(i)) return null;
+		const p = proposteArtisti.find((x) => x.indice === i);
+		// Se il nome nella riga è cambiato, la proposta parlava di un'altra
+		// band e non vale più.
+		return p && p.nome === lineup[i]?.artistName ? p : null;
+	}
+
+	function collega(i: number, candidato: { id: string; name: string }) {
+		aggiornaVoce(i, { artistId: candidato.id, artistName: candidato.name });
+		proposteEvase = [...proposteEvase, i];
+		// `lineup.N.artistId` è ciò su cui lavora la regola R2: cambiandolo si
+		// ricontrolla, come dopo una ricerca in anagrafica.
+		pianificaAnteprima();
+	}
 
 	let statoScelto = $state<EventStatus | null>(null);
 	let localeScelto = $state<string | null>(null);
@@ -585,6 +622,40 @@
 						{/if}
 						{#if errori[`lineup.${i}.artistName`]}
 							<p class="text-destructive text-xs">{errori[`lineup.${i}.artistName`]}</p>
+						{/if}
+
+						<!-- Proposte dell'incolla (§9 punto 4). Il collegamento non
+						     avviene mai da solo: sbagliarlo non si vedrebbe nel form,
+						     perché il nome resterebbe quello giusto, e falserebbe la
+						     regola R2, che confronta gli id (ADR-0031). -->
+						{#if propostaPer(i)}
+							{@const proposta = propostaPer(i)!}
+							<div class="border-border bg-muted/40 mt-2 space-y-2 rounded-md border p-2">
+								<p class="text-muted-foreground text-xs">
+									In anagrafica {proposta.candidati.length === 1
+										? 'c’è una scheda che potrebbe essere questa band'
+										: 'ci sono schede che potrebbero essere questa band'}:
+								</p>
+								<div class="flex flex-wrap items-center gap-2">
+									{#each proposta.candidati as c (c.id)}
+										<button
+											type="button"
+											onclick={() => collega(i, c)}
+											class="border-input hover:bg-background rounded border px-2 py-1 text-xs"
+										>
+											{c.name}
+											<span class="text-muted-foreground">· {ETICHETTE_MOTIVO[c.motivo]}</span>
+										</button>
+									{/each}
+									<button
+										type="button"
+										onclick={() => (proposteEvase = [...proposteEvase, i])}
+										class="text-muted-foreground px-2 py-1 text-xs underline underline-offset-4"
+									>
+										Nessuna di queste
+									</button>
+								</div>
+							</div>
 						{/if}
 					</div>
 

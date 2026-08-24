@@ -8,19 +8,53 @@ delle sovrapposizioni tra date.
 
 ## Stato
 
-| Fase                    | Stato                            |
-| ----------------------- | -------------------------------- |
-| 0 — Fondazioni          | codice completo, manca il deploy |
-| 1 — Anagrafiche         | codice completo, manca il deploy |
-| 2 — Eventi e calendario | codice completo, manca il deploy |
-| 3 — Motore conflitti    | codice completo, manca il deploy |
-| 4 — Interoperabilità    | codice completo, manca il deploy |
-| 5 — Import assistito    | da iniziare                      |
-| 6 — Rifinitura          | da iniziare                      |
+| Fase                    | Stato                                 |
+| ----------------------- | ------------------------------------- |
+| 0 — Fondazioni          | codice completo, manca il deploy      |
+| 1 — Anagrafiche         | codice completo, manca il deploy      |
+| 2 — Eventi e calendario | codice completo, manca il deploy      |
+| 3 — Motore conflitti    | codice completo, manca il deploy      |
+| 4 — Interoperabilità    | codice completo, manca il deploy      |
+| 5 — Import assistito    | codice completo, manca una chiave LLM |
+| 6 — Rifinitura          | da iniziare                           |
 
-Fasi da 0 a 4 complete sul codice. Il progetto Supabase esiste, le migrazioni
-fino a `0004_fase4_feed` sono applicate e i generi sono seminati. Resta il
+Fasi da 0 a 5 complete sul codice. Il progetto Supabase esiste, le migrazioni
+fino a `0005_fase5_import` sono applicate e i generi sono seminati. Resta il
 primo deploy su Cloudflare. Vedi [Setup](#setup).
+
+**Il criterio di fine della Fase 5 è verificato per le due strade
+deterministiche e non per la terza** (24 agosto 2026). Il criterio chiede che
+_incollando il testo di un evento reale, il form risulti compilato in modo
+utilizzabile_.
+
+Provato contro il database vero, con la tassonomia e l'anagrafica reali:
+
+- un `.ics` con `DTSTART:20261012T200000Z` compila il form con **le 22:00
+  italiane** — l'ora legale applicata all'istante giusto — collega il locale
+  all'anagrafica leggendo il `LOCATION`, risolve `CATEGORIES:Punk,Hardcore`
+  nella tassonomia chiusa come `punk` più `hardcore`, e lascia la data in
+  **bozza**;
+- un CSV con `22:00 → 02:00` porta la fine al **giorno dopo**, normalizza
+  `"10,00 €"` in `10,00`, estrae la lineup e ne propone il collegamento
+  all'anagrafica **senza applicarlo**;
+- un post di Instagram con emoji e «Porte 21:00, inizio 22:00» viene
+  riconosciuto come testo libero, cioè mandato al modello: è il verso
+  pericoloso del riconoscimento, e non scatta;
+- il registro `parse_jobs` scrive, rilegge e scade.
+
+**Resta da provare l'estrazione dal testo libero**, che è il caso principale
+della fase: richiede una `LLM_API_KEY`, che su questo ambiente non c'è. Il
+codice è completo e la chiamata è coperta dal tipo, ma **nessun post reale è
+ancora passato da un modello**, quindi la qualità dell'estrazione non è
+misurata. Come si prova, appena c'è una chiave, è nel runbook sotto
+[Paste-to-parse](#paste-to-parse).
+
+La riverifica delle API Meta che [ADR-0010](docs/DECISIONS.md) rimandava a
+questa fase **è stata fatta**, e la conclusione regge: leggere gli eventi di
+Utenti e Pagine è riservato ai Facebook Marketing Partner, e Instagram non
+modella affatto il concetto di evento. Il punto aperto #5 di `ARCHITECTURE.md`
+§17 si chiude, e con esso l'intero elenco dei punti con una scadenza di fase
+([ADR-0030](docs/DECISIONS.md)).
 
 **Il criterio di fine della Fase 4 è stato verificato per intero** (23 agosto
 2026), su client veri e non solo dai test. Il criterio chiedeva che _un feed
@@ -375,6 +409,65 @@ bisogno dei secret `APP_URL` e `CRON_SECRET`.
 Il ricalcolo ordinario non passa da qui: avviene a ogni salvataggio di una
 data. Il job notturno serve a recuperare le derive, perché la riconciliazione
 è progettata per non sollevare mai e quindi può fallire in silenzio.
+
+`POST /api/cron/purge` cancella i dati con una scadenza. Per ora ce n'è uno
+solo: i job di `parse_jobs` più vecchi di 90 giorni, dove `raw_text` è il testo
+che qualcuno ha incollato e può contenere dati personali di terzi
+([ADR-0032](docs/DECISIONS.md)). È idempotente, e la risposta dice quante righe
+ha tolto.
+
+Lo chiama la **stessa** GitHub Action del ricalcolo, come secondo passo: due
+endpoint distinti, perché ricalcolare e cancellare sono cose diverse e un
+endpoint che si chiama «ricalcola» non deve cancellare righe; un solo workflow,
+perché aggiungere uno scheduler per un `curl` sarebbe il contrario di
+[ADR-0013](docs/DECISIONS.md). Il file si chiama ancora
+`recompute-conflicts.yml` — rinominarlo perderebbe lo storico delle esecuzioni
+su GitHub.
+
+### Paste-to-parse
+
+`POST /api/parse` legge un testo incollato e restituisce **valori da mettere
+nel form**. Non scrive nessun evento: l'unica scrittura possibile è la riga di
+registro in `parse_jobs`.
+
+Tre strade, scelte da `sniff.ts` prima di ogni altra cosa:
+
+| Incollato                     | Come viene letto                 | Costa               |
+| ----------------------------- | -------------------------------- | ------------------- |
+| `BEGIN:VCALENDAR…`            | parser `.ics` deterministico     | zero                |
+| Tabella con intestazioni note | parser CSV deterministico        | zero                |
+| Tutto il resto                | Claude Haiku 4.5, schema forzato | ~0,001 € a chiamata |
+
+**Senza `LLM_API_KEY` le prime due strade funzionano lo stesso.** Il pannello
+lo dice invece di offrire un pulsante che non risponde: sono indipendenti, e
+una configurazione mancante non deve spegnere ciò che non ne ha bisogno.
+
+Il limite è di **20 riconoscimenti a modello per profilo all'ora**, contato da
+`parse_jobs` e non da un contatore in memoria — su Cloudflare gli isolate vanno
+e vengono, e un limite che si azzera a ogni risveglio non è un limite. Le due
+strade deterministiche non entrano nel conteggio perché non costano niente.
+
+**Se un'estrazione è andata male**, il testo di partenza è in `parse_jobs`
+accanto al risultato, per novanta giorni:
+
+```bash
+npm run db:studio
+```
+
+Il primo rimedio è `LLM_MODEL`, non il codice; il secondo è il prompt, che sta
+in `src/lib/server/parse/prompt.ts` senza I/O apposta per poterlo leggere e
+provare da solo.
+
+**Quello che il parser non fa, e non è un difetto**
+([ADR-0031](docs/DECISIONS.md)): non decide lo stato — la data nasce sempre in
+bozza — non marca nessuna band come annunciata, e non collega nessuna riga di
+lineup all'anagrafica. Le band riconosciute compaiono come proposte accanto
+alla riga, con un pulsante per accettarle. Un `artistId` sbagliato non si
+vedrebbe rivedendo il form, perché il nome resterebbe quello giusto, e
+falserebbe la regola R2 del motore conflitti.
+
+Un `.ics` con quaranta date, o un CSV con quaranta righe, producono **una**
+data: la prima. Il totale viene detto ([ADR-0033](docs/DECISIONS.md)).
 
 ### Feed ICS
 

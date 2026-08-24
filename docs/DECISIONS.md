@@ -172,7 +172,7 @@ Storico delle decisioni architetturali del progetto. Ogni voce spiega **perché*
 
 ## ADR-0010 — Nessun import da Facebook/Instagram: paste-to-parse
 
-**Data:** 2026-08-19 · **Stato:** Provvisoria — riconfermare in Fase 5
+**Data:** 2026-08-19 · **Stato:** Accettata — riconfermata il 2026-08-24, vedi [ADR-0030](#adr-0030--le-api-meta-riverificate-limport-da-facebook-e-instagram-continua-a-non-esistere)
 
 **Contesto.** L'import da FB/IG era un requisito iniziale esplicito. Meta ha però deprecato la lettura pubblica degli eventi delle Pagine e Instagram non modella affatto il concetto di evento. Lo scraping è fragile e contro i ToS.
 
@@ -182,7 +182,9 @@ Storico delle decisioni architetturali del progetto. Ogni voce spiega **perché*
 
 **Conseguenze.** Unico costo variabile del progetto: trascurabile a questi volumi (ordine di 1-2 € l'anno con un modello economico). Il fallimento del parser non blocca mai l'inserimento manuale.
 
-**Perché provvisoria.** Lo stato delle API Meta va riconfermato al momento dell'implementazione, non dato per assodato sulla base di questa nota.
+**Perché era provvisoria.** Lo stato delle API Meta andava riconfermato al momento dell'implementazione, non dato per assodato sulla base di questa nota.
+
+> **Riconferma (2026-08-24, Fase 5).** Fatta, e la conclusione regge — con una motivazione un po' diversa da quella scritta qui: non è una deprecazione, è che leggere gli eventi di Utenti e Pagine è riservato ai Facebook Marketing Partner. Su Instagram non c'era niente da riverificare, perché non esiste un oggetto evento da leggere. Vedi [ADR-0030](#adr-0030--le-api-meta-riverificate-limport-da-facebook-e-instagram-continua-a-non-esistere), che chiude anche il punto aperto #5 di `ARCHITECTURE.md` §17.
 
 ---
 
@@ -727,6 +729,183 @@ C'è anche una ragione più semplice: la comodità è piccola. Chi ha una bozza 
 - Il modulo di creazione lo dice esplicitamente, invece di limitarsi a non mostrare la casella: una funzione assente senza spiegazione si legge come una dimenticanza.
 
 **Da rivedere se.** Gli organizzatori chiedono di vedere le proprie bozze nel calendario del telefono. La risposta giusta a quel punto non è allentare questa regola, è il feed separato scartato qui sopra.
+
+---
+
+## ADR-0030 — Le API Meta, riverificate: l'import da Facebook e Instagram continua a non esistere
+
+**Data:** 2026-08-24 · **Stato:** Accettata · **Conferma** [ADR-0010](#adr-0010--nessun-import-da-facebookinstagram-paste-to-parse)
+
+**Contesto.** [ADR-0010](#adr-0010--nessun-import-da-facebookinstagram-paste-to-parse) è nato `Provvisorio` con una clausola precisa: «Lo stato delle API Meta va riconfermato al momento dell'implementazione, non dato per assodato sulla base di questa nota». Era anche il punto aperto #5 di `ARCHITECTURE.md` §17, in scadenza con questa fase. L'import da Facebook e Instagram era un **requisito iniziale esplicito** del manutentore: rinunciarci sulla base di una nota scritta cinque giorni prima, senza ricontrollare, sarebbe stato il modo di trasformare una ricerca in un pregiudizio.
+
+**Decisione.** La conclusione regge, e ADR-0010 passa ad `Accettata`. Nessun import automatico. Il paste-to-parse resta la sostituzione.
+
+**Che cosa dice oggi la documentazione Meta.** La reference dell'oggetto `Event` limita l'accesso in modo esplicito: leggere gli eventi di **Utenti e Pagine** è riservato ai Facebook Marketing Partner. Un'app terza può leggere solo gli eventi che ha creato lei stessa, con un token applicativo, e quelli di un Gruppo di cui chi chiede è amministratore, previa approvazione della Groups API. Nessuna delle tre strade serve al nostro caso, che è «leggere gli eventi che un'associazione ha pubblicato sulla propria Pagina».
+
+**La motivazione è cambiata, la conclusione no.** ADR-0010 diceva «Meta ha deprecato la lettura pubblica degli eventi delle Pagine». Non è propriamente una deprecazione: l'endpoint esiste e funziona, ma dietro un programma di partnership commerciale a cui un calendario di venti circoli non accede. La differenza conta per una ragione sola, ed è che i due fatti scadono in modo diverso: una deprecazione non si annulla, una restrizione di accesso sì. Se un giorno il gruppo passasse da una struttura che è già Marketing Partner, la domanda si riaprirebbe — e si riaprirebbe comunque solo su Facebook.
+
+Su Instagram non c'è niente da riverificare, ed è il punto più solido dei due: Instagram **non modella affatto** il concetto di evento. Non c'è un endpoint da chiedere, perché non c'è un oggetto da leggere. Un annuncio di concerto su Instagram è la didascalia di una foto, e l'unica cosa che si può farne è leggerla — che è precisamente ciò che fa il paste-to-parse.
+
+**Alternative scartate.** Le stesse di ADR-0010, con un anno in meno di illusioni: lo scraping resta fragile e contro i ToS, e non è diventato meno fragile. Va aggiunta una alternativa che oggi esiste e allora no — **chiedere l'ingresso al programma Marketing Partner** — scartata senza esitazione: è un rapporto commerciale con Meta per un'associazione senza scopo di lucro, e metterebbe una dipendenza da un'approvazione discrezionale nel percorso critico di un prodotto costruito apposta per non averne (principio 4, «niente integrazioni fragili»).
+
+**Conseguenze.** Il punto aperto #5 di §17 si chiude. ADR-0010 non è più provvisorio, quindi la Fase 5 può poggiarci sopra senza riserve.
+
+**Da rivedere se.** Il gruppo si dota di una struttura che è già Marketing Partner, o Meta riapre la lettura pubblica degli eventi delle Pagine. Anche allora il guadagno sarebbe parziale: coprirebbe Facebook e non Instagram, e resterebbe una dipendenza da un'API che può richiudersi. Il paste-to-parse funzionerebbe comunque.
+
+---
+
+## ADR-0031 — L'import compila il form, e le tre cose che non decide
+
+**Data:** 2026-08-24 · **Stato:** Accettata
+
+**Contesto.** `ARCHITECTURE.md` §9 punto 3 dice che il risultato del parser «**pre-compila il form**, non crea l'evento. L'utente rivede e conferma sempre». È una frase chiara su *una* cosa — non si crea l'evento — e muta su tutto il resto. Scrivendo la mappatura verso il form sono emerse tre decisioni che un parser può prendere senza che nessuno se ne accorga, e che nessuna delle tre è sua:
+
+1. **Lo stato.** Un post pubblico descrive una data annunciata. La lettura letterale sarebbe farla nascere `confirmed`.
+2. **L'annuncio delle band.** Stessa logica: se il nome di una band è scritto in un post pubblico, quella band *è* annunciata, quindi `is_announced` dovrebbe essere vero.
+3. **Il collegamento all'anagrafica.** Il parser legge «Bassa Marea»; in anagrafica c'è una scheda che si chiama esattamente così. Collegarla sembra ovvio.
+
+Tutte e tre sono difendibili in astratto. Tutte e tre, sbagliando, non fanno rumore.
+
+**Decisione.** Nessuna delle tre. Il bersaglio del parser (`$lib/schemas/parse.ts`) **non contiene affatto** i campi `status` e `isAnnounced`, e `versoIlForm()` lascia `artistId` vuoto su ogni riga di lineup. Le band riconosciute in anagrafica tornano a parte, come **proposte** accanto alla riga, con un pulsante per accettarle e uno per rifiutarle.
+
+Che il campo non esista nello schema, invece di esistere e valere sempre `null`, non è una sottigliezza: è la differenza fra una regola e una consuetudine. Un campo che c'è viene prima o poi riempito da qualcuno che ha una buona ragione.
+
+**Motivazioni.**
+
+Sullo stato: **confermare significa annunciare**, ed è il momento che [ADR-0022](#adr-0022--una-data-si-conferma-anche-con-un-conflitto-aperto) protegge più di ogni altro — in cambio del non mettere cancelli davanti alla conferma, quell'ADR ha assunto l'impegno che chi conferma abbia visto l'avviso di conflitto. Una data che nasce già confermata da un incolla attraversa quel momento senza che nessuno ci sia passato. E il testo non è nemmeno una fonte attendibile su questo: un post promozionale scritto tre mesi prima non dice se la data è ancora in piedi oggi.
+
+Sull'annuncio: `is_announced` è la rivelazione progressiva di [ADR-0005](#adr-0005--stato-hold-con-visibilità-ridotta), e la decide **chi porta la band**. Il fatto che un post altrui la nomini non è quella decisione. Il caso che chiarisce tutto è quello in cui l'incolla *non* è il proprio: un organizzatore che si copia negli appunti la locandina di un collega, per tenersi la data, non ha nessun titolo per marcare come annunciate quelle band nel proprio calendario. Al primo salvataggio quei nomi uscirebbero verso tutti — e non c'è nessun modo di rimetterli dentro.
+
+Sul collegamento: è il più insidioso dei tre, perché è l'unico che sbaglia **in modo invisibile**. Se il parser collega «Fossa» alla scheda sbagliata fra due omonimi, il campo a schermo mostra comunque «Fossa»: non c'è niente da notare rivedendo il form. Il danno arriva dopo, nel motore conflitti, che confronta gli `artist_id` e non i nomi ([ADR-0006](#adr-0006--artisti-e-venue-come-entità-globali-condivise)) — o non fa scattare un doppio ingaggio vero, o ne segnala uno che non c'è. §9 punto 4 lo prescriveva già con parole diverse: «ogni match richiede conferma esplicita».
+
+**Il criterio generale**, che vale anche per la quinta decisione che si presenterà: *il parser riempie i campi che una persona può verificare guardandoli; non tocca i campi il cui errore non si vede.* Il titolo sbagliato salta all'occhio. Un `artistId` sbagliato no.
+
+**Un'eccezione apparente, che non lo è.** `venueId` **viene** riempito, ma solo su un nome identico a meno di accenti e punteggiatura, e solo se il candidato è uno solo. La somiglianza non basta di proposito: fra «Circolo Arci Lupo Bianco» e «Circolo Arci Lupo Grigio» la distanza di edit è minima e i due posti sono in due paesi diversi. La differenza con `artistId` è che il locale scelto **si vede nel form**, in un menù a tendina con il nome scritto sopra: è verificabile guardandolo, e rientra quindi nel criterio.
+
+**Alternative scartate.**
+
+- _Dedurre lo stato dal testo_ («è scritto "confermato"»): fa dipendere una transizione di stato dalla retorica di un post promozionale.
+- _Riempire tutto e segnare i campi come «da rivedere»_: è la proposta che sembra prudente. Non lo è, per la stessa ragione per cui una casella con l'avvertenza accanto si spunta ([ADR-0029](#adr-0029--il-feed-ics-non-contiene-le-bozze)): un campo pre-compilato si conferma, e più il form è lungo — trenta campi — più si conferma in blocco.
+- _Collegare le band con un solo candidato e proporre solo gli ambigui_: è esattamente il caso in cui il collegamento è più difficile da mettere in dubbio, e in cui un omonimo non ancora in anagrafica produrrebbe un collegamento sbagliato senza nessun segnale.
+- _Marcare `is_announced` quando l'incolla è del proprio evento_: richiederebbe di sapere di chi è il post, che è precisamente ciò che un testo incollato non dice.
+
+**Conseguenze.**
+
+- `bersaglioParse` non ha i campi `status` e `isAnnounced`, e non deve acquisirli. È il posto dove la decisione è espressa in modo che non si possa aggirare distrattamente, come `filtriFeed` lo è per [ADR-0029](#adr-0029--il-feed-ics-non-contiene-le-bozze).
+- I test in `parse-to-form.test.ts` hanno una sezione apposta, «ciò che resta di una persona», con una asserzione per ciascuna delle tre. Sono i test che vanno letti per primi se un giorno qualcuno si chiederà perché l'import «non finisce il lavoro».
+- Il pannello dell'incolla elenca **che cosa ha riempito** e **che cosa non ha saputo collocare**. La seconda metà conta più della prima: un campo lasciato vuoto senza dirlo si legge come «nel testo non c'era», e chi rivede non va a ricontrollare.
+- Il collegamento all'anagrafica resta un'operazione a due clic. È il costo che questa decisione ha, e si paga una volta per band.
+
+**Da rivedere se.** Gli organizzatori collegano *sempre* la prima proposta senza guardare. Vorrebbe dire che la conferma esplicita è diventata un rituale, e a quel punto il rimedio non è collegare da soli — è capire perché le proposte sono così scontate, e semmai mostrarne di meno.
+
+---
+
+## ADR-0032 — Il testo incollato ha una scadenza
+
+**Data:** 2026-08-24 · **Stato:** Accettata
+
+**Contesto.** `ARCHITECTURE.md` §9 punto 5 prescrive che «il job resta in `parse_jobs` per debug e per misurare la qualità dell'estrazione», e §4.6 dà alla tabella una colonna `raw_text`. Nessuno dei due dice per quanto.
+
+Il punto è che `raw_text` non è un dato che questo prodotto raccoglie: è un dato che gli **arriva addosso**. Un annuncio di concerto contiene con regolarità dati personali di terzi — il numero di chi prende le prenotazioni, il nome di chi ospita il gruppo per la notte, ogni tanto un indirizzo di casa — e nessuna di quelle persone ha idea che un calendario di circoli ne stia tenendo copia. §16 impone «dati personali minimi», e una tabella che cresce per sempre non è il minimo di niente.
+
+**Decisione.** I job vivono **90 giorni**, poi vengono cancellati per intero, riga compresa. La pulizia la fa `POST /api/cron/purge`, chiamato dalla stessa GitHub Action notturna che ricalcola i conflitti.
+
+**Motivazioni.** I due usi previsti da §9 hanno entrambi una vita breve. Il debug serve quando qualcuno dice «me l'ha compilato male», e lo dice nei giorni successivi, non l'anno dopo. La misura della qualità è una tendenza, e un trimestre di storico basta a vederla: se l'estrazione peggiora perché è cambiato il modello, si vede in settimane. A 90 giorni quel testo non serve più a nessuno dei due scopi e resta soltanto un rischio.
+
+**Perché si cancella la riga e non solo il testo.** Svuotare `raw_text` e tenere il resto sembra il compromesso: si conserverebbero le statistiche. Ma senza il testo di partenza un job non dice più niente di utile — «un'estrazione con questo modello è andata bene» non è un dato su cui si decida qualcosa — e una tabella di gusci vuoti è un modo di non prendere la decisione invece che di prenderla. Se un giorno serviranno metriche a lungo termine, la cosa da tenere è un conteggio aggregato, che non contiene testo di nessuno.
+
+**Perché un endpoint a parte e non dentro `/api/cron/recompute`.** Un endpoint che si chiama «ricalcola» e che cancella righe è la sorpresa che qualcuno troverà fra sei mesi leggendo il codice per un altro motivo. Due endpoint distinti costano un secondo `curl` nello stesso workflow; **non** costano un secondo scheduler, il che li tiene dentro [ADR-0013](#adr-0013--monolite-nessuna-coda-nessun-servizio-accessorio).
+
+**Alternative scartate.**
+
+- _Nessuna scadenza_: è ciò che succede se non si decide, ed è la risposta sbagliata per una tabella che contiene testo altrui.
+- _Cancellare subito dopo aver compilato il form_: toglie di mezzo il debug, che è il primo dei due usi che §9 chiede.
+- _Chiedere il consenso a chi incolla_: sposta su un modulo una decisione che ha una risposta sola, e comunque non è la persona incollata a firmarlo.
+- _Trenta giorni_: coprirebbe il debug ma non la tendenza, e il primo mese di un parser nuovo è quello meno rappresentativo di tutti.
+
+**Conseguenze.**
+
+- I job si registrano per **tutte e tre** le sorgenti, non solo per il testo libero: un `.ics` letto male è un difetto del nostro codice, e senza il file di partenza non si riproduce. La scadenza vale per tutti allo stesso modo.
+- La GitHub Action notturna ora fa due chiamate, e il file `recompute-conflicts.yml` si chiama ancora così pur descrivendo una manutenzione più larga. Rinominarlo perderebbe lo storico delle esecuzioni su GitHub; l'intestazione del file lo dice.
+- `parse_jobs` ha l'indice `(profile_id, created_at)`, che serve a due cose insieme: la cancellazione per data e il conteggio del limite orario di ADR-0034.
+
+**Da rivedere se.** Serve ricostruire un caso più vecchio di tre mesi. Sarebbe successo qualcosa di abbastanza grave da giustificare la domanda opposta — e la risposta giusta a quel punto non è allungare la conservazione, è capire perché non ce ne si è accorti prima.
+
+---
+
+## ADR-0033 — Un incolla, una data
+
+**Data:** 2026-08-24 · **Stato:** Accettata
+
+**Contesto.** Un `.ics` contiene quasi sempre più di un `VEVENT`, e un CSV più di una riga — a partire dal nostro export, che ne scrive una per evento in tutta la finestra richiesta. La domanda si è posta scrivendo i due parser deterministici: che cosa fare del secondo, del terzo, del quarantesimo.
+
+La tentazione dell'import massivo è forte proprio qui, perché è il caso in cui i dati sono **puliti**: da un `.ics` non c'è niente da indovinare, i campi sono già separati, e creare quaranta date in un colpo sarebbe evidentemente comodo.
+
+**Decisione.** Si legge il **primo** evento del file, o la **prima** riga di dati, e basta. Il totale viene contato e **detto**: «il file conteneva 12 date: qui c'è solo la prima».
+
+**Motivazioni.** Un import massivo è, per definizione, la creazione di eventi che nessuno ha guardato uno per uno. È esattamente ciò che §9 punto 3 esclude — «l'utente rivede e conferma sempre» — e la pulizia dei dati non è un argomento contro: [ADR-0031](#adr-0031--limport-compila-il-form-e-le-tre-cose-che-non-decide) mostra che le decisioni che il parser non deve prendere non riguardano la qualità dell'estrazione, riguardano *chi decide*. Uno stato, un annuncio di band, un collegamento all'anagrafica sono da rivedere anche quando i campi sono perfetti. Moltiplicarli per quaranta li rende quaranta volte meno rivedibili.
+
+Il caso concreto che chiude la questione: quaranta date importate in blocco entrano tutte insieme nel motore conflitti, e ogni conflitto che ne esce arriva a **un'altra organizzazione** sotto forma di avviso. Un import sbagliato non produce solo righe sbagliate nel proprio calendario — manda avvisi falsi a persone che non hanno incollato niente. È il modo più rapido di far smettere agli altri di leggere gli avvisi ([ADR-0021](#adr-0021--la-sovrapposizione-fra-artisti-si-misura-in-giorni-non-in-due-settimane)).
+
+**Perché la prima e non un'altra.** «La prima del file» è arbitraria e prevedibile; «la prima in ordine di data» o «la più vicina a oggi» sarebbero meno arbitrarie e meno prevedibili. Fra le due proprietà, per un'operazione che si ripete, vince la prevedibilità: chi importa un file di dieci date incollandolo dieci volte deve poter sapere quale ottiene, senza ragionarci.
+
+**Perché il conteggio va detto.** Un file con dieci date di cui ne compare una, senza spiegazione, non si legge come una scelta: si legge come un parser rotto. È la stessa ragione per cui l'anteprima dei conflitti distingue «nessun conflitto» da «non ho potuto controllare» ([ADR-0025](#adr-0025--il-motore-ignora-le-bozze-le-date-annullate-e-quelle-senza-coordinate)).
+
+**Alternative scartate.**
+
+- _Creare tutte le date del file_: import massivo senza revisione, vedi sopra.
+- _Mostrare un elenco e far scegliere quali importare_: è l'import massivo con un passaggio in più, e il passaggio in più è una spunta — che si dà in blocco.
+- _Importare la prima e tenere le altre in coda per il salvataggio successivo_: comodo, ma richiede di conservare da qualche parte lo stato di un import a metà, e un import a metà abbandonato è una cosa che nessuno ricorda di aver lasciato aperta.
+- _Rifiutare i file con più di un evento_: onesto ma inutilmente rigido, e costringerebbe a ritagliare a mano un `.ics`, che è esattamente il lavoro che questa funzione doveva togliere.
+
+**Conseguenze.**
+
+- `leggiIcs()` e `leggiCsv()` restituiscono un totale accanto al bersaglio. È l'unica ragione per cui non restituiscono soltanto il bersaglio.
+- Chi ha davvero dieci date da caricare le carica in dieci volte. È lento, e va bene che lo sia: dieci date nuove in un calendario condiviso sono dieci notizie per gli altri iscritti.
+
+**Da rivedere se.** Qualcuno arriva con un archivio storico vero da caricare — una stagione intera già passata, per avere lo storico nel calendario. È un caso diverso da questo: sono date **passate**, che non generano conflitti e non avvisano nessuno. Meriterebbe uno strumento suo, non un allentamento di questa regola.
+
+---
+
+## ADR-0034 — Claude Haiku con schema forzato dall'API; MusicBrainz resta fuori dall'incolla
+
+**Data:** 2026-08-24 · **Stato:** Accettata
+
+**Contesto.** `ARCHITECTURE.md` §9 fissa i vincoli del parser — «modello economico (classe Haiku/Flash), timeout 20 s, rate limit per profilo, il fallimento non blocca mai l'inserimento manuale», costo dell'ordine di 1-2 € l'anno — e §14 dichiara `LLM_API_KEY` e `LLM_MODEL` senza nominare nessun fornitore. Restavano da decidere il fornitore, il modo di ottenere un JSON conforme allo schema, e che fare del punto 4 di §9, che prescrive di cercare le band «in anagrafica **e in MusicBrainz**».
+
+**Decisione.**
+
+1. **Claude Haiku 4.5** tramite l'SDK ufficiale `@anthropic-ai/sdk`, con `LLM_MODEL` che resta l'unica cosa da cambiare per usarne un altro.
+2. Lo schema è **forzato dall'API** (`output_config.format` costruito da `bersaglioParse` con `zodOutputFormat`), non chiesto nel prompt.
+3. **MusicBrainz non entra nell'incolla.** Le band si cercano nella sola anagrafica locale.
+4. Il rate limit di §16 si legge da `parse_jobs`: 20 riconoscimenti a modello per profilo all'ora.
+
+**Motivazioni.**
+
+Sul modello: `$1/$5` per milione di token, su un post di duemila caratteri, tiene la stima di §9 dove sta. È la lettura letterale di «classe Haiku», e la scelta è stata confermata dal manutentore quando gli è stata riproposta insieme all'alternativa più capace. Che resti in una variabile d'ambiente non è pigrizia nel decidere: l'estrazione da un post scritto male è precisamente il caso in cui un modello migliore si sente, e il giorno in cui servisse dev'essere una riga di configurazione, non un rilascio.
+
+Sullo schema forzato, che è il punto tecnico che conta di più: l'alternativa storica — chiedere «rispondi solo con JSON» e poi estrarre il JSON dal testo con una regex — porta con sé un ciclo di riprova, un parser tollerante e una classe di guasti che si presenta sul post più strano, cioè quello per cui la funzione serviva. Vincolare la risposta allo schema toglie di mezzo l'intero problema: non c'è niente da estrarre e niente da perdonare. Lo schema resta comunque **rivalidato** con `safeParse` al ritorno, perché il contenuto arriva dalla rete e da lì in poi entra in un form; costa una validazione su un oggetto piccolo.
+
+Su MusicBrainz: la policy del servizio ammette **una richiesta al secondo**, ed è il motivo per cui `musicbrainz/index.ts` porta già scritto che non è «un servizio da interrogare a ogni tasto premuto». Una locandina con cinque band vorrebbe dire cinque secondi di attesa sotto un form, per candidati che [ADR-0031](#adr-0031--limport-compila-il-form-e-le-tre-cose-che-non-decide) impone comunque di confermare a mano. Il bisogno vero dietro il punto 4 — che una band nuova entri in anagrafica **con il suo MBID**, perché è quella la chiave di deduplica di [ADR-0006](#adr-0006--artisti-e-venue-come-entità-globali-condivise) — è già servito, e meglio, da `/artists/new`, dove la ricerca MusicBrainz esiste ed è a richiesta esplicita, una band per volta.
+
+Sul rate limit: qui è più stretto che sugli altri endpoint di §16 per una ragione che gli altri non hanno — **questa chiamata costa denaro**. Il conteggio si legge da `parse_jobs` e non da un contatore in memoria perché su Cloudflare gli isolate vanno e vengono, e un limite che si azzera a ogni risveglio non è un limite. Nessun Redis, coerentemente con [ADR-0013](#adr-0013--monolite-nessuna-coda-nessun-servizio-accessorio): la tabella e il suo indice ci sono già.
+
+**Alternative scartate.**
+
+- _HTTP grezzo senza SDK_, per tenere il fornitore sostituibile: la sostituibilità è già dove serve, cioè nel fatto che tutto il resto della cartella `parse/` non sa che esiste un modello. `llm.ts` è un file solo, e riscriverlo per un altro fornitore è mezza giornata; farne a meno costerebbe l'output forzato dallo schema, che è il pezzo che rende la cosa affidabile.
+- _Un modello più capace di default_: proposto al manutentore insieme a Haiku, con il moltiplicatore di costo accanto. Scartato da lui.
+- _Chiedere il JSON nel prompt e validare a valle_: vedi sopra. È l'errore che sembra portatile e non lo è.
+- _Interrogare MusicBrainz in parallelo per aggirare il rate limit_: significa violare deliberatamente la policy di un servizio gratuito che questo progetto usa già altrove. Farsi bloccare l'IP romperebbe anche l'inserimento artisti, che funziona.
+- _Un contatore in memoria per il rate limit_: non sopravvive a un isolate, e il caso da cui il limite difende — un ciclo impazzito — è proprio quello che genera abbastanza traffico da farne nascere di nuovi.
+
+**Conseguenze.**
+
+- Nuova dipendenza in `package.json`: `@anthropic-ai/sdk`. È la prima dipendenza di runtime verso un servizio a pagamento del progetto.
+- **Senza `LLM_API_KEY` il testo libero non si legge, ma `.ics` e CSV sì.** Il pannello lo dice invece di offrire un pulsante che non risponde: sono due strade indipendenti, e una configurazione mancante non deve spegnere quella che non ne ha bisogno.
+- Il prompt sta in `parse/prompt.ts`, senza I/O, per la stessa ragione per cui ci stanno le regole del motore conflitti: decide che cosa finisce nel form, e si legge meglio se non è annegato in una chiamata di rete.
+- Il testo incollato viaggia dentro una delimitazione esplicita, con l'istruzione di trattarlo come dato e non come istruzioni. Non è una difesa completa — non ne esistono — ma il danno possibile è limitato per costruzione: l'unico effetto della risposta è pre-compilare campi che una persona rivede, e nessun campo del bersaglio è un'azione.
+
+**Da rivedere se.** Le estrazioni sbagliano abbastanza da far preferire l'inserimento manuale. Il primo rimedio è `LLM_MODEL`, non il codice; il secondo è il prompt. Si legge da `parse_jobs`, finché non scade ([ADR-0032](#adr-0032--il-testo-incollato-ha-una-scadenza)).
 
 ---
 
