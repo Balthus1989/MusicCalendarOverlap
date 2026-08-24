@@ -907,6 +907,8 @@ Sul rate limit: qui è più stretto che sugli altri endpoint di §16 per una rag
 
 **Da rivedere se.** Le estrazioni sbagliano abbastanza da far preferire l'inserimento manuale. Il primo rimedio è `LLM_MODEL`, non il codice; il secondo è il prompt. Si legge da `parse_jobs`, finché non scade ([ADR-0032](#adr-0032--il-testo-incollato-ha-una-scadenza)).
 
+> **Segnalazione (2026-08-24, poche ore dopo).** Il manutentore prevede di mettere in piedi un server in casa con un LLM ospitato in locale. Se succede, questa voce va rifatta e non ritoccata: cambierebbero il fornitore, il modo di forzare lo schema e il profilo di affidabilità. È la decisione #7 dell'elenco in fondo. Per questo la messa a punto del prompt è stata **sospesa** invece che completata: un prompt tarato su Haiku non si trasferisce a un modello da 7-14 miliardi di parametri, che è la taglia che gira su una macchina di casa.
+
 ---
 
 ## Template per nuove voci
@@ -943,3 +945,11 @@ Non ancora decise, elencate per non perderle di vista. Vanno chiuse **parlando c
 | 4   | ~~La visibilità ridotta in `hold` è sufficiente a far fidare gli organizzatori?~~ **Chiusa per assunzione, non verificata: vedi ADR-0023.** Il segnale che la smentisce è misurabile da `audit_log`: la quota di date che passano da `hold` prima di `confirmed` | ~~Fase 2~~ assunta |
 | 5   | Chi è formalmente titolare del trattamento dei dati: una delle associazioni o il manutentore a titolo personale?               | Prima del lancio |
 | 6   | Canale Telegram come sink di notifica aggiuntivo, dato che la community esiste già?                                            | Fase 6           |
+| 7   | Un LLM ospitato in locale al posto della Claude API, su un server in casa del manutentore. Ribalterebbe [ADR-0034](#adr-0034--claude-haiku-con-schema-forzato-dallapi-musicbrainz-resta-fuori-dallincolla). Le tre domande vere sono sotto. | Quando il server esiste |
+
+**Sul punto 7**, perché non vada perso il ragionamento già fatto.
+
+- **Il costo non è l'argomento.** L'estrazione con Haiku costa circa 0,003 € a chiamata: a questi volumi sono i 1-2 € l'anno di `ARCHITECTURE.md` §9. Un server in casa non si ripaga con questo, si sceglie per altri motivi — non dipendere da nessuno, o non far uscire il testo incollato. Il secondo è un argomento serio e si lega a [ADR-0032](#adr-0032--il-testo-incollato-ha-una-scadenza): oggi il testo di un post, con dentro il numero di chi prende le prenotazioni, esce verso un fornitore terzo.
+- **Lo schema forzato è la parte che non si può perdere.** È ciò che rende l'integrazione affidabile invece che quasi affidabile, e non è un'esclusiva di nessuno: `llama.cpp` ha le grammatiche, Ollama e vLLM hanno la decodifica guidata da JSON Schema, e quasi tutti espongono un endpoint compatibile OpenAI con `response_format`. La domanda da porsi prima di comprare hardware è se lo stack scelto ce l'ha, non se il modello è bravo.
+- **Il Worker non arriva in salotto.** L'applicazione gira su Cloudflare (ADR-0002) e non può raggiungere una macchina su una rete domestica: servirebbe esporla, con quello che comporta. Va detto però che l'architettura **regge già** un endpoint inaffidabile — `struttura()` non solleva mai e il fallimento non blocca l'inserimento manuale (principio 5) — quindi una connessione casalinga qui è una scelta legittima, come non lo sarebbe su qualcosa di portante.
+- **La riscrittura è contenuta e lo era per progetto.** Cambia `llm.ts` e basta: nessun altro file di `parse/` sa che esiste un modello. È il motivo per cui ADR-0034 ha scartato l'HTTP grezzo senza rimpianti.
