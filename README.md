@@ -42,12 +42,23 @@ Provato contro il database vero, con la tassonomia e l'anagrafica reali:
   pericoloso del riconoscimento, e non scatta;
 - il registro `parse_jobs` scrive, rilegge e scade.
 
-**Resta da provare l'estrazione dal testo libero**, che è il caso principale
-della fase: richiede una `LLM_API_KEY`, che su questo ambiente non c'è. Il
-codice è completo e la chiamata è coperta dal tipo, ma **nessun post reale è
-ancora passato da un modello**, quindi la qualità dell'estrazione non è
-misurata. Come si prova, appena c'è una chiave, è nel runbook sotto
-[Paste-to-parse](#paste-to-parse).
+Restano due cose fuori, e sono di natura diversa.
+
+**L'estrazione dal testo libero**, che è il caso principale della fase,
+richiede una `LLM_API_KEY`. Il codice è completo e la chiamata è coperta dal
+tipo, ma **nessun post reale è ancora passato da un modello**, quindi la
+qualità dell'estrazione non è misurata. La messa a punto del prompt è
+deliberatamente **sospesa**: il manutentore valuta un LLM ospitato in locale,
+e un prompt tarato su Haiku non si trasferirebbe (decisione #7 in
+[DECISIONS.md](docs/DECISIONS.md)).
+
+**Il giro nell'interfaccia non è mai stato fatto.** Le verifiche qui sopra sono
+a livello di server — moduli puri e query contro il database vero — e la build
+per Cloudflare passa, ma il pannello dell'incolla, il rimontaggio del form, i
+pulsanti di collegamento delle band e il salvataggio finale **non sono mai
+stati esercitati da un browser**: richiedono una sessione, e il login è a
+magic link. È lo stesso collo di bottiglia che tiene aperti i criteri delle
+Fasi 0 e 1.
 
 La riverifica delle API Meta che [ADR-0010](docs/DECISIONS.md) rimandava a
 questa fase **è stata fatta**, e la conclusione regge: leggere gli eventi di
