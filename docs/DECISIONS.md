@@ -1092,7 +1092,7 @@ Non ancora decise, elencate per non perderle di vista. Vanno chiuse **parlando c
 | 3   | ~~Serve un ruolo di moderatore con poteri di correzione e merge su anagrafiche artisti e venue?~~ **Chiusa: sì, vedi ADR-0016.** Resta da capire con gli organizzatori chi nominare, e se lo strumento di merge serva davvero. | ~~Fase 1~~ chiusa |
 | 4   | ~~La visibilità ridotta in `hold` è sufficiente a far fidare gli organizzatori?~~ **Chiusa per assunzione, non verificata: vedi ADR-0023.** Il segnale che la smentisce è misurabile da `audit_log`: la quota di date che passano da `hold` prima di `confirmed` | ~~Fase 2~~ assunta |
 | 5   | Chi è formalmente titolare del trattamento dei dati: una delle associazioni o il manutentore a titolo personale?               | Prima del lancio |
-| 6   | Canale Telegram come sink di notifica aggiuntivo, dato che la community esiste già?                                            | Fase 6           |
+| 6   | Canale Telegram come sink di notifica aggiuntivo, dato che la community esiste già? **Arrivata in fondo alla Fase 6 senza essere decisa**, e va bene così: è una domanda da fare agli organizzatori, non da chiudere a tavolino. Il layer è pronto ad accoglierlo ([ADR-0035](#adr-0035--una-notifica-nasce-già-redatta-per-un-destinatario-solo)). | ~~Fase 6~~ aperta |
 | 7   | Un LLM ospitato in locale al posto della Claude API, su un server in casa del manutentore. Ribalterebbe [ADR-0034](#adr-0034--claude-haiku-con-schema-forzato-dallapi-musicbrainz-resta-fuori-dallincolla). Le tre domande vere sono sotto. | Quando il server esiste |
 
 **Sul punto 7**, perché non vada perso il ragionamento già fatto.

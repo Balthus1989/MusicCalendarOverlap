@@ -728,4 +728,6 @@ Con la chiusura del punto 5, **l'elenco è esaurito**: tutti e cinque i punti ch
 4. ~~Serve un ruolo di **moderatore**?~~ — chiuso: sì, [ADR-0016](DECISIONS.md).
 5. ~~Verificare, in Fase 5, lo stato attuale delle API Meta~~ — chiuso: verificato il 24 agosto 2026, la conclusione regge. Non è una deprecazione: leggere gli eventi di Utenti e Pagine è riservato ai Facebook Marketing Partner, e su Instagram non esiste un oggetto evento da leggere. [ADR-0030](DECISIONS.md).
 
-Restano aperte, fuori da questo elenco perché non hanno una scadenza di fase: il titolare del trattamento dei dati (§16, prima del lancio) e il canale Telegram come sink di notifica (Fase 6). Sono tracciate in `DECISIONS.md`.
+Restano aperte, fuori da questo elenco perché non hanno una scadenza di fase: il titolare del trattamento dei dati (§16, prima del lancio) e un LLM ospitato in locale (#7, quando il server esiste). Sono tracciate in `DECISIONS.md`.
+
+> **Aggiornamento (2026-08-24, chiusa la Fase 6).** Il **canale Telegram** aveva la Fase 6 come scadenza ed è arrivato in fondo alla fase **senza essere deciso**. Non è una dimenticanza: è una domanda da fare agli organizzatori — se un avviso di conflitto su un canale che leggono tutti sia utile o invadente — e a tavolino ha una sola risposta, che è quella sbagliata. Quello che la fase doveva garantire l'ha garantito: l'interfaccia `NotificationSink` esiste, e aggiungere il canale sarà un file accanto a `sinks/email.ts` ([ADR-0035](DECISIONS.md)).

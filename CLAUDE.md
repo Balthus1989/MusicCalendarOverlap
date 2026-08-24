@@ -23,6 +23,7 @@ Tailwind + shadcn-svelte · FullCalendar · deploy su Cloudflare Workers
 npm run dev # dev server
 npm run check # svelte-check + typecheck
 npm run test # vitest
+npm run test:e2e # smoke Playwright: database vero, si pulisce da solo
 npm run db:generate # genera migrazione da schema.ts
 npm run db:migrate # applica (usa DIRECT_DATABASE_URL, porta 5432)
 
@@ -46,5 +47,16 @@ npm run db:migrate # applica (usa DIRECT_DATABASE_URL, porta 5432)
   esistono proprio in `bersaglioParse`. Vedi ADR-0031.
 - Le migrazioni Drizzle sono versionate: mai modificare una migrazione
   già committata.
+- Le **notifiche** nascono già redatte, per un destinatario solo: il testo
+  si costruisce da un evento o da un conflitto **già serializzato**, e se il
+  serializzatore restituisce `null` non nasce nessuna riga. Niente email
+  senza nomi, niente avviso vuoto: proprio niente. Vedi ADR-0035.
+- Il **service worker** non mette in cache nessuna risposta che contenga
+  dati di dominio. In cache va solo ciò che è uguale per tutti: build,
+  asset statici, la pagina `/offline`. È l'unico posto dell'architettura
+  dove una risposta sopravvivrebbe al contesto che l'ha prodotta.
+- Il **registro delle modifiche** lo legge solo l'organizzazione
+  proprietaria, platform admin compreso: conserva i valori precedenti dei
+  campi, titolo incluso.
 - Prefisso `PUBLIC_` in SvelteKit = esposto al browser. Mai usarlo per
   chiavi server.

@@ -16,11 +16,67 @@ delle sovrapposizioni tra date.
 | 3 — Motore conflitti    | codice completo, manca il deploy |
 | 4 — Interoperabilità    | codice completo, manca il deploy |
 | 5 — Import assistito    | verificata; testo libero sospeso |
-| 6 — Rifinitura          | da iniziare                      |
+| 6 — Rifinitura          | codice completo, manca il deploy |
 
-Fasi da 0 a 5 complete sul codice. Il progetto Supabase esiste, le migrazioni
-fino a `0005_fase5_import` sono applicate e i generi sono seminati. Resta il
-primo deploy su Cloudflare. Vedi [Setup](#setup).
+Fasi da 0 a 6 complete sul codice. Il progetto Supabase esiste, le migrazioni
+fino a `0007_fase6_rate_limit` sono applicate e i generi sono seminati. Resta
+il primo deploy su Cloudflare. Vedi [Setup](#setup).
+
+**La Fase 6 è l'unica senza un criterio di fine dichiarato in `ARCHITECTURE.md`
+§12**: è una lista di rifiniture, non una promessa da verificare. Quello che si
+può dire è che cosa è stato provato e che cosa no (24 agosto 2026).
+
+**Provato sull'applicazione in esecuzione, dagli smoke test end-to-end.** I
+quindici test di `tests/e2e/` girano contro il database vero, con due
+organizzazioni create e cancellate a ogni giro, e passano tutti. Coprono il
+percorso di §15 quasi per intero: Alfa genera un invito, inserisce una data
+opzionata e **vede il conflitto comparire prima di salvare**; Beta la ritrova
+ridotta a giorno, città e genere, con il conflitto in dashboard, l'avviso nella
+casella e un feed ICS che contiene la propria data ma non il titolo di quella
+opzionata da Alfa. Resta fuori, dichiarandolo, la registrazione di un terzo
+utente che riscatta l'invito ([ADR-0038](docs/DECISIONS.md)).
+
+Il caso di sempre si comporta come deve anche qui: la band che Beta non ha
+annunciato **non compare nella pagina della sua data vista da Alfa**, e il
+controllo si fa cercandone il nome nell'HTML intero.
+
+**Provato a mano.** I quattro endpoint di cron rispondono e sono idempotenti:
+`recompute` ritrova zero conflitti nuovi alla seconda esecuzione, `digest`
+scrive un riepilogo a settimana e la seconda corsa dello stesso lunedì non
+manda niente, `notify` e `purge` girano a vuoto quando non c'è niente da fare.
+
+Due difetti trovati proprio così, e non dai test:
+
+- `/api/cron/purge` rispondeva **500**. Dentro un template `sql` grezzo la
+  `Date` non passa dal codificatore della colonna e arriva a Postgres come il
+  testo di `toString()`, che nessun `timestamptz` sa leggere. La tabella dei
+  contatori di rate limit non si sarebbe svuotata mai, e nessuno se ne sarebbe
+  accorto guardando l'applicazione;
+- le migrazioni `0006` e `0007` **non erano applicate**, e il layer di notifica
+  taceva invece di rompersi — è progettato per non sollevare mai. Se ne sono
+  accorti i due smoke test nuovi sulla casella degli avvisi, che erano gli
+  unici a guardare il risultato invece dell'assenza di errori.
+
+**Non provato, e va detto.**
+
+- **Nessuna email è mai partita.** `RESEND_API_KEY` non è configurata: il layer
+  registra gli avvisi in-app e li lascia in coda con `emailed_at` a `NULL`, che
+  è il comportamento voluto ([ADR-0036](docs/DECISIONS.md)) ma non è una prova
+  che Resend accetti i messaggi. Il primo giro vero va fatto dopo il deploy,
+  con un dominio verificato: vedi il runbook, sotto [Notifiche ed
+  email](#notifiche-ed-email).
+- **La PWA non è stata installata su nessun dispositivo.** Il manifest e le
+  icone si servono e il service worker si compila, ma in sviluppo SvelteKit non
+  lo registra: il guscio offline vero si prova solo su una build servita in
+  HTTPS, cioè dopo il deploy.
+- Il canale **Telegram** non esiste: è la decisione aperta #6, e va chiusa
+  parlando con gli organizzatori. L'interfaccia `NotificationSink` c'è, con un
+  solo sink dentro.
+- L'accessibilità è stata corretta dove i difetti erano **misurabili** — voci
+  del calendario irraggiungibili da tastiera, bordo dei campi a 1,3:1 contro il
+  minimo di 3:1, fuoco perso a ogni riga di lineup rimossa — ma **nessuno l'ha
+  provata con uno screen reader vero**. È il genere di verifica che vale solo
+  se la fa una persona che quello strumento lo usa davvero.
 
 **Il criterio di fine della Fase 5 è verificato nell'applicazione in esecuzione
 per le due strade deterministiche, e sospeso per la terza** (24 agosto 2026).
@@ -337,6 +393,7 @@ npm run dev
 | `npm run lint`        | prettier --check + eslint                       |
 | `npm run format`      | prettier --write                                |
 | `npm test`            | vitest (unit)                                   |
+| `npm run test:e2e`    | smoke Playwright (database vero, vedi runbook)  |
 | `npm run db:generate` | genera migrazione da `schema.ts`                |
 | `npm run db:migrate`  | applica (usa `DIRECT_DATABASE_URL`, porta 5432) |
 | `npm run db:seed`     | tassonomia generi (idempotente)                 |
@@ -355,7 +412,18 @@ Worker.
 npx wrangler secret put DATABASE_URL
 npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 npx wrangler secret put CRON_SECRET
+npx wrangler secret put RESEND_API_KEY
+npx wrangler secret put EMAIL_FROM
+npx wrangler secret put LLM_API_KEY
 ```
+
+Senza le due di Resend l'applicazione funziona e non manda email: gli avvisi
+restano in-app e in coda. È un modo legittimo di partire, ma va saputo — vedi
+[Notifiche ed email](#notifiche-ed-email).
+
+Lato GitHub servono i secret di repository `APP_URL` e `CRON_SECRET` per i due
+workflow schedulati (`recompute-conflicts.yml` ogni notte, `digest.yml` il
+lunedì) e `DIRECT_DATABASE_URL` più `BACKUP_PASSPHRASE` per il backup.
 
 Le `PUBLIC_*` possono stare tra le variabili in chiaro del Worker (sono già
 esposte al browser per definizione).
@@ -437,11 +505,15 @@ Il ricalcolo ordinario non passa da qui: avviene a ogni salvataggio di una
 data. Il job notturno serve a recuperare le derive, perché la riconciliazione
 è progettata per non sollevare mai e quindi può fallire in silenzio.
 
-`POST /api/cron/purge` cancella i dati con una scadenza. Per ora ce n'è uno
-solo: i job di `parse_jobs` più vecchi di 90 giorni, dove `raw_text` è il testo
-che qualcuno ha incollato e può contenere dati personali di terzi
-([ADR-0032](docs/DECISIONS.md)). È idempotente, e la risposta dice quante righe
-ha tolto.
+`POST /api/cron/purge` cancella i dati con una scadenza. Sono tre, con tre
+motivi diversi: i job di `parse_jobs` più vecchi di **90 giorni**, dove
+`raw_text` è il testo che qualcuno ha incollato e può contenere dati personali
+di terzi ([ADR-0032](docs/DECISIONS.md)); le notifiche più vecchie di **180
+giorni**, che non contengono niente che il destinatario non potesse già vedere
+ma riempiono una casella che nessuno apre; i contatori di rate limit la cui
+finestra è passata, che non sono dati di nessuno
+([ADR-0037](docs/DECISIONS.md)). È idempotente, e la risposta dice quante righe
+ha tolto per ciascuno.
 
 Lo chiama la **stessa** GitHub Action del ricalcolo, come secondo passo: due
 endpoint distinti, perché ricalcolare e cancellare sono cose diverse e un
@@ -450,6 +522,163 @@ perché aggiungere uno scheduler per un `curl` sarebbe il contrario di
 [ADR-0013](docs/DECISIONS.md). Il file si chiama ancora
 `recompute-conflicts.yml` — rinominarlo perderebbe lo storico delle esecuzioni
 su GitHub.
+
+`POST /api/cron/digest` manda il riepilogo settimanale (§10). Lo schedula
+`.github/workflows/digest.yml` il lunedì mattina — un workflow a parte, perché
+la cadenza è diversa da quella notturna e un `if` sul giorno dentro un job è il
+posto peggiore dove tenere una regola di calendario. **Rilanciarlo a mano è
+innocuo:** la chiave di deduplica contiene l'etichetta ISO della settimana, e
+la risposta lo dice (`ripetuti` maggiore di zero, `registrate` a zero).
+
+`POST /api/cron/notify` fa le due cose che le notifiche devono fare ogni notte:
+i solleciti sulle date opzionate che hanno superato la scadenza di annuncio, e
+il **ritentativo delle email rimaste in coda**. Lo chiama la stessa Action
+notturna, dopo `purge`.
+
+### Notifiche ed email
+
+Il layer di notifica (`src/lib/server/notifications/`) registra **sempre** una
+riga in `notifications` e poi prova a spedire. Le due colonne che contano sono
+`email_requested` ed `emailed_at`: insieme fanno l'elenco delle email dovute e
+non partite, che `/api/cron/notify` ritenta per tre giorni
+([ADR-0036](docs/DECISIONS.md)).
+
+Perché un'email parta servono **due** variabili:
+
+```
+RESEND_API_KEY=re_...
+EMAIL_FROM=Calendario Eventi <calendario@tuodominio.example>
+```
+
+`EMAIL_FROM` deve stare su un dominio **verificato in Resend**, altrimenti
+l'invio viene rifiutato con un 403 che finisce in `notifications.email_error`.
+Senza le due variabili non succede niente di rumoroso: gli avvisi restano
+in-app e in coda, ed è lo stato normale di uno sviluppo locale.
+
+Per diagnosticare «non mi arriva niente», in quest'ordine:
+
+```sql
+-- 1. La riga è stata scritta? Se no, il problema è a monte del layer.
+select kind, created_at, email_requested, emailed_at, email_error
+from notifications where profile_id = '...' order by created_at desc limit 20;
+
+-- 2. Qualcuno ha spento quell'email?
+select * from notification_prefs where profile_id = '...';
+```
+
+`email_requested` a `false` con le preferenze accese significa che quel genere
+di avviso non prevede email: il conflitto **risolto** è in-app e basta.
+
+L'invito è l'unica notifica fuori dal layer — arriva a chi non ha ancora un
+profilo — e parte solo se l'invito ha un'email suggerita. L'esito compare
+subito nella pagina che lo ha creato, così senza posta configurata si sa di
+dover copiare il link a mano.
+
+Un avviso che non c'è **non è sempre un guasto**. Un conflitto si racconta a
+un'organizzazione solo nella misura in cui il dato che lo produce le è già
+visibile: se una band è in cartellone da entrambe ma l'ha annunciata una sola,
+all'organizzazione che l'ha annunciata non arriva niente, perché riceverlo le
+direbbe che la controparte l'ha ingaggiata ([ADR-0035](docs/DECISIONS.md)).
+
+### Il registro e la metrica
+
+`/audit` mostra chi ha cambiato cosa nelle proprie organizzazioni, e sopra il
+registro la **metrica di successo** di `ARCHITECTURE.md` §1: la quota di date
+che passano da `hold` prima di arrivare a `confirmed`. È la cifra che dice se
+il prodotto sta facendo il suo lavoro o se è diventato un archivio di annunci
+già fatti — che è un uso legittimo, ma non quello per cui è stato costruito. Se
+la seconda cifra prevale, l'assunzione di [ADR-0023](docs/DECISIONS.md) è
+sbagliata e va riaperta.
+
+Il registro lo vede **solo la propria organizzazione**, platform admin
+compreso: conserva i valori precedenti dei campi, titolo incluso, e mostrarlo
+altrove racconterebbe il titolo che una data aveva quando era ancora opzionata.
+
+### Rate limit
+
+Tre endpoint hanno un limite, e sono contati in due modi diversi perché due di
+loro non avevano niente da contare:
+
+| Endpoint           | Limite                 | Contato da               |
+| ------------------ | ---------------------- | ------------------------ |
+| `/api/parse`       | 20 all'ora per profilo | le righe di `parse_jobs` |
+| `/api/geocode`     | 60 all'ora per profilo | la tabella `rate_limits` |
+| `/api/ics/[token]` | 24 all'ora per token   | la tabella `rate_limits` |
+
+La finestra è fissa di un'ora e sta dentro la chiave (`risorsa:identità:inizio`).
+Le righe scadute le porta via `/api/cron/purge`
+([ADR-0037](docs/DECISIONS.md)).
+
+Due comportamenti da conoscere prima di dare la colpa al limite:
+
+- **se il contatore non risponde, si lascia passare.** Un limite mancato è un
+  rischio più piccolo di un feed sottoscritto che smette di aggiornarsi perché
+  una tabella accessoria ha un problema;
+- **il feed rifiutato risponde 429, mai un 200 vuoto.** Un calendario vuoto
+  servito a Google cancella tutte le date già importate.
+
+Per vedere chi sta consumando cosa:
+
+```sql
+select bucket, hits from rate_limits order by hits desc limit 20;
+```
+
+### PWA
+
+Il manifest è `static/manifest.webmanifest`, le icone stanno in `static/icons/`
+e si rigenerano con:
+
+```bash
+node scripts/genera-icone.mjs
+```
+
+Lo script non ha dipendenze e scrive i PNG a mano: un binario committato senza
+il modo di rifarlo è un file che nessuno osa toccare.
+
+Il service worker è `src/service-worker.ts` e SvelteKit lo registra da sé nella
+build di produzione — **in sviluppo non gira**, quindi il guscio offline si
+prova solo su una build servita in HTTPS.
+
+**La regola che conta è una sola: qui dentro non va in cache nessuna risposta
+che contenga dati di dominio.** Una cache nel browser è l'unico posto
+dell'architettura dove una risposta sopravvive al contesto che l'ha prodotta, e
+quel contesto è ciò su cui si regge tutta la matrice di visibilità. In cache ci
+va solo ciò che è uguale per tutti: i file della build, gli asset di `static/`
+e la pagina `/offline`. Se un giorno servisse far funzionare qualcosa senza
+rete, la risposta non è allargare questa lista.
+
+### Smoke test end-to-end
+
+```bash
+npm run test:e2e
+```
+
+**Girano contro il database vero** e contro un dev server vero: non c'è un
+ambiente di prova separato, e crearne uno costerebbe un secondo progetto
+Supabase da migrare e seminare a ogni cambio di schema
+([ADR-0038](docs/DECISIONS.md)).
+
+Tutto ciò che creano ha il prefisso `e2e-` e viene rimosso da un progetto di
+`teardown` di Playwright, **anche quando i test falliscono**. Per controllare
+che non sia rimasto niente:
+
+```sql
+select count(*) from organizations where slug like 'e2e-%';
+select count(*) from profiles where email like 'e2e-%';
+```
+
+Servono in `.env` la `SUPABASE_SERVICE_ROLE_KEY` — con quella si creano gli
+utenti di prova e si generano i loro token di accesso — e `DATABASE_URL`. Senza,
+i test si fermano dicendolo.
+
+**Non girano in CI**, ed è deliberato: metterceli vorrebbe dire mettere la
+chiave di servizio fra i secret del repository. Vanno lanciati **prima di un
+rilascio**, non a ogni commit.
+
+Se falliscono con uno screenshot di un modulo vuoto, la causa è quasi sempre
+l'idratazione: riempire i campi subito dopo il caricamento non funziona, perché
+Svelte rimette a ogni input il valore della sua prop. L'helper `apri()` in
+`smoke.spec.ts` esiste per questo.
 
 ### Paste-to-parse
 
