@@ -60,6 +60,17 @@
 		 * che confronta gli id e non i nomi (ADR-0031).
 		 */
 		proposteArtisti?: PropostaArtista[];
+		/**
+		 * Chiamato quando si cambia organizzazione, per chi sta fuori.
+		 *
+		 * Serve al pannello dell'incolla: il testo si legge **per conto di
+		 * un'organizzazione**, e senza questo il pannello resterebbe fermo alla
+		 * prima dell'elenco. Chi appartiene a due circoli sceglierebbe il
+		 * secondo, incollerebbe, e si ritroverebbe il form tornato al primo
+		 * senza nessun avviso — con il rischio di salvare la data sotto
+		 * l'organizzazione sbagliata.
+		 */
+		onOrganizzazione?: (id: string) => void;
 	};
 
 	let {
@@ -73,7 +84,8 @@
 		etichettaInvio,
 		annullaHref,
 		eventId = null,
-		proposteArtisti = []
+		proposteArtisti = [],
+		onOrganizzazione
 	}: Props = $props();
 
 	/**
@@ -334,6 +346,7 @@
 				required
 				value={valori.organizationId}
 				options={organizzazioni.map((o) => ({ value: o.id, label: o.name }))}
+				onInput={(id) => onOrganizzazione?.(id)}
 			/>
 		{:else}
 			<input type="hidden" name="organizationId" value={valori.organizationId} />

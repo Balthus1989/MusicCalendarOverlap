@@ -48,7 +48,21 @@
 	</label>
 
 	{#if options}
-		<select id={name} {name} {required} class={base}>
+		<!-- `onchange` e non `oninput`: su un `<select>` i due coincidono nei
+		     browser attuali, ma `change` è quello che il menù a tendina
+		     garantisce da sempre. Senza questo, `onInput` esisteva come prop e
+		     non veniva mai chiamato per i select — cioè proprio dove serve di
+		     più, perché un menù è il campo che più spesso ne comanda un altro. -->
+		<select
+			id={name}
+			{name}
+			{required}
+			class={base}
+			onchange={(e) => {
+				value = e.currentTarget.value;
+				onInput?.(e.currentTarget.value);
+			}}
+		>
 			{#each options as opt (opt.value)}
 				<option value={opt.value} selected={String(value) === opt.value}>{opt.label}</option>
 			{/each}

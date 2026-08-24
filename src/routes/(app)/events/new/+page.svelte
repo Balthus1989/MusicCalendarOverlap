@@ -29,7 +29,18 @@
 	 */
 	let generazione = $state(0);
 
+	/**
+	 * L'organizzazione scelta nel menù del form, se qualcuno l'ha toccato.
+	 *
+	 * Il pannello dell'incolla ne ha bisogno: si legge un testo **per conto di
+	 * un'organizzazione**, e la scelta vive dentro il form, non qui. Senza,
+	 * chi appartiene a due circoli sceglierebbe il secondo, incollerebbe, e si
+	 * ritroverebbe il form riportato al primo senza un avviso.
+	 */
+	let organizzazioneScelta = $state<string | null>(null);
+
 	const valori = $derived(form?.valori ?? daIncolla?.valori ?? data.valori);
+	const organizzazione = $derived(organizzazioneScelta ?? valori.organizationId);
 	const proposte = $derived(form?.valori ? [] : (daIncolla?.proposte ?? []));
 
 	function suEsito(esito: EsitoImport) {
@@ -55,7 +66,7 @@
 </header>
 
 <PastePanel
-	organizationId={valori.organizationId}
+	organizationId={organizzazione}
 	llmDisponibile={data.llmDisponibile}
 	onEsito={suEsito}
 />
@@ -63,6 +74,7 @@
 {#key generazione}
 	<EventForm
 		{valori}
+		onOrganizzazione={(id) => (organizzazioneScelta = id)}
 		generi={data.generi}
 		locali={data.locali}
 		organizzazioni={data.organizzazioni}
