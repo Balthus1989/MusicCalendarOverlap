@@ -47,6 +47,15 @@ export type EventoCalendario = {
 	start: string;
 	end?: string;
 	allDay: boolean;
+	/**
+	 * Il link alla pagina della data.
+	 *
+	 * Non serve alla navigazione — quella la fa `eventClick` con `goto`, per
+	 * non ricaricare la pagina — ma a **esistere come link**: senza `href`
+	 * FullCalendar rende un'ancora che la tastiera non può raggiungere, e il
+	 * calendario diventa un oggetto da usare solo col mouse.
+	 */
+	url: string;
 	classNames: string[];
 	extendedProps: {
 		status: EventStatus;

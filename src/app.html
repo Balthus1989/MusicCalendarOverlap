@@ -4,6 +4,20 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+
+		<!--
+			PWA (Fase 6). Il manifest e le icone sono file statici: non c'è nessuna
+			libreria di mezzo, e l'installazione la offre il browser.
+			`theme-color` tinge la barra di sistema quando l'app è installata.
+		-->
+		<link rel="manifest" href="/manifest.webmanifest" />
+		<meta name="theme-color" content="#18181b" />
+		<!--
+			La favicon SVG la mette il layout radice. Qui c'è solo
+			`apple-touch-icon`, che iOS pretende in PNG e non legge dal manifest.
+		-->
+		<link rel="apple-touch-icon" href="/icons/icon-192.png" />
+
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

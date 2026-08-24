@@ -100,9 +100,23 @@
 			eventDidMount: (info) => {
 				const p = info.event.extendedProps as EventoCalendario['extendedProps'];
 				const luogo = [p.citta, p.provincia && `(${p.provincia})`].filter(Boolean).join(' ');
-				info.el.title = p.ridotto
+				const descrizione = p.ridotto
 					? `${p.statusEtichetta} · ${luogo} · ${p.organizzazione} — data opzionata: orario, locale e lineup non sono visibili`
 					: `${p.statusEtichetta} · ${luogo}${p.locale ? ` · ${p.locale}` : ''} · ${p.organizzazione}`;
+
+				info.el.title = descrizione;
+
+				/**
+				 * Lo stesso testo come **nome accessibile**, e non solo come
+				 * tooltip: un `title` non lo legge nessuno screen reader in
+				 * modo affidabile, e senza, la voce del calendario si annuncia
+				 * come il solo titolo — che per una data opzionata altrui è
+				 * "Metal · Associazione X", cioè non dice né quando né dove.
+				 *
+				 * Comprende il titolo perché `aria-label` sostituisce il
+				 * contenuto, non lo affianca.
+				 */
+				info.el.setAttribute('aria-label', `${info.event.title} — ${descrizione}`);
 			}
 		});
 

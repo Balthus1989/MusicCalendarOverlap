@@ -62,8 +62,18 @@
 	--destructive: oklch(0.577 0.245 27.325);
 	--destructive-foreground: oklch(0.985 0 0);
 	--border: oklch(0.922 0 0);
-	--input: oklch(0.922 0 0);
-	--ring: oklch(0.708 0 0);
+	/**
+	 * Il bordo dei campi è **più scuro** del bordo decorativo, e non è una
+	 * questione di gusto: WCAG 1.4.11 chiede 3:1 fra un controllo e ciò che ha
+	 * intorno, e il grigio dei riquadri — 0.922 su fondo bianco — sta a 1,3:1.
+	 * Su una card non importa, perché la card si capisce lo stesso; su un campo
+	 * di testo il bordo *è* il campo, e un modulo lungo come quello degli
+	 * eventi diventa una sequenza di caselle invisibili.
+	 */
+	--input: oklch(0.65 0 0);
+	/* Stessa ragione per l'anello di focus, che è l'unica cosa che dice a chi
+	   naviga da tastiera dove si trova: 0.708 su bianco stava a 2,6:1. */
+	--ring: oklch(0.55 0 0);
 
 	--severity-low: oklch(0.72 0.11 240);
 	--severity-medium: oklch(0.75 0.15 75);
@@ -100,9 +110,44 @@
 
 @layer base {
 	* {
-		@apply border-border outline-ring/50;
+		/* L'anello di focus a piena opacità e non a metà: dimezzarlo ne
+		   dimezza anche il contrasto, e questa è l'unica traccia visibile di
+		   dove ci si trova quando si naviga da tastiera. */
+		@apply border-border outline-ring;
 	}
 	body {
 		@apply bg-background text-foreground;
+	}
+
+	/**
+	 * Un anello di focus visibile su **tutto**, non solo sui componenti che se
+	 * lo disegnano da sé.
+	 *
+	 * Serve per gli elementi che arrivano da fuori — le voci del calendario
+	 * sono ancore prodotte da FullCalendar — e per quelli su cui una classe di
+	 * utilità ha azzerato l'outline predefinito del browser senza rimpiazzarlo.
+	 * `:focus-visible` e non `:focus`: chi usa il mouse non deve vedere anelli
+	 * dopo ogni clic.
+	 */
+	:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
+
+	/**
+	 * Chi ha chiesto meno movimento al sistema operativo lo ha fatto per un
+	 * motivo, spesso medico. Qui di animazioni ce ne sono poche — le
+	 * transizioni dei pulsanti, lo scorrimento del calendario — ma spegnerle
+	 * costa cinque righe.
+	 */
+	@media (prefers-reduced-motion: reduce) {
+		*,
+		*::before,
+		*::after {
+			animation-duration: 0.01ms !important;
+			animation-iteration-count: 1 !important;
+			transition-duration: 0.01ms !important;
+			scroll-behavior: auto !important;
+		}
 	}
 }

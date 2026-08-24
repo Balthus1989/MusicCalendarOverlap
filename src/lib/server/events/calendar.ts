@@ -22,6 +22,8 @@ export function aEventoCalendario(e: EventoSerializzato): EventoCalendario {
 		start: completo ? completo.startsAt.toISOString() : e.giorno,
 		end: completo?.endsAt ? completo.endsAt.toISOString() : undefined,
 		allDay: !completo,
+		// Vedi `EventoCalendario.url`: serve alla tastiera, non al mouse.
+		url: `/events/${e.id}`,
 		classNames: [
 			`evento--${e.status}`,
 			e.proprio ? 'evento--proprio' : 'evento--altrui',

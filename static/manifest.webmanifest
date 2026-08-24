@@ -1,0 +1,46 @@
+{
+	"name": "Calendario Eventi Condiviso",
+	"short_name": "Calendario",
+	"description": "Calendario condiviso fra organizzatori di concerti, con rilevamento delle sovrapposizioni tra date.",
+	"lang": "it",
+	"dir": "ltr",
+	"start_url": "/calendar",
+	"scope": "/",
+	"display": "standalone",
+	"orientation": "any",
+	"background_color": "#18181b",
+	"theme_color": "#18181b",
+	"categories": ["productivity", "music"],
+	"icons": [
+		{
+			"src": "/icons/icon-192.png",
+			"sizes": "192x192",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "/icons/icon-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "/icons/icon-maskable-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "maskable"
+		}
+	],
+	"shortcuts": [
+		{
+			"name": "Nuova data",
+			"short_name": "Nuova data",
+			"url": "/events/new"
+		},
+		{
+			"name": "Conflitti",
+			"short_name": "Conflitti",
+			"url": "/conflicts"
+		}
+	]
+}

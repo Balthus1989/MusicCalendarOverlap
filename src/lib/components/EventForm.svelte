@@ -18,6 +18,7 @@
 	 * ricompare ciò che aveva scritto senza che il componente scriva mai
 	 * dentro le prop.
 	 */
+	import { tick } from 'svelte';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import ConflictWarning from '$lib/components/ConflictWarning.svelte';
@@ -150,16 +151,78 @@
 		lineupModificata = lineup.map((v, k) => (k === i ? { ...v, ...modifiche } : v));
 	}
 
-	function aggiungiVoce() {
-		lineupModificata = [...lineup, vuota()];
+	/* ---------------------------------------------------------------- *
+	 * Errori: il riepilogo in testa
+	 * ---------------------------------------------------------------- */
+
+	/**
+	 * Gli errori messi in fila, con l'ancora del campo a cui portano.
+	 *
+	 * Il messaggio accanto al campo, da solo, non basta su un form di trenta
+	 * campi distribuiti su sei riquadri: dopo un invio fallito la pagina torna
+	 * in cima e l'errore può stare mille pixel più giù, senza niente che lo
+	 * annunci. Il riepilogo è la soluzione consueta a questo problema, ed è
+	 * anche l'unica che funziona per chi non vede la pagina.
+	 */
+	const elencoErrori = $derived(
+		Object.entries(errori).map(([campo, messaggio]) => ({
+			campo,
+			messaggio,
+			ancora: ancoraDi(campo)
+		}))
+	);
+
+	/**
+	 * Dal nome del campo all'`id` dell'elemento.
+	 *
+	 * Per i campi normali i due coincidono — `Field` scrive `id={name}` — ma le
+	 * righe ripetute hanno nomi indicizzati (`lineup.0.artistName`) che in un
+	 * frammento di URL non si possono usare così come sono.
+	 */
+	function ancoraDi(campo: string): string {
+		const banda = /^lineup\.(\d+)\./.exec(campo);
+		if (banda) return `lineup-${banda[1]}-nome`;
+		const collegamento = /^links\.(\d+)\./.exec(campo);
+		if (collegamento) return `link-${collegamento[1]}-url`;
+		return campo;
 	}
 
-	function rimuoviVoce(i: number) {
+	let riepilogo = $state<HTMLElement | null>(null);
+
+	$effect(() => {
+		// Il fuoco al riepilogo appena compare: è ciò che fa leggere l'elenco a
+		// uno screen reader e che porta chi naviga da tastiera a un passo dal
+		// primo campo da correggere.
+		if (elencoErrori.length) riepilogo?.focus();
+	});
+
+	/** Porta il fuoco su un elemento del form, se esiste ancora. */
+	async function metti(fuocoSu: string) {
+		await tick();
+		elementoForm?.querySelector<HTMLElement>(`#${CSS.escape(fuocoSu)}`)?.focus();
+	}
+
+	async function aggiungiVoce() {
+		const nuovo = lineup.length;
+		lineupModificata = [...lineup, vuota()];
+		// Il fuoco va nella riga appena comparsa. Senza, resta sul pulsante
+		// "Aggiungi band" e chi naviga da tastiera deve riattraversare tutta la
+		// lineup per arrivare in fondo — che è dove è appena stato messo un
+		// campo vuoto proprio per lui.
+		await metti(`lineup-${nuovo}-nome`);
+	}
+
+	async function rimuoviVoce(i: number) {
 		lineupModificata = lineup.filter((_, k) => k !== i);
 		// Togliere una band può far sparire un conflitto: nessun `input` parte
 		// da solo quando una riga se ne va, quindi il ricontrollo si chiede a
 		// mano. Vedi `pianificaAnteprima`.
 		pianificaAnteprima();
+		// Il fuoco era sul pulsante di una riga che non c'è più, e sparendo
+		// l'elemento il fuoco torna al `body`: da lì il tasto successivo
+		// riparte dall'inizio della pagina. Si sposta sulla riga precedente,
+		// o sul pulsante che aggiunge, se si è tolta l'unica.
+		await metti(i > 0 ? `lineup-${i - 1}-nome` : 'aggiungi-band');
 	}
 
 	function spostaVoce(i: number, delta: number) {
@@ -322,6 +385,32 @@
 
 {#if erroreGenerale}
 	<p class="text-destructive mb-4 text-sm" role="alert">{erroreGenerale}</p>
+{/if}
+
+{#if elencoErrori.length}
+	<div
+		bind:this={riepilogo}
+		tabindex="-1"
+		role="alert"
+		class="border-destructive/50 mb-6 rounded-lg border p-4"
+	>
+		<h2 class="text-destructive text-sm font-medium">
+			{elencoErrori.length === 1
+				? 'C’è un campo da sistemare'
+				: `Ci sono ${elencoErrori.length} campi da sistemare`}
+		</h2>
+		<ul class="mt-2 space-y-1 text-sm">
+			{#each elencoErrori as e (e.campo)}
+				<li>
+					<!-- Un frammento nella stessa pagina, non una rotta: `resolve()`
+					     non c'entra, e il browser porta il fuoco sul campo perché è
+					     un elemento che il fuoco lo può ricevere. -->
+					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+					<a class="underline underline-offset-4" href={`#${e.ancora}`}>{e.messaggio}</a>
+				</li>
+			{/each}
+		</ul>
+	</div>
 {/if}
 
 <!-- I due gestori stanno sul form e non sui singoli campi: la lineup si
@@ -752,7 +841,9 @@
 			</div>
 		{/each}
 
-		<Button type="button" variant="outline" onclick={aggiungiVoce}>Aggiungi band</Button>
+		<Button type="button" variant="outline" id="aggiungi-band" onclick={aggiungiVoce}>
+			Aggiungi band
+		</Button>
 	</fieldset>
 
 	<!-- Ingresso -------------------------------------------------------- -->
@@ -827,6 +918,7 @@
 					class="border-input bg-background rounded-md border px-3 py-2 text-sm"
 				/>
 				<input
+					id={`link-${i}-url`}
 					name={`links.${i}.url`}
 					value={link.url}
 					placeholder="https://"

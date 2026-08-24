@@ -36,6 +36,18 @@
 </script>
 
 <div class="flex min-h-svh flex-col">
+	<!--
+		Il salto al contenuto. Invisibile finché non riceve il focus, che è il
+		momento in cui serve: la barra di navigazione ha otto voci, e senza
+		questo link chi naviga da tastiera le riattraversa tutte a ogni pagina.
+	-->
+	<a
+		href="#contenuto"
+		class="bg-background focus:ring-ring sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:border focus:px-3 focus:py-2 focus:text-sm"
+	>
+		Salta al contenuto
+	</a>
+
 	<header class="border-border border-b">
 		<div class="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-6 py-3">
 			<a href={resolve('/calendar')} class="text-sm font-semibold tracking-tight">
@@ -85,7 +97,12 @@
 		</div>
 	</header>
 
-	<main class="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
+	<!--
+		`tabindex="-1"` sul contenuto: senza, il salto sposta lo scorrimento ma
+		non il fuoco, e il tasto successivo riporta chi legge in cima alla
+		navigazione — cioè esattamente dove non voleva tornare.
+	-->
+	<main id="contenuto" tabindex="-1" class="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
 		{@render children()}
 	</main>
 </div>
