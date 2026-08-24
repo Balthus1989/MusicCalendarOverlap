@@ -12,7 +12,7 @@ import { and, eq, inArray, notInArray } from 'drizzle-orm';
 import type { EventInput } from '$lib/schemas/event';
 import { generiInOrdine } from '$lib/schemas/event';
 import { calcolaDiff, registraAudit } from '$lib/server/audit';
-import { riconciliaConflitti } from '$lib/server/conflicts/reconcile';
+import { riconciliaConflitti, type OpzioniRiconciliazione } from '$lib/server/conflicts/reconcile';
 import type { Database } from '$lib/server/db/client';
 import {
 	eventGenres,
@@ -24,6 +24,8 @@ import {
 	type EventStatus
 } from '$lib/server/db/schema';
 import { geocode } from '$lib/server/geocode';
+import { avvisiConflittiNuovi } from '$lib/server/notifications/conflitti';
+import { notifica } from '$lib/server/notifications/service';
 import { daLocaleAIstante } from '$lib/time';
 
 type Coordinate = { lat: number | null; lon: number | null };
@@ -205,6 +207,27 @@ async function sincronizzaLink(tx: Tx, eventId: string, links: EventInput['links
 		.values(links.map((l, i) => ({ eventId, label: l.label, url: l.url, sortOrder: i })));
 }
 
+/**
+ * Ricalcola i conflitti di una data e avvisa chi va avvisato (§6.4 punto 3, §10).
+ *
+ * Le due cose stanno insieme perché la seconda non ha senso senza la prima, e
+ * perché tenerle separate significherebbe ricordarsi di chiamarne due a ogni
+ * scrittura — con il risultato prevedibile che una delle tre strade, prima o
+ * poi, ne dimenticherebbe una.
+ *
+ * Nessuna delle due solleva: né il motore né il layer di notifica devono poter
+ * far perdere all'utente la data che ha appena inserito. La corsa notturna
+ * recupera il ricalcolo, e le email non partite restano in coda (ADR-0036).
+ */
+async function riconciliaEAvvisa(
+	db: Database,
+	eventId: string,
+	opzioni: OpzioniRiconciliazione = {}
+): Promise<void> {
+	const esito = await riconciliaConflitti(db, eventId, opzioni);
+	await notifica(db, await avvisiConflittiNuovi(db, esito));
+}
+
 /** Crea un evento con lineup, generi e link. Restituisce l'id. */
 export async function creaEvento(
 	db: Database,
@@ -238,7 +261,7 @@ export async function creaEvento(
 	// Il ricalcolo sta **fuori** dalla transazione e non solleva mai: un
 	// motore conflitti che non risponde non deve far perdere la data appena
 	// inserita (ARCHITECTURE.md §6.4, e il cron notturno recupera).
-	await riconciliaConflitti(db, id);
+	await riconciliaEAvvisa(db, id);
 
 	return id;
 }
@@ -293,7 +316,7 @@ export async function aggiornaEvento(
 	// Sempre, non solo quando `diff` è valorizzato: il ricalcolo dipende anche
 	// da lineup, generi e raggio, che in `diff` non compaiono perché al
 	// registro di audit non servono.
-	await riconciliaConflitti(db, id, {
+	await riconciliaEAvvisa(db, id, {
 		rientroInCartellone: rientraInCartellone(precedente.status, colonne.status)
 	});
 }
@@ -328,7 +351,7 @@ export async function cambiaStato(
 	// È il cambio che sposta di più: entrando in `hold` o `confirmed` una data
 	// comincia a contendersi il pubblico, uscendone smette. Vedi
 	// `partecipaAiConflitti`.
-	await riconciliaConflitti(db, id, { rientroInCartellone: rientraInCartellone(da, a) });
+	await riconciliaEAvvisa(db, id, { rientroInCartellone: rientraInCartellone(da, a) });
 }
 
 /** Cancellazione vera. Lineup, generi e link se ne vanno in cascata. */

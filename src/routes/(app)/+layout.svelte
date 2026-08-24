@@ -14,10 +14,16 @@
 	 * query che si è vista restare bloccata su `wait_event = ClientRead`
 	 * occupando l'unica connessione del pool. Un pallino non vale il percorso
 	 * critico di tutta l'applicazione.
+	 *
+	 * Vale identico per Avvisi, aggiunta in Fase 6: il conteggio delle non
+	 * lette esiste (`contaNonLette`) e sarebbe una query in più per richiesta.
+	 * Chi deve accorgersi di un conflitto grave riceve un'email — è il motivo
+	 * per cui il layer di notifica esiste — e non un numerino in una barra.
 	 */
 	const links = [
 		{ path: '/calendar', label: 'Calendario' },
 		{ path: '/conflicts', label: 'Conflitti' },
+		{ path: '/notifications', label: 'Avvisi' },
 		{ path: '/artists', label: 'Artisti' },
 		{ path: '/venues', label: 'Locali' },
 		{ path: '/org', label: 'Organizzazione' },

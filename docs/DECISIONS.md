@@ -911,6 +911,76 @@ Sul rate limit: qui è più stretto che sugli altri endpoint di §16 per una rag
 
 ---
 
+## ADR-0035 — Una notifica nasce già redatta, per un destinatario solo
+
+**Data:** 2026-08-24 · **Stato:** Accettata
+
+**Contesto.** `ARCHITECTURE.md` §10 elenca cinque motivi per cui il calendario si fa vivo, e chiude con una riga che vale per tutti: «Le email di conflitto rispettano la matrice di visibilità: mai includere dettagli di un evento in `hold` altrui». Il problema è che la matrice non è una proprietà del conflitto, è una relazione fra il conflitto e **chi guarda**: lo stesso `artist_overlap` si racconta a un'organizzazione col nome della band e all'altra non si racconta affatto ([ADR-0024](#adr-0024--i-conflitti-si-rilevano-sui-dati-interi-e-si-redigono-in-uscita)). Una notifica, però, è una riga in una tabella, e una riga non ha un lettore: ce l'ha nel momento in cui viene scritta e mai più.
+
+**Decisione.** Il `payload` di `notifications` contiene **il testo definitivo**, redatto al momento della nascita per quel destinatario, e non gli identificativi da cui ricavarlo. La costruzione degli avvisi passa da `serializeConflict`/`serializeEvent` come qualunque altra uscita, e **se la serializzazione restituisce `null` non nasce nessuna riga**: niente email senza nomi, niente avviso vuoto — proprio niente.
+
+Il corollario pratico: un conflitto si serializza **una volta per organizzazione**, non una per persona. La visibilità dipende solo dall'appartenenza e non dal ruolo né dall'identità (§5), quindi due membri dello stesso circolo hanno per costruzione lo stesso avviso.
+
+**Motivazioni.**
+
+La redazione al momento della lettura sembra più pulita — una sola fonte di verità, la riga si rilegge sempre aggiornata — ma non regge alla prova più semplice: **l'email è già partita.** Se il payload contenesse solo `conflictId` e la pagina lo redigesse alla lettura, il testo in casella e il testo in pagina potrebbero divergere il giorno in cui qualcuno entra o esce da un'organizzazione. E divergerebbero nella direzione sbagliata: la riga in-app si stringerebbe, l'email già consegnata no.
+
+Congelare il testo ha anche una conseguenza che vale da sola: **la pagina degli avvisi non ha nessun filtro di visibilità da applicare**. È l'unico posto dell'applicazione dove quella frase è vera, ed è vera perché il filtro è stato applicato prima. Il `WHERE` sul proprio `profile_id` basta.
+
+Sul `null`: togliere il nome della band non basta, perché il conflitto stesso è l'informazione. Se l'organizzazione che ha annunciato Opeth ricevesse «una band della tua lineup suona anche altrove», saprebbe che l'altra l'ha ingaggiata — che è esattamente il segreto di [ADR-0005](#adr-0005--stato-hold-con-visibilità-ridotta). È il caso di test obbligatorio di §15, e in `tests/unit/notifications.test.ts` è il primo.
+
+**Alternative scartate.**
+
+- _Payload con soli id, testo calcolato alla lettura._ Vedi sopra: l'email non si riscrive.
+- _Una notifica per organizzazione invece che per profilo._ Sarebbe meno righe, ma `read_at` è per persona: «l'ho già visto» è una proprietà di chi guarda, non del circolo.
+- _Redigere una volta sola per conflitto e mandare a tutti._ È l'errore che il layer esiste per non fare.
+- _Notificare solo chi ha inserito la data._ Un avviso grave si perderebbe perché quella settimana quella persona era in tour. Si avvisa l'organizzazione.
+
+**Conseguenze.**
+
+- `notifications.payload` è testo denormalizzato e invecchia: se un moderatore corregge il nome di una band ([ADR-0016](#adr-0016--il-ruolo-moderator-esiste-dalla-v1-ed-è-trasversale-alle-organizzazioni)), gli avvisi già scritti conservano quello vecchio. È il prezzo, ed è lo stesso di qualunque messaggio già spedito.
+- La casella degli avvisi vive a `/notifications` e le preferenze a `/settings/notifications`. La prima non è in §7 perché la specifica dava per scontata la tabella senza dire dove si leggesse.
+- I sink sono **solo canali in uscita**: oggi l'email, domani forse Telegram (decisione aperta #6). L'in-app non è un sink e non è una dimenticanza — non esce da nessuna parte, è la riga stessa.
+- L'invito è l'unica notifica **fuori dal layer**: arriva a un indirizzo senza profilo, non ha una `profile_id` da mettere in tabella né preferenze da consultare, e va diritto al sink email.
+
+**Da rivedere se.** Serve una notifica il cui testo debba cambiare dopo l'invio — per esempio un riepilogo che si aggiorna invece di ripetersi. In quel caso non è questa decisione a essere sbagliata: è quella notifica a non essere una notifica.
+
+---
+
+## ADR-0036 — La tabella delle notifiche è anche la coda di uscita delle email
+
+**Data:** 2026-08-24 · **Stato:** Accettata
+
+**Contesto.** §10 chiede un'«email immediata» per i conflitti gravi. Immediata significa spedita dentro la richiesta che salva la data, e una richiesta che salva una data non può dipendere da un servizio esterno: [ADR-0013](#adr-0013--monolite-nessuna-coda-nessun-servizio-accessorio) esclude una coda, e il principio 5 di §2 pretende che il fallimento di un servizio accessorio non tolga niente a chi sta lavorando. Restava da decidere che fine fa un'email che non parte.
+
+**Decisione.** La riga in `notifications` si scrive **sempre**, prima di qualunque tentativo di invio, e porta due colonne in più rispetto a §4.6: `email_requested` — una copia per posta era prevista e non rifiutata nelle preferenze — ed `emailed_at`. Le righe con la prima vera e la seconda a `NULL` sono le email dovute e mai partite, e la corsa notturna (`/api/cron/notify`) le ritenta per tre giorni. La terza colonna in più, `dedupe_key`, è un **indice unico** `(profile_id, dedupe_key)`: è il database a garantire che un avviso non si ripeta, non un controllo in JavaScript.
+
+**Motivazioni.**
+
+Una coda vera non serve: la coda **esiste già** ed è la tabella che comunque va scritta per l'in-app. Aggiungerci due colonne costa due colonne; aggiungere Redis o un servizio di code costerebbe una dipendenza operativa a un manutentore part-time, che è precisamente ciò che ADR-0013 vieta.
+
+Il taglio a tre giorni non è arbitrario. Senza, il primo giorno in cui una chiave scaduta torna valida quaranta persone riceverebbero in blocco gli avvisi di due settimane — e un avviso su un conflitto di sabato scorso non è un avviso, è rumore che insegna a non leggere i prossimi.
+
+Sulla deduplica in SQL invece che in codice: il ricalcolo notturno ripassa ogni notte sulle stesse coppie, e il sollecito di annuncio è una scansione che riguarda le stesse date finché non cambiano. Un controllo letto-poi-scritto passerebbe due volte se due corse si sovrapponessero, che è esattamente la sera in cui qualcuno rilancia il job a mano perché il primo è fallito. L'indice unico non ha questo problema, e `dedupe_key` a `NULL` — gli avvisi che nascono da un fatto puntuale — passa sempre, perché in Postgres due `NULL` non si considerano uguali.
+
+**Alternative scartate.**
+
+- _Spedire e basta, senza traccia._ Il caso vero non è la rete che cade una volta: è la chiave sbagliata in produzione che nessuno nota per una settimana. Con `email_error` in tabella si vede; senza, si scopre quando qualcuno dice «non mi è mai arrivato niente».
+- _Una tabella `email_outbox` separata._ Le stesse righe scritte due volte, per distinguere due cose che sono lo stesso avviso.
+- _Ritentare all'infinito._ Vedi sopra: la valanga.
+- _Nascondere in-app gli avvisi che §10 manda solo per email_ (digest, solleciti). Sarebbe un filtro il cui unico effetto è far dimenticare all'applicazione di aver scritto a qualcuno. La tabella di §10 decide l'**email**; la riga c'è comunque.
+
+**Conseguenze.**
+
+- Senza `RESEND_API_KEY` in locale non succede niente di rumoroso: le righe restano in coda e il registro non si riempie di errori. È lo stato normale di uno sviluppo.
+- L'esito di ogni corsa periodica è nel JSON di risposta (`registrate`, `ripetuti`, `emailSpedite`, `emailFallite`): è l'unico modo di sapere da fuori se una notte ha fatto qualcosa.
+- La consegna è **per blocco e non per indirizzo**: Resend accetta cento messaggi per richiesta, e su Cloudflare ogni `fetch` è una subrequest con un bilancio finito. Un digest a quaranta iscritti è una richiesta, non quaranta. Ciò che accade dopo l'accettazione — un rimbalzo, una casella piena — non è visibile da qui e non lo sarebbe nemmeno spedendo uno alla volta.
+- Le notifiche scadono a 180 giorni con `/api/cron/purge`. È una scadenza diversa da quella di [ADR-0032](#adr-0032--il-testo-incollato-ha-una-scadenza) e per un motivo diverso: là dentro non c'è niente che il destinatario non potesse già vedere, ma una casella che cresce all'infinito è una casella che nessuno apre.
+
+**Da rivedere se.** Il numero di iscritti cresce al punto che un digest non sta in una richiesta HTTP. A quel punto serve un job che pagina, non una coda.
+
+---
+
 ## Template per nuove voci
 
 ```markdown

@@ -265,7 +265,9 @@ UNIQUE `(event_a_id, event_b_id, kind)`, più un CHECK `event_a_id < event_b_id`
 
 **`calendar_feeds`** — `id`, `token` (UNIQUE, random 32 char), `profile_id`, `label`, `filters` jsonb (`{genres:[], radius_km, center_city, statuses:[], organization_ids:[]}`), `last_accessed_at`, `revoked_at`, `created_at`.
 
-**`notifications`** — `id`, `profile_id`, `kind`, `payload` jsonb, `read_at`, `emailed_at`, `created_at`.
+**`notifications`** — `id`, `profile_id`, `kind`, `payload` jsonb, `read_at`, `emailed_at`, `created_at`, più tre colonne aggiunte in Fase 6: `dedupe_key` (indice unico insieme a `profile_id`), `email_requested` ed `email_error`. Le prime due fanno di questa tabella anche la **coda di uscita** delle email — `email_requested` vera con `emailed_at` a `NULL` è un messaggio dovuto e mai partito — e la terza dice perché ([ADR-0036](DECISIONS.md)). Il `payload` è **già redatto** per il suo destinatario e non contiene identificativi da risolvere alla lettura ([ADR-0035](DECISIONS.md)).
+
+**`notification_prefs`** — `profile_id` PK, `email_conflitti`, `email_digest`, `email_solleciti`, `updated_at`. L’assenza di riga vale "tutto acceso": il silenzio non si eredita da una dimenticanza.
 
 **`geocode_cache`** — `query_normalized` PK, `lat`, `lon`, `payload` jsonb, `source`, `created_at`.
 
@@ -438,6 +440,7 @@ Precisazioni emerse implementandola (2026-08-21):
 /(app)/events/[id]
 /(app)/events/[id]/edit
 /(app)/conflicts              dashboard conflitti aperti
+/(app)/notifications          casella degli avvisi ricevuti
 /(app)/artists                anagrafica condivisa + ricerca
 /(app)/artists/[id]
 /(app)/venues
@@ -463,7 +466,8 @@ Precisazioni emerse implementandola (2026-08-21):
 | GET    | `/api/events/[id]/social-copy?platform=`         | testo pronto per il post              |
 | POST   | `/api/cron/recompute`                            | protetto da header secret             |
 | POST   | `/api/cron/purge`                                | scadenze: `parse_jobs` a 90 giorni ([ADR-0032](DECISIONS.md)) |
-| POST   | `/api/cron/digest`                               | idem                                  |
+| POST   | `/api/cron/digest`                               | riepilogo settimanale, lunedì mattina                                  |
+| POST   | `/api/cron/notify`                               | solleciti di annuncio e ritentativo email |
 
 Le mutazioni di dominio usano **form actions** di SvelteKit, non endpoint REST: progressive enhancement gratis e validazione condivisa con lo schema Zod (ADR-0017).
 
@@ -553,6 +557,16 @@ Accetta anche l'incolla di un file `.ics` o di un CSV: parsing deterministico, n
 Le email di conflitto rispettano la matrice di visibilità: mai includere dettagli di un evento in `hold` altrui.
 
 I cron sono GitHub Actions che chiamano gli endpoint `/api/cron/*` con un header segreto. Se serve un canale Telegram (community già esistente), si aggiunge come sink alternativo dello stesso layer di notifica: il layer va progettato con interfaccia `NotificationSink` per non doverlo riscrivere.
+
+> **Precisazioni (2026-08-24, implementando la Fase 6).**
+>
+> - **La riga sulla visibilità è più forte di come è scritta qui.** «Mai includere dettagli di un evento in `hold` altrui» suggerisce che basti togliere i dettagli; per la regola R2 non basta. Se una band è in cartellone da tutti e due ma l'ha annunciata uno solo, all'organizzazione che l'ha annunciata **non arriva niente**, nemmeno un avviso senza nomi: riceverlo le direbbe che la controparte l'ha ingaggiata. Il conflitto passa da `serializeConflict`, e un `null` in uscita significa nessuna notifica ([ADR-0035](DECISIONS.md)).
+> - Il testo dell'avviso è **congelato alla nascita**, redatto per quel destinatario, e non ricalcolato alla lettura: l'email è già partita, e una riga che si stringesse dopo racconterebbe una cosa diversa da quella in casella. Un conflitto si serializza una volta per **organizzazione**, non per persona — la visibilità dipende solo dall'appartenenza (§5).
+> - I destinatari sono sempre **tutti i membri** dell'organizzazione, non chi ha inserito la data: un avviso grave non deve perdersi perché quella settimana quella persona era in tour.
+> - La tabella `notifications` è anche la **coda di uscita** delle email: si scrive prima di tentare l'invio, e ciò che non parte viene ritentato per tre giorni da `/api/cron/notify`. Niente coda esterna, coerentemente con ADR-0013 ([ADR-0036](DECISIONS.md)).
+> - Il **digest non parte se non c'è niente da dire.** Un'email settimanale che arriva anche a settimana vuota insegna a non aprirla, e la settimana con dentro un conflitto grave finisce nello stesso scorrimento di pollice delle altre.
+> - L'**invito è l'unica notifica senza un profilo dietro**: arriva a un indirizzo di chi nel calendario non esiste ancora, non ha una riga in `notifications` né preferenze da consultare, e va diritto al sink email. Parte solo se l'invito ha un `email_hint`; senza, il link si passa a voce ed è un uso legittimo.
+> - Il canale **Telegram non è stato aggiunto**: è la decisione aperta #6, e va chiusa parlando con gli organizzatori. L'interfaccia `NotificationSink` c'è, con un solo sink dentro. L'in-app non è un sink e non è una dimenticanza — non esce da nessuna parte, è la riga stessa.
 
 ---
 
@@ -668,6 +682,7 @@ PUBLIC_APP_URL
 - `geo/haversine`: distanze note
 - `parse-ics` e `parse-csv`: i due parser deterministici di §9. I casi obbligatori sono quelli in cui l'errore non si vede — i fusi (`Z`, `TZID`, ora fluttuante) dove una data giusta scivola di due ore, il `DTEND` esclusivo delle giornate intere che allunga ogni concerto di un giorno, e una cella CSV quotata che contiene un a-capo, dove uno `split('\n')` fa slittare tutte le colonne. Più il giro di andata e ritorno con `export/csv.ts`, che è l'unica prova che le due metà non si siano allontanate
 - `parse-sniff`: il riconoscimento della sorgente, guardando soprattutto il verso pericoloso — un post di Instagram non deve mai passare per una tabella
+- `notifications`: le tabelle di decisione di §10 — quale avviso prevede un'email, quale interruttore lo governa — e soprattutto la redazione dei testi. Il caso obbligatorio è lo stesso di `conflict-visibility`, guardato dall'uscita che non si può ritirare: **la band annunciata da un lato solo non compare in nessuna email**, e all'organizzazione che l'ha annunciata non arriva alcun avviso. Si controlla cercando il nome nell'avviso serializzato per intero, non nei campi in cui ci si aspetterebbe di trovarlo
 - `parse-to-form`: la mappatura verso il form, e in particolare le tre cose che il parser **non** decide — stato, annuncio delle band, collegamento all'anagrafica ([ADR-0031](DECISIONS.md)). Sono i test da leggere per primi se qualcuno si chiederà perché l'import «non finisce il lavoro»
 
 **E2E (Playwright)**: invito → registrazione → creazione evento → comparsa conflitto per la seconda organizzazione → sottoscrizione feed ICS.

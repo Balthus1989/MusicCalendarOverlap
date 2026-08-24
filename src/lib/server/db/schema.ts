@@ -688,6 +688,102 @@ export const auditLog = pgTable(
 ).enableRLS();
 
 /* ------------------------------------------------------------------ *
+ * §4.6 Notifiche (Fase 6)
+ * ------------------------------------------------------------------ */
+
+/**
+ * I cinque motivi per cui il calendario si fa vivo (ARCHITECTURE.md §10).
+ *
+ * Sono un enum e non un `text` libero perché ognuno ha un canale diverso e
+ * una preferenza diversa: un motivo scritto a mano che nessuno ha previsto
+ * finirebbe fuori da entrambe le tabelle di decisione.
+ */
+export const notificationKind = pgEnum('notification_kind', [
+	'conflitto_nuovo',
+	'conflitto_risolto',
+	'invito',
+	'digest_settimanale',
+	'sollecito_annuncio'
+]);
+
+/**
+ * Le notifiche ricevute da un profilo, in-app e via email.
+ *
+ * La riga è **già redatta**: `payload` contiene il testo come lo vedrà questo
+ * destinatario e nient'altro, perché la redazione dipende da chi guarda e
+ * ricalcolarla al momento della lettura vorrebbe dire rifarla in due posti
+ * ([ADR-0035](../../../../docs/DECISIONS.md)). Un conflitto che a questo
+ * profilo non si può raccontare non produce nessuna riga qui dentro.
+ *
+ * La tabella è anche la **coda di uscita** delle email: `email_requested` dice
+ * che una copia per posta era prevista, `emailed_at` che è partita. Le due
+ * cose insieme fanno un elenco di email dovute e non ancora spedite, che la
+ * corsa notturna ritenta ([ADR-0036](../../../../docs/DECISIONS.md)).
+ */
+export const notifications = pgTable(
+	'notifications',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		profileId: uuid('profile_id')
+			.notNull()
+			.references(() => profiles.id, { onDelete: 'cascade' }),
+		kind: notificationKind('kind').notNull(),
+		/** Titolo, testo e link, già redatti per questo destinatario. */
+		payload: jsonb('payload').notNull(),
+		/**
+		 * Chiave di identità dell'avviso, per non ripeterlo.
+		 *
+		 * Il sollecito di annuncio si valuta ogni notte sulla stessa data, e il
+		 * digest ogni lunedì: senza una chiave, la seconda esecuzione dello
+		 * stesso giorno manderebbe tutto due volte. `null` per gli avvisi che
+		 * nascono da un fatto puntuale e non si ripetono da sé.
+		 */
+		dedupeKey: text('dedupe_key'),
+		/** Una copia per email era prevista da §10 e non rifiutata nelle preferenze. */
+		emailRequested: boolean('email_requested').notNull().default(false),
+		emailedAt: timestamp('emailed_at', { withTimezone: true }),
+		/** Perché non è partita: serve al manutentore, non all'utente. */
+		emailError: text('email_error'),
+		readAt: timestamp('read_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [
+		index('notifications_profile_idx').on(t.profileId, t.createdAt),
+		uniqueIndex('notifications_dedupe_idx').on(t.profileId, t.dedupeKey),
+		// Le email dovute e non spedite. Parziale perché è l'unica riga che la
+		// corsa notturna cerca, e a regime sono zero.
+		index('notifications_da_spedire_idx')
+			.on(t.createdAt)
+			.where(sql`${t.emailRequested} and ${t.emailedAt} is null`)
+	]
+).enableRLS();
+
+/**
+ * Quali email un profilo accetta di ricevere.
+ *
+ * L'assenza di riga vale "tutto acceso": un profilo appena creato deve essere
+ * avvisato di un conflitto grave, e farlo dipendere da una riga che qualcuno
+ * si è dimenticato di inserire sarebbe un silenzio per errore.
+ *
+ * Non c'è un interruttore per le notifiche in-app: quelle non arrivano
+ * addosso a nessuno, si leggono quando si apre la pagina. Nemmeno per
+ * l'invito, che arriva a chi non ha ancora un profilo su cui esprimere una
+ * preferenza.
+ */
+export const notificationPrefs = pgTable('notification_prefs', {
+	profileId: uuid('profile_id')
+		.primaryKey()
+		.references(() => profiles.id, { onDelete: 'cascade' }),
+	/** Conflitti nuovi di severity `medium` o `high`. */
+	emailConflitti: boolean('email_conflitti').notNull().default(true),
+	/** Il riepilogo del lunedì mattina. */
+	emailDigest: boolean('email_digest').notNull().default(true),
+	/** Il promemoria su una data opzionata che avrebbe dovuto essere annunciata. */
+	emailSolleciti: boolean('email_solleciti').notNull().default(true),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+}).enableRLS();
+
+/* ------------------------------------------------------------------ *
  * Relazioni
  * ------------------------------------------------------------------ */
 
@@ -811,3 +907,7 @@ export type ParseJob = typeof parseJobs.$inferSelect;
 export type NewParseJob = typeof parseJobs.$inferInsert;
 export type ParseSource = (typeof parseSource.enumValues)[number];
 export type ParseStatus = (typeof parseStatus.enumValues)[number];
+export type Notification = typeof notifications.$inferSelect;
+export type NewNotification = typeof notifications.$inferInsert;
+export type NotificationKind = (typeof notificationKind.enumValues)[number];
+export type NotificationPrefs = typeof notificationPrefs.$inferSelect;

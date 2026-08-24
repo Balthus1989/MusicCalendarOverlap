@@ -21,7 +21,7 @@ import {
 	type EventStatus
 } from '$lib/server/db/schema';
 import { daLocaleAIstante, giornoCivile } from '$lib/time';
-import { meritaNotifica, rilevaConflitti, type ConflittoTrovato } from './engine';
+import { rilevaConflitti, type ConflittoTrovato } from './engine';
 import { boundingBox } from './geo';
 import type { EventoPerConflitti } from './rules';
 
@@ -397,10 +397,13 @@ export async function riconciliaConflitti(
 	return { eventId, nuovi, confermati: trovati.length - nuovi.length, risolti };
 }
 
-/** I conflitti nuovi che, in Fase 6, faranno partire un'email (§6.4 punto 3, §10). */
-export function daNotificare(esito: EsitoRiconciliazione): ConflittoTrovato[] {
-	return esito.nuovi.filter((c) => meritaNotifica(c.severity));
-}
+/**
+ * Il filtro di severity per le notifiche vive in
+ * `notifications/conflitti.ts`, insieme al resto della costruzione degli
+ * avvisi: qui c'era una funzione `daNotificare` che dalla Fase 6 non serve
+ * più, perché chi la chiamava avrebbe comunque dovuto ricaricare i conflitti
+ * persistiti per poterli redigere.
+ */
 
 /* ------------------------------------------------------------------ *
  * Ricalcolo massivo
@@ -424,7 +427,22 @@ export type EsitoRicalcolo = {
  * date costa secondi, e la versione furba avrebbe bisogno di tenere traccia
  * delle coppie già viste per un guadagno che nessuno noterebbe.
  */
-export async function ricalcolaFinestra(db: Database, da: Date, a: Date): Promise<EsitoRicalcolo> {
+export async function ricalcolaFinestra(
+	db: Database,
+	da: Date,
+	a: Date,
+	/**
+	 * Che cosa fare di ogni riconciliazione, oltre a contarla.
+	 *
+	 * Serve al layer di notifica: anche i conflitti che salta fuori la corsa
+	 * notturna vanno annunciati, e sono anzi quelli che più facilmente
+	 * nessuno ha visto arrivare — una scheda artista unita da un moderatore,
+	 * un raggio predefinito cambiato. È un parametro e non un import perché
+	 * questo file sta sotto `conflicts/` e non deve sapere che le notifiche
+	 * esistono.
+	 */
+	perEsito?: (esito: EsitoRiconciliazione) => Promise<void>
+): Promise<EsitoRicalcolo> {
 	const daRicalcolare = await db
 		.select({ id: events.id })
 		.from(events)
@@ -438,6 +456,7 @@ export async function ricalcolaFinestra(db: Database, da: Date, a: Date): Promis
 		const esito = await riconciliaConflitti(db, id);
 		conflittiNuovi += esito.nuovi.length;
 		conflittiRisolti += esito.risolti;
+		if (perEsito) await perEsito(esito);
 	}
 
 	return { eventiEsaminati: daRicalcolare.length, conflittiNuovi, conflittiRisolti };

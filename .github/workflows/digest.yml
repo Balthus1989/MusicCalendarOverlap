@@ -1,0 +1,49 @@
+# Il riepilogo settimanale (ARCHITECTURE.md §10, riga 4).
+#
+# Un workflow a parte e non uno step in più nella manutenzione notturna,
+# perché la cadenza è diversa: quella gira ogni notte, questo una volta a
+# settimana. Metterli insieme avrebbe voluto dire un `if` sul giorno dentro
+# un job, che è il posto peggiore dove tenere una regola di calendario.
+#
+# Rilanciarlo a mano è innocuo: la chiave di deduplica contiene l'etichetta
+# ISO della settimana, quindi il secondo giro non manda niente a nessuno.
+#
+# Secret richiesti:
+#   APP_URL      indirizzo dell'applicazione, senza barra finale
+#   CRON_SECRET  lo stesso valore della variabile d'ambiente sul server
+name: Digest settimanale
+
+on:
+  schedule:
+    # Lunedì alle 06:13 UTC: le 07:13 in inverno, le 08:13 in ora legale.
+    #
+    # GitHub non conosce i fusi e non applica l'ora legale, quindi l'orario
+    # italiano oscilla di un'ora durante l'anno. Per un'email che si legge
+    # con il caffè non ha nessuna importanza, ed è il motivo per cui non c'è
+    # nessun aggiustamento: sarebbe complicazione per niente.
+    - cron: '13 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chiama /api/cron/digest
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$APP_URL" || { echo "APP_URL mancante"; exit 1; }
+          test -n "$CRON_SECRET" || { echo "CRON_SECRET mancante"; exit 1; }
+
+          # `--fail-with-body` e non `--fail`: se il server risponde 4xx o 5xx
+          # il job deve fallire, ma il corpo della risposta è l'unica cosa che
+          # dice perché.
+          curl --fail-with-body --silent --show-error \
+            --max-time 300 \
+            --request POST \
+            --header "x-cron-secret: $CRON_SECRET" \
+            --header 'content-length: 0' \
+            "$APP_URL/api/cron/digest"
+          echo

@@ -43,6 +43,13 @@
       "when": 1787565785904,
       "tag": "0005_fase5_import",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787574032254,
+      "tag": "0006_fase6_notifiche",
+      "breakpoints": true
     }
   ]
 }

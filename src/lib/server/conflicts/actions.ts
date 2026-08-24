@@ -16,6 +16,8 @@ import { eq } from 'drizzle-orm';
 import { registraAudit } from '$lib/server/audit';
 import type { Database } from '$lib/server/db/client';
 import { conflicts } from '$lib/server/db/schema';
+import { avvisiConflittoRisolto } from '$lib/server/notifications/conflitti';
+import { notifica } from '$lib/server/notifications/service';
 import type { ViewerContext } from '$lib/server/visibility';
 
 /** Il lato della coppia ordinata su cui sta il viewer. */
@@ -125,6 +127,11 @@ export async function risolviConNota(
 		action: 'status_change',
 		diff: { status: [conflitto.statoAttuale, 'resolved'], resolution_note: [null, nota] }
 	});
+
+	// Solo in-app, per tutti e due i lati (§10, riga 2): la chiusura la scrive
+	// uno solo dei due, e l'altro deve poterlo sapere senza tornare in
+	// dashboard a controllare. `notifica` non solleva mai.
+	await notifica(db, await avvisiConflittoRisolto(db, conflitto.id));
 }
 
 /**

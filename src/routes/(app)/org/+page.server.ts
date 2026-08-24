@@ -5,6 +5,7 @@ import { canCreateOrgInvite, canInviteToOrg, canManageMembers } from '$lib/serve
 import { getDb } from '$lib/server/db/client';
 import { invites, memberships, organizations, profiles } from '$lib/server/db/schema';
 import { generateInviteCode } from '$lib/server/invites/code';
+import { spedisciInvito } from '$lib/server/notifications/inviti';
 import { inviteSchema } from '$lib/schemas/invite';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -123,7 +124,18 @@ export const actions: Actions = {
 			})
 			.returning({ code: invites.code });
 
-		return { invitoCreato: creato[0].code };
+		// Vedi la stessa chiamata in `/admin/invites`: l'email parte solo se
+		// c'è un indirizzo, e l'esito torna in pagina perché senza posta
+		// configurata il link va copiato a mano.
+		const emailInvito = await spedisciInvito(getDb(), {
+			code: creato[0].code,
+			email: emailHint,
+			organizationId,
+			invitanteProfileId: viewer.profileId,
+			scadenza
+		});
+
+		return { invitoCreato: creato[0].code, emailInvito };
 	},
 
 	/** Revoca un invito azzerandone gli utilizzi disponibili. */

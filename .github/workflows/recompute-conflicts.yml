@@ -65,3 +65,20 @@ jobs:
             --header 'content-length: 0' \
             "$APP_URL/api/cron/purge"
           echo
+
+      # Solleciti sulle date opzionate scadute e ritentativo delle email
+      # rimaste in coda (Fase 6, ADR-0036). Dopo `purge` e non prima: se una
+      # riga sta per scadere, non ha senso provare a spedirla.
+      - name: Chiama /api/cron/notify
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            --max-time 120 \
+            --request POST \
+            --header "x-cron-secret: $CRON_SECRET" \
+            --header 'content-length: 0' \
+            "$APP_URL/api/cron/notify"
+          echo

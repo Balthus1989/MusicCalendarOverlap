@@ -1,13 +1,19 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db/client';
+import { GIORNI_CONSERVAZIONE_NOTIFICHE, scadiNotifiche } from '$lib/server/notifications/service';
 import { GIORNI_CONSERVAZIONE, scadiParseJobs } from '$lib/server/parse/retention';
 
 /**
  * Pulizia notturna dei dati con una scadenza (ADR-0032).
  *
- * Per ora ne ha una sola: il registro degli incolla, dove `raw_text` è testo
- * copiato da altrove che può contenere dati personali di terzi. Vive novanta
- * giorni, poi se ne va.
+ * La prima è il registro degli incolla, dove `raw_text` è testo copiato da
+ * altrove che può contenere dati personali di terzi. Vive novanta giorni, poi
+ * se ne va.
+ *
+ * Dalla Fase 6 c'è anche la casella delle notifiche, con una scadenza più
+ * lunga e per un motivo diverso: là dentro non c'è niente che il destinatario
+ * non potesse già vedere, ma una casella che cresce all'infinito è comunque
+ * una casella che nessuno apre.
  *
  * È un endpoint a parte e non un pezzo di `/api/cron/recompute` perché fa una
  * cosa diversa — quello ricalcola, questo cancella — e perché un ricalcolo che
@@ -20,11 +26,14 @@ import { GIORNI_CONSERVAZIONE, scadiParseJobs } from '$lib/server/parse/retentio
  */
 export const POST: RequestHandler = async () => {
 	const inizio = Date.now();
-	const parse = await scadiParseJobs(getDb());
+	const db = getDb();
+	const parse = await scadiParseJobs(db);
+	const notifiche = await scadiNotifiche(db);
 
 	return json(
 		{
 			parseJobs: { ...parse, giorniConservazione: GIORNI_CONSERVAZIONE },
+			notifiche: { ...notifiche, giorniConservazione: GIORNI_CONSERVAZIONE_NOTIFICHE },
 			durataMs: Date.now() - inizio
 		},
 		{ headers: { 'Cache-Control': 'private, no-store' } }

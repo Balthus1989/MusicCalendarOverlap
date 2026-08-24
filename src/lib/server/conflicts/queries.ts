@@ -226,3 +226,28 @@ export async function haConflittiDaTrattare(db: Database, viewer: ViewerContext)
 
 	return righe.length > 0;
 }
+
+/**
+ * Conflitti presi per id, già redatti per il viewer.
+ *
+ * Serve al layer di notifica (§10), che parte da un conflitto appena
+ * persistito e deve sapere che cosa se ne può raccontare a ciascuna delle due
+ * organizzazioni. Passa dalla stessa serializzazione della dashboard di
+ * proposito: se l'email dicesse una parola in più della pagina, sarebbe
+ * l'email a essere sbagliata (ADR-0024).
+ */
+export async function conflittiPerId(
+	db: Database,
+	ids: string[],
+	viewer: ViewerContext
+): Promise<ConflittoSerializzato[]> {
+	if (!ids.length || !viewer.organizationIds.length) return [];
+
+	const righe = await db.query.conflicts.findMany({
+		where: inArray(conflicts.id, ids),
+		with: CON_LE_DUE_DATE,
+		limit: ids.length
+	});
+
+	return serializzaRighe(db, righe as unknown as RigaConflitto[], viewer);
+}

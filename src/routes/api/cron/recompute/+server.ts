@@ -1,6 +1,9 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { ricalcolaFinestra } from '$lib/server/conflicts/reconcile';
 import { getDb } from '$lib/server/db/client';
+import { avvisiConflittiNuovi } from '$lib/server/notifications/conflitti';
+import { notifica } from '$lib/server/notifications/service';
+import type { Avviso } from '$lib/server/notifications/types';
 
 /** Quanto avanti guardare, se non è specificato altro. */
 const MESI_PREDEFINITI = 18;
@@ -18,7 +21,8 @@ const GIORNI_INDIETRO = 1;
  * una scheda artista unita da un moderatore, una riga corretta a mano.
  *
  * Idempotente per costruzione: riconciliare due volte di seguito produce lo
- * stesso stato. Si può rilanciare senza pensarci.
+ * stesso stato. Si può rilanciare senza pensarci — e dalla Fase 6 vale anche
+ * per le notifiche, che hanno una chiave di deduplica nel database.
  *
  * Il segreto lo verifica `cronGuard` in `hooks.server.ts`, che copre ogni
  * rotta sotto `/api/cron/`: qui non si ricontrolla, perché due verifiche
@@ -37,11 +41,28 @@ export const POST: RequestHandler = async ({ url }) => {
 	a.setUTCMonth(a.getUTCMonth() + mesi);
 
 	const inizio = Date.now();
-	const esito = await ricalcolaFinestra(getDb(), da, a);
+	const db = getDb();
+
+	/**
+	 * Gli avvisi si accumulano e partono in fondo, non uno per evento.
+	 *
+	 * Su Cloudflare ogni `fetch` è una subrequest e il bilancio è finito: una
+	 * corsa che ricalcola trecento date e spedisce man mano rischierebbe di
+	 * esaurirlo proprio la notte in cui è successo qualcosa. In fondo, invece,
+	 * è una richiesta sola a Resend per ogni centinaio di messaggi.
+	 */
+	const avvisi: Avviso[] = [];
+
+	const esito = await ricalcolaFinestra(db, da, a, async (riconciliazione) => {
+		avvisi.push(...(await avvisiConflittiNuovi(db, riconciliazione)));
+	});
+
+	const notifiche = await notifica(db, avvisi);
 
 	return json(
 		{
 			...esito,
+			notifiche,
 			finestra: { da: da.toISOString(), a: a.toISOString() },
 			durataMs: Date.now() - inizio
 		},
