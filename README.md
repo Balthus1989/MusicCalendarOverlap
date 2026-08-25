@@ -59,12 +59,15 @@ Due difetti trovati proprio così, e non dai test:
 
 **Non provato, e va detto.**
 
-- **Nessuna email è mai partita.** `RESEND_API_KEY` non è configurata: il layer
-  registra gli avvisi in-app e li lascia in coda con `emailed_at` a `NULL`, che
-  è il comportamento voluto ([ADR-0036](docs/DECISIONS.md)) ma non è una prova
-  che Resend accetti i messaggi. Il primo giro vero va fatto dopo il deploy,
-  con un dominio verificato: vedi il runbook, sotto [Notifiche ed
-  email](#notifiche-ed-email).
+- **Nessuna email di notifica è mai partita.** `RESEND_API_KEY` non è
+  configurata: il layer registra gli avvisi in-app e li lascia in coda con
+  `emailed_at` a `NULL`, che è il comportamento voluto
+  ([ADR-0036](docs/DECISIONS.md)) ma non è una prova che Resend accetti i
+  messaggi. Il primo giro vero va fatto dopo il deploy, con un dominio
+  verificato: vedi il runbook, sotto [Notifiche ed
+  email](#notifiche-ed-email). Da non confondere con l'SMTP del **magic
+  link**, che è un'altra cosa e sta in un altro posto —
+  [Le due strade dell'email](#le-due-strade-dellemail).
 - **La PWA non è stata installata su nessun dispositivo.** Il manifest e le
   icone si servono e il service worker si compila, ma in sviluppo SvelteKit non
   lo registra: il guscio offline vero si prova solo su una build servita in
@@ -234,7 +237,10 @@ _login e logout in produzione_ (Fase 0) e _due utenti in due organizzazioni
 diverse_ (Fase 1). Il collo di bottiglia non è il codice ma la posta: il
 servizio email integrato di Supabase ammette pochissimi invii all'ora, quindi
 il secondo account conviene crearlo dopo aver configurato un SMTP
-personalizzato (vedi il runbook).
+personalizzato (vedi [L'SMTP del magic link](#lsmtp-del-magic-link) nel
+runbook). **Quell'SMTP non ha niente a che vedere con le email di notifica**,
+che passano da tutt'altra parte: le due strade sono messe a confronto in
+[Le due strade dell'email](#le-due-strade-dellemail).
 
 ## Setup
 
@@ -306,6 +312,12 @@ Nel pannello Supabase, sezione _Authentication_:
   `https://<dominio-di-produzione>/auth/callback`. Senza questo il magic link
   non torna all'applicazione.
 - **Providers → Email**: lascia attivo il magic link; disattiva la password.
+- **Project Settings → Authentication → SMTP**: configura un mittente tuo prima
+  di invitare chiunque. Il servizio integrato ammette pochissimi invii all'ora.
+  Come si fa, e cosa comporta usare una Gmail, sta in
+  [L'SMTP del magic link](#lsmtp-del-magic-link). **Non è l'SMTP delle
+  notifiche**, che non esiste: quelle passano da un'API HTTP, vedi
+  [Le due strade dell'email](#le-due-strade-dellemail).
 
 La registrazione è **solo su invito** (ADR-0004): il form di login usa
 `shouldCreateUser: false`, quindi un indirizzo sconosciuto non crea un account.
@@ -534,6 +546,52 @@ la risposta lo dice (`ripetuti` maggiore di zero, `registrate` a zero).
 i solleciti sulle date opzionate che hanno superato la scadenza di annuncio, e
 il **ritentativo delle email rimaste in coda**. Lo chiama la stessa Action
 notturna, dopo `purge`.
+
+### Le due strade dell'email
+
+**Da questo prodotto partono email per due vie diverse, che non si parlano.**
+Confonderle costa un pomeriggio, perché il sintomo è identico — «non mi arriva
+niente» — e i rimedi stanno in due posti che non si assomigliano.
+
+| Cosa                                                | La manda                     | Si configura                                                   | Serve a                       |
+| --------------------------------------------------- | ---------------------------- | -------------------------------------------------------------- | ----------------------------- |
+| **Magic link** di accesso                           | Supabase Auth                | pannello Supabase → _Project Settings → Authentication → SMTP_ | far **entrare** la gente      |
+| **Notifiche**: conflitti, digest, solleciti, inviti | il nostro codice, via Resend | `RESEND_API_KEY` e `EMAIL_FROM` (secret del Worker)            | avvisare chi è **già dentro** |
+
+Configurare l'SMTP su Supabase non fa partire nessuna notifica, e configurare
+Resend non fa arrivare nessun magic link.
+
+#### L'SMTP del magic link
+
+Il servizio email integrato di Supabase ammette **pochissimi invii all'ora**: è
+sufficiente per il primo accesso del manutentore e diventa un ostacolo appena
+si prova a far entrare la seconda persona. Prima di invitare qualcuno va quindi
+configurato un SMTP proprio, nel pannello Supabase.
+
+Una casella Gmail personale funziona ed è il modo più rapido di partire, con tre
+avvertenze che è meglio conoscere prima:
+
+- serve una **App Password** di Google, non la password dell'account, e per
+  generarla l'account deve avere la verifica in due passaggi attiva;
+- il tetto è dell'ordine dei **500 messaggi al giorno**, e Google può rallentare
+  o marcare gli invii automatici;
+- il **mittente sarà un indirizzo personale**. Per un invito che arriva a un
+  organizzatore che non ti conosce, un dominio del progetto fa un altro effetto.
+
+Per i volumi di questo calendario — venti circoli, qualche accesso a settimana —
+va bene. È una cosa da rifare il giorno in cui il prodotto smette di essere fra
+conoscenti.
+
+#### Perché le notifiche non possono usare la stessa casella
+
+Gmail parla **SMTP**; il sink delle notifiche parla **HTTP** all'API di Resend.
+Su Cloudflare Workers una connessione SMTP non si apre — non è una scelta
+nostra, è il runtime — ed è esattamente il motivo per cui `ARCHITECTURE.md` §3
+aveva scelto un fornitore con API HTTP.
+
+Cambiare fornitore resta possibile e costa un file: `sinks/email.ts` è l'unico
+posto che sa come si spedisce, e il resto del layer non sa che esista un
+fornitore di posta ([ADR-0035](docs/DECISIONS.md)).
 
 ### Notifiche ed email
 
