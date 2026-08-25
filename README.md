@@ -962,6 +962,37 @@ dichiarata in `vite.config.ts` sotto **`environments.client.optimizeDeps`**:
 viene preparata all'avvio, non a metà sessione. Se in futuro aggiungi una
 dipendenza usata da una rotta sola, elencala lì.
 
+### La build muore su «Could not find file … in Vite manifest»
+
+```
+Could not find file "../../Documents/MusicCalendarOverlap/node_modules/@sveltejs/kit/
+src/runtime/components/svelte-5/error.svelte" in Vite manifest
+```
+
+Il file c'è. Il problema è **da quale nome hai aperto la cartella**.
+
+Su Windows in italiano `C:Users<tu>Documenti` e `C:Users<tu>Documents`
+sono la stessa cartella: il primo è un collegamento al secondo. SvelteKit
+costruisce le chiavi del manifest come percorsi **relativi alla radice**, e con
+la radice a `Documenti` e i moduli risolti sotto `Documents` quel percorso
+comincia a risalire con `../..` — e non corrisponde più a nessuna chiave.
+
+Il dettaglio che rende la cosa sfuggente è che **dipende dalla shell**. Il `cd`
+di PowerShell conserva il nome con cui ti sei spostato e lo passa così ai
+processi figli; Git Bash consegna a Node il percorso fisico. Stesso comando,
+stessa cartella, due esiti.
+
+Da Fase 6 `vite.config.ts` se ne accorge e si sposta da sé sul nome vero prima
+che qualcuno legga `process.cwd()`, quindi non dovrebbe più capitare. Se
+ricompare, la via d'uscita è entrare col nome reale:
+
+```powershell
+cd C:Users<tu>DocumentsMusicCalendarOverlap
+```
+
+Resta un avviso innocuo, `outDir … is not inside project root`: la build lo
+scrive e finisce lo stesso.
+
 ### `npm run build` fallisce con EPERM su `.svelte-kit/cloudflare`
 
 ```

@@ -23,6 +23,37 @@ const radiceReale = (() => {
 })();
 const cartelleConsentite = [...new Set([radice, radiceReale])];
 
+/**
+ * Se ci si trova nella cartella dal **nome localizzato**, ci si sposta su
+ * quello vero prima che qualunque altra cosa legga `process.cwd()`.
+ *
+ * Non è la stessa cosa dell'allow-list qui sopra, che riguarda il dev server.
+ * Questo riguarda la **build**, e il sintomo è tutt'altro:
+ *
+ *     Could not find file "../../Documents/.../node_modules/@sveltejs/kit/..."
+ *     in Vite manifest
+ *
+ * SvelteKit costruisce le chiavi del manifest come percorsi **relativi alla
+ * radice**. Con la radice a `Documenti` e i moduli risolti sotto `Documents`,
+ * quel percorso relativo comincia a risalire con `../..` e non corrisponde più
+ * a nessuna chiave. La build muore su un file che c'è.
+ *
+ * Perché non capita sempre: `cd` di PowerShell conserva il nome con cui ci si
+ * è spostati, e lo passa così ai processi figli; Git Bash invece consegna a
+ * Node il percorso fisico, quindi da lì la build passa. Lo stesso comando,
+ * nella stessa cartella, con due esiti diversi a seconda della shell — che è
+ * il motivo per cui vale la pena toglierlo di mezzo qui invece di scriverlo
+ * solo nel runbook.
+ *
+ * `chdir` e non un `root` esplicito: SvelteKit calcola quei percorsi da
+ * `process.cwd()`, e cambiare la radice di Vite lascerebbe il conto a metà.
+ * La cartella di destinazione è comunque la stessa, quindi non si sposta
+ * niente: cambia solo il nome con cui la si chiama.
+ */
+if (radice !== radiceReale) {
+	process.chdir(radiceReale);
+}
+
 export default defineConfig({
 	plugins: [
 		tailwindcss(),
