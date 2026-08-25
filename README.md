@@ -1001,13 +1001,29 @@ Error: EPERM, Permission denied: ....svelte-kitcloudflare
 ```
 
 Il bundle in realtà è stato prodotto — la riga `✓ built` compare poco sopra.
-A fallire è la pulizia della cartella di output dell'adapter Cloudflare.
+A fallire è la **pulizia** della cartella di output dell'adapter Cloudflare, che
+la rimuove prima di riscriverla.
 
-Causa: **il dev server è ancora acceso.** Vite tiene aperti dei descrittori su
-`.svelte-kit`, e su Windows una cartella osservata non si cancella. Ferma
-`npm run dev` e rilancia la build. Su Linux e macOS lo stesso comando passa,
-quindi in CI non si vede: è un inciampo solo locale, ma capita esattamente nel
-momento peggiore, cioè quando si prova a fare un deploy di fretta.
+Causa: **qualcuno sta guardando `.svelte-kit`**, e su Windows una cartella
+osservata non si cancella. I due sospetti, in quest'ordine:
+
+- **il dev server acceso.** Vite tiene aperti dei descrittori su quella
+  cartella. Ferma `npm run dev` e rilancia;
+- **l'editor con il progetto aperto.** Il TypeScript server di VS Code o Cursor
+  indicizza i file appena scritti, e con la cartella prodotta un attimo prima
+  fa in tempo a trattenerla. Questo caso è **transitorio**: rilanciare la build
+  di solito basta.
+
+Se torna, la via sicura è toglierla di mezzo a mano prima di ricompilare:
+
+```powershell
+Remove-Item -Recurse -Force .svelte-kitcloudflare
+npm run build
+```
+
+Su Linux e macOS lo stesso comando passa, quindi in CI non si vede: è un
+inciampo solo locale, ma capita esattamente nel momento peggiore, cioè quando
+si prova a fare un deploy di fretta.
 
 ### Ogni pagina che tocca il database resta appesa
 
