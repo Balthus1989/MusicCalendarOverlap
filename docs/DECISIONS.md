@@ -979,6 +979,8 @@ Sulla deduplica in SQL invece che in codice: il ricalcolo notturno ripassa ogni 
 
 **Da rivedere se.** Il numero di iscritti cresce al punto che un digest non sta in una richiesta HTTP. A quel punto serve un job che pagina, non una coda.
 
+> **Verificata (2026-08-25), e sul caso migliore possibile.** Un digest scritto il 24 agosto era rimasto in coda perché il canale di allora — l'email — non era mai stato configurato. Quando il canale è cambiato del tutto ([ADR-0039](#adr-0039--il-canale-delle-notifiche-è-telegram-non-lemail)) e la chat è stata collegata, la prima corsa di `/api/cron/notify` l'ha consegnato da sé: `consegnate: 1`, `consegnata_at` valorizzato, `errore_consegna` a `NULL`. **Un avviso nato quando non esisteva nessun canale, consegnato dal canale arrivato dopo, senza che nessuno lo rimettesse in coda.** Non era stato costruito per questo caso — era stato costruito per un servizio che ogni tanto non risponde — e ha retto il caso più estremo che potesse capitargli.
+
 ---
 
 ## ADR-0037 — Il rate limit degli altri due endpoint sta in una tabella, non in `parse_jobs`
@@ -1104,6 +1106,8 @@ Sull'**invito**: era l'unico avviso senza alternativa in pagina, e non è un cas
 - La decisione #6 si chiude, ma **non nel modo che il registro prescriveva** — «parlando con gli organizzatori, non a tavolino». È stata chiusa da un vincolo di budget. Se gli organizzatori dicessero che Telegram non lo vogliono, l'interfaccia `NotificationSink` regge il cambio: è la seconda volta che serve.
 
 **Da rivedere se.** Il dominio viene comprato — a quel punto l'email torna possibile e ha senso **accanto** a Telegram, non al suo posto, perché è l'unico canale che raggiunge chi non è ancora iscritto e quindi rimetterebbe in piedi l'invito.
+
+> **Verificata (2026-08-25).** Bot creato con @BotFather, chat collegata da `/settings/notifications`, e **primo avviso consegnato davvero**: il digest fermo in coda dal giorno prima. È la prima volta da quando il layer esiste che qualcosa esce dall'applicazione — con l'email non era mai successo, ed è il motivo per cui questa voce esiste.
 
 ---
 

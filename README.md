@@ -57,23 +57,42 @@ Due difetti trovati proprio così, e non dai test:
   accorti i due smoke test nuovi sulla casella degli avvisi, che erano gli
   unici a guardare il risultato invece dell'assenza di errori.
 
+**Il canale delle notifiche funziona, ed è Telegram** (25 agosto 2026).
+L'email è stata rimossa: mandarne a destinatari arbitrari richiede un dominio
+verificato che non c'è, e nessun fornitore fa diversamente
+([ADR-0039](docs/DECISIONS.md)). Al suo posto un bot, che non chiede domini né
+record DNS.
+
+Provato per intero sull'applicazione in esecuzione, dal collegamento alla
+consegna: il manutentore ha collegato la propria chat da
+`/settings/notifications` — codice, pulsante Avvia sul bot, conferma — e
+`telegram_chat_id` è comparso in `notification_prefs` con il codice consumato.
+
+La prova migliore però è arrivata da sé, e riguarda un'altra decisione. In coda
+c'era un **digest scritto il 24 agosto**, quando nessun canale esisteva: era
+rimasto lì con `consegnata_at` a `NULL`, che è il comportamento voluto. Alla
+prima corsa di `/api/cron/notify` dopo il collegamento è partito da solo —
+`consegnate: 1`, e in tabella `consegnata_at` valorizzato con
+`errore_consegna` a `NULL`. **Un avviso nato quando non c'era nessun canale,
+consegnato dal canale arrivato dopo, senza che nessuno lo rimettesse in coda:**
+è la promessa di [ADR-0036](docs/DECISIONS.md) verificata sul caso migliore
+possibile, e per caso.
+
+Il collegamento della chat **non passa da un webhook** ed è per questo che si è
+potuto provare senza deploy: il codice si cerca fra i messaggi con
+`getUpdates`, che funziona anche da `localhost`
+([ADR-0040](docs/DECISIONS.md)).
+
 **Non provato, e va detto.**
 
-- **Nessun avviso è mai uscito dall'applicazione.** Senza
-  `TELEGRAM_BOT_TOKEN` il layer registra gli avvisi in pagina e li lascia in
-  coda con `consegnata_at` a `NULL`, che è il comportamento voluto
-  ([ADR-0036](docs/DECISIONS.md)) ma non è una prova che Telegram accetti i
-  messaggi. Il primo giro vero si fa creando un bot con @BotFather: vedi il
-  runbook, sotto [Notifiche](#notifiche). Da non confondere con l'SMTP del
-  **magic link**, che è un'altra cosa e sta in un altro posto —
-  [Le due strade degli avvisi](#le-due-strade-degli-avvisi).
 - **La PWA non è stata installata su nessun dispositivo.** Il manifest e le
   icone si servono e il service worker si compila, ma in sviluppo SvelteKit non
   lo registra: il guscio offline vero si prova solo su una build servita in
   HTTPS, cioè dopo il deploy.
-- Il canale **Telegram** non esiste: è la decisione aperta #6, e va chiusa
-  parlando con gli organizzatori. L'interfaccia `NotificationSink` c'è, con un
-  solo sink dentro.
+- **I due workflow schedulati non hanno mai girato.** `recompute-conflicts.yml`
+  e `digest.yml` hanno bisogno dei secret `APP_URL` e `CRON_SECRET`, e di un
+  `APP_URL` che esista. Gli endpoint che chiamano sono provati a mano e dagli
+  smoke test; la corsa automatica no.
 - L'accessibilità è stata corretta dove i difetti erano **misurabili** — voci
   del calendario irraggiungibili da tastiera, bordo dei campi a 1,3:1 contro il
   minimo di 3:1, fuoco perso a ogni riga di lineup rimossa — ma **nessuno l'ha
