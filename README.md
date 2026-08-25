@@ -59,15 +59,14 @@ Due difetti trovati proprio così, e non dai test:
 
 **Non provato, e va detto.**
 
-- **Nessuna email di notifica è mai partita.** `RESEND_API_KEY` non è
-  configurata: il layer registra gli avvisi in-app e li lascia in coda con
-  `emailed_at` a `NULL`, che è il comportamento voluto
-  ([ADR-0036](docs/DECISIONS.md)) ma non è una prova che Resend accetti i
-  messaggi. Il primo giro vero va fatto dopo il deploy, con un dominio
-  verificato: vedi il runbook, sotto [Notifiche ed
-  email](#notifiche-ed-email). Da non confondere con l'SMTP del **magic
-  link**, che è un'altra cosa e sta in un altro posto —
-  [Le due strade dell'email](#le-due-strade-dellemail).
+- **Nessun avviso è mai uscito dall'applicazione.** Senza
+  `TELEGRAM_BOT_TOKEN` il layer registra gli avvisi in pagina e li lascia in
+  coda con `consegnata_at` a `NULL`, che è il comportamento voluto
+  ([ADR-0036](docs/DECISIONS.md)) ma non è una prova che Telegram accetti i
+  messaggi. Il primo giro vero si fa creando un bot con @BotFather: vedi il
+  runbook, sotto [Notifiche](#notifiche). Da non confondere con l'SMTP del
+  **magic link**, che è un'altra cosa e sta in un altro posto —
+  [Le due strade degli avvisi](#le-due-strade-degli-avvisi).
 - **La PWA non è stata installata su nessun dispositivo.** Il manifest e le
   icone si servono e il service worker si compila, ma in sviluppo SvelteKit non
   lo registra: il guscio offline vero si prova solo su una build servita in
@@ -424,14 +423,14 @@ Worker.
 npx wrangler secret put DATABASE_URL
 npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 npx wrangler secret put CRON_SECRET
-npx wrangler secret put RESEND_API_KEY
-npx wrangler secret put EMAIL_FROM
+npx wrangler secret put TELEGRAM_BOT_TOKEN
+npx wrangler secret put TELEGRAM_BOT_USERNAME
 npx wrangler secret put LLM_API_KEY
 ```
 
-Senza le due di Resend l'applicazione funziona e non manda email: gli avvisi
-restano in-app e in coda. È un modo legittimo di partire, ma va saputo — vedi
-[Notifiche ed email](#notifiche-ed-email).
+Senza quelle di Telegram l'applicazione funziona e non manda niente fuori: gli
+avvisi restano in pagina e in coda. È un modo legittimo di partire, ma va
+saputo — vedi [Notifiche](#notifiche).
 
 Lato GitHub servono i secret di repository `APP_URL` e `CRON_SECRET` per i due
 workflow schedulati (`recompute-conflicts.yml` ogni notte, `digest.yml` il
@@ -547,19 +546,23 @@ i solleciti sulle date opzionate che hanno superato la scadenza di annuncio, e
 il **ritentativo delle email rimaste in coda**. Lo chiama la stessa Action
 notturna, dopo `purge`.
 
-### Le due strade dell'email
+### Le due strade degli avvisi
 
-**Da questo prodotto partono email per due vie diverse, che non si parlano.**
+**Da questo prodotto partono messaggi per due vie diverse, che non si parlano.**
 Confonderle costa un pomeriggio, perché il sintomo è identico — «non mi arriva
 niente» — e i rimedi stanno in due posti che non si assomigliano.
 
-| Cosa                                                | La manda                     | Si configura                                                   | Serve a                       |
-| --------------------------------------------------- | ---------------------------- | -------------------------------------------------------------- | ----------------------------- |
-| **Magic link** di accesso                           | Supabase Auth                | pannello Supabase → _Project Settings → Authentication → SMTP_ | far **entrare** la gente      |
-| **Notifiche**: conflitti, digest, solleciti, inviti | il nostro codice, via Resend | `RESEND_API_KEY` e `EMAIL_FROM` (secret del Worker)            | avvisare chi è **già dentro** |
+| Cosa                                        | Lo manda        | Si configura                                                   | Serve a                       |
+| ------------------------------------------- | --------------- | -------------------------------------------------------------- | ----------------------------- |
+| **Magic link** di accesso                   | Supabase Auth   | pannello Supabase → _Project Settings → Authentication → SMTP_ | far **entrare** la gente      |
+| **Notifiche**: conflitti, digest, solleciti | un bot Telegram | `TELEGRAM_BOT_TOKEN` (secret del Worker)                       | avvisare chi è **già dentro** |
 
-Configurare l'SMTP su Supabase non fa partire nessuna notifica, e configurare
-Resend non fa arrivare nessun magic link.
+Configurare l'SMTP su Supabase non fa arrivare nessuna notifica, e configurare
+il bot non fa arrivare nessun magic link.
+
+**L'invito non è in questa tabella**, e non è una dimenticanza: si rivolge a chi
+nel calendario non esiste ancora, quindi non ha né una sessione né una chat
+collegata. Il suo link si passa a mano, e la pagina che lo genera lo dice.
 
 #### L'SMTP del magic link
 
@@ -582,61 +585,91 @@ Per i volumi di questo calendario — venti circoli, qualche accesso a settimana
 va bene. È una cosa da rifare il giorno in cui il prodotto smette di essere fra
 conoscenti.
 
-#### Perché le notifiche non possono usare la stessa casella
+#### Perché le notifiche non passano per email
 
-Gmail parla **SMTP**; il sink delle notifiche parla **HTTP** all'API di Resend.
-Su Cloudflare Workers una connessione SMTP non si apre — non è una scelta
-nostra, è il runtime — ed è esattamente il motivo per cui `ARCHITECTURE.md` §3
-aveva scelto un fornitore con API HTTP.
+**Ci hanno provato, e non si può senza un dominio.** Mandare email a destinatari
+arbitrari richiede SPF e DKIM, cioè due record DNS su un dominio proprio: non è
+una politica di un fornitore, è il modo in cui oggi si dimostra di essere
+autorizzati a scrivere a nome di qualcuno. Il mittente condiviso di Resend
+consegna solo all'indirizzo con cui ci si registra; il piano gratuito di
+Cloudflare Email Service solo a indirizzi verificati uno per uno.
 
-Cambiare fornitore resta possibile e costa un file: `sinks/email.ts` è l'unico
-posto che sa come si spedisce, e il resto del layer non sa che esista un
-fornitore di posta ([ADR-0035](docs/DECISIONS.md)).
+Un bot Telegram non chiede domini né record DNS, e gli organizzatori quel canale
+ce l'hanno già aperto. Da qui la scelta ([ADR-0039](docs/DECISIONS.md)).
 
-### Notifiche ed email
+Se un domani il dominio arriva, l'email torna possibile e ha senso **accanto** a
+Telegram, non al suo posto: è l'unico canale che raggiunge chi non è ancora
+iscritto, e rimetterebbe in piedi l'invito. Costa un file, `sinks/`.
 
-Il layer di notifica (`src/lib/server/notifications/`) registra **sempre** una
-riga in `notifications` e poi prova a spedire. Le due colonne che contano sono
-`email_requested` ed `emailed_at`: insieme fanno l'elenco delle email dovute e
-non partite, che `/api/cron/notify` ritenta per tre giorni
+### Notifiche
+
+Il layer (`src/lib/server/notifications/`) registra **sempre** una riga in
+`notifications` e poi prova a consegnare. Le due colonne che contano sono
+`consegna_richiesta` e `consegnata_at`: insieme fanno l'elenco delle consegne
+dovute e mai riuscite, che `/api/cron/notify` ritenta per tre giorni
 ([ADR-0036](docs/DECISIONS.md)).
 
-Perché un'email parta servono **due** variabili:
+Nessun nome cita il canale, ed è deliberato: in Fase 6 il canale è già cambiato
+una volta.
+
+#### Mettere in piedi il bot
+
+1. Su Telegram, apri una chat con **@BotFather** e manda `/newbot`. Scegli un
+   nome e uno username che finisca per `bot`.
+2. BotFather risponde con un token tipo `8123456789:AAF…`. Va in `.env`, e in
+   produzione fra i secret del Worker:
 
 ```
-RESEND_API_KEY=re_...
-EMAIL_FROM=Calendario Eventi <calendario@tuodominio.example>
+TELEGRAM_BOT_TOKEN=8123456789:AAF...
+TELEGRAM_BOT_USERNAME=nome_del_bot
 ```
 
-`EMAIL_FROM` deve stare su un dominio **verificato in Resend**, altrimenti
-l'invio viene rifiutato con un 403 che finisce in `notifications.email_error`.
-Senza le due variabili non succede niente di rumoroso: gli avvisi restano
-in-app e in coda, ed è lo stato normale di uno sviluppo locale.
+`TELEGRAM_BOT_USERNAME` serve solo a costruire il link «apri il bot» nelle
+impostazioni: senza, il codice di collegamento si copia a mano e funziona
+lo stesso.
 
-Per diagnosticare «non mi arriva niente», in quest'ordine:
+**Non registrare un webhook su quel bot.** Il collegamento delle chat legge i
+messaggi con `getUpdates`, e le due cose si escludono a vicenda
+([ADR-0040](docs/DECISIONS.md)).
+
+#### Collegare una chat
+
+Ogni iscritto lo fa una volta, da `/settings/notifications`: preme «Collega
+Telegram», apre il bot dal link, preme Avvia, torna e conferma. Il codice vale
+mezz'ora.
+
+**Chi non collega la chat non riceve niente fuori dall'applicazione**, e non è
+un guasto da riparare: è la condizione predefinita di chiunque non abbia fatto
+nulla. Gli avvisi restano nella casella. Il sink salta quei profili senza
+segnarli fra i falliti, altrimenti la corsa notturna ritenterebbe per tre
+giorni una consegna che non può riuscire.
+
+#### Quando «non mi arriva niente»
+
+In quest'ordine:
 
 ```sql
 -- 1. La riga è stata scritta? Se no, il problema è a monte del layer.
-select kind, created_at, email_requested, emailed_at, email_error
+select kind, created_at, consegna_richiesta, consegnata_at, errore_consegna
 from notifications where profile_id = '...' order by created_at desc limit 20;
 
--- 2. Qualcuno ha spento quell'email?
-select * from notification_prefs where profile_id = '...';
+-- 2. La chat è collegata, e quell'avviso è acceso?
+select telegram_chat_id, avvisa_conflitti, avvisa_digest, avvisa_solleciti
+from notification_prefs where profile_id = '...';
 ```
 
-`email_requested` a `false` con le preferenze accese significa che quel genere
-di avviso non prevede email: il conflitto **risolto** è in-app e basta.
+- `telegram_chat_id` a `NULL` → non ha collegato la chat. È il caso più comune.
+- `consegna_richiesta` a `false` con le preferenze accese → quel genere di
+  avviso non esce comunque: il conflitto **risolto** resta in pagina e basta.
+- `errore_consegna` valorizzato → la descrizione arriva da Telegram ed è quasi
+  sempre leggibile. `bot was blocked by the user` significa che quella persona
+  ha bloccato il bot, e non c'è niente da sistemare lato server.
 
-L'invito è l'unica notifica fuori dal layer — arriva a chi non ha ancora un
-profilo — e parte solo se l'invito ha un'email suggerita. L'esito compare
-subito nella pagina che lo ha creato, così senza posta configurata si sa di
-dover copiare il link a mano.
-
-Un avviso che non c'è **non è sempre un guasto**. Un conflitto si racconta a
-un'organizzazione solo nella misura in cui il dato che lo produce le è già
-visibile: se una band è in cartellone da entrambe ma l'ha annunciata una sola,
-all'organizzazione che l'ha annunciata non arriva niente, perché riceverlo le
-direbbe che la controparte l'ha ingaggiata ([ADR-0035](docs/DECISIONS.md)).
+E un caso che **non è un guasto**: un conflitto si racconta a un'organizzazione
+solo nella misura in cui il dato che lo produce le è già visibile. Se una band è
+in cartellone da entrambe ma l'ha annunciata una sola, all'organizzazione che
+l'ha annunciata non arriva niente, perché riceverlo le direbbe che la
+controparte l'ha ingaggiata ([ADR-0035](docs/DECISIONS.md)).
 
 ### Il registro e la metrica
 

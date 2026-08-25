@@ -64,6 +64,13 @@
       "when": 1787648419937,
       "tag": "0008_fase6_niente_email",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787648786517,
+      "tag": "0009_fase6_telegram",
+      "breakpoints": true
     }
   ]
 }

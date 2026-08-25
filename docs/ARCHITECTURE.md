@@ -46,7 +46,7 @@ Un gruppo di organizzatori di concerti e festival (club, associazioni culturali,
 | Calendario       | **FullCalendar** (pacchetti core MIT)                                                     | Viste `dayGridMonth`, `timeGridWeek`, `listMonth`     |
 | ICS              | `ical-generator`                                                                          | Feed sottoscrivibili + download singolo               |
 | Geocoding        | **Photon** (Komoot) con fallback Nominatim, risultati cacheati su DB                      | Rispettare rate limit e attribuzione OSM              |
-| Email            | **Resend** free tier                                                                      | Inviti, alert conflitto, digest                       |
+| Notifiche        | **Bot Telegram** (`sendMessage`)                                                          | Alert conflitto, digest, solleciti. L'email è stata rimossa: [ADR-0039](DECISIONS.md) |
 | Cron             | **GitHub Actions** schedulato → chiama endpoint protetto da secret                        | Evita di tenere uno scheduler attivo                  |
 | Hosting          | **Cloudflare Workers** via `adapter-cloudflare`                                           | Free tier reale, no cold start problematici           |
 | Test             | **Vitest** (unit) + **Playwright** (smoke E2E)                                            |                                                       |
@@ -267,9 +267,9 @@ UNIQUE `(event_a_id, event_b_id, kind)`, più un CHECK `event_a_id < event_b_id`
 
 **`calendar_feeds`** — `id`, `token` (UNIQUE, random 32 char), `profile_id`, `label`, `filters` jsonb (`{genres:[], radius_km, center_city, statuses:[], organization_ids:[]}`), `last_accessed_at`, `revoked_at`, `created_at`.
 
-**`notifications`** — `id`, `profile_id`, `kind`, `payload` jsonb, `read_at`, `emailed_at`, `created_at`, più tre colonne aggiunte in Fase 6: `dedupe_key` (indice unico insieme a `profile_id`), `email_requested` ed `email_error`. Le prime due fanno di questa tabella anche la **coda di uscita** delle email — `email_requested` vera con `emailed_at` a `NULL` è un messaggio dovuto e mai partito — e la terza dice perché ([ADR-0036](DECISIONS.md)). Il `payload` è **già redatto** per il suo destinatario e non contiene identificativi da risolvere alla lettura ([ADR-0035](DECISIONS.md)).
+**`notifications`** — `id`, `profile_id`, `kind`, `payload` jsonb, `read_at`, `consegnata_at`, `created_at`, più tre colonne aggiunte in Fase 6: `dedupe_key` (indice unico insieme a `profile_id`), `consegna_richiesta` ed `errore_consegna`. Le prime due fanno di questa tabella anche la **coda di uscita** — `consegna_richiesta` vera con `consegnata_at` a `NULL` è un messaggio dovuto e mai uscito — e la terza dice perché ([ADR-0036](DECISIONS.md)). **Nessun nome cita il canale**: fino alla Fase 6 era l'email, adesso è Telegram ([ADR-0039](DECISIONS.md)). Il `payload` è **già redatto** per il suo destinatario e non contiene identificativi da risolvere alla lettura ([ADR-0035](DECISIONS.md)).
 
-**`notification_prefs`** — `profile_id` PK, `email_conflitti`, `email_digest`, `email_solleciti`, `updated_at`. L’assenza di riga vale "tutto acceso": il silenzio non si eredita da una dimenticanza.
+**`notification_prefs`** — `profile_id` PK, `avvisa_conflitti`, `avvisa_digest`, `avvisa_solleciti`, `updated_at`, più `telegram_chat_id` e la coppia `telegram_token`/`telegram_token_at` con cui si collega la chat ([ADR-0040](DECISIONS.md)). L’assenza di riga vale "tutto acceso": il silenzio non si eredita da una dimenticanza.
 
 **`geocode_cache`** — `query_normalized` PK, `lat`, `lon`, `payload` jsonb, `source`, `created_at`.
 
@@ -476,7 +476,7 @@ Precisazioni emerse implementandola (2026-08-21):
 | POST   | `/api/cron/recompute`                            | protetto da header secret             |
 | POST   | `/api/cron/purge`                                | scadenze: `parse_jobs` a 90 giorni ([ADR-0032](DECISIONS.md)), notifiche a 180, contatori di rate limit |
 | POST   | `/api/cron/digest`                               | riepilogo settimanale, lunedì mattina                                  |
-| POST   | `/api/cron/notify`                               | solleciti di annuncio e ritentativo email |
+| POST   | `/api/cron/notify`                               | solleciti di annuncio e ritentativo delle consegne in coda |
 
 Le mutazioni di dominio usano **form actions** di SvelteKit, non endpoint REST: progressive enhancement gratis e validazione condivisa con lo schema Zod (ADR-0017).
 
@@ -575,7 +575,18 @@ I cron sono GitHub Actions che chiamano gli endpoint `/api/cron/*` con un header
 > - La tabella `notifications` è anche la **coda di uscita** delle email: si scrive prima di tentare l'invio, e ciò che non parte viene ritentato per tre giorni da `/api/cron/notify`. Niente coda esterna, coerentemente con ADR-0013 ([ADR-0036](DECISIONS.md)).
 > - Il **digest non parte se non c'è niente da dire.** Un'email settimanale che arriva anche a settimana vuota insegna a non aprirla, e la settimana con dentro un conflitto grave finisce nello stesso scorrimento di pollice delle altre.
 > - L'**invito è l'unica notifica senza un profilo dietro**: arriva a un indirizzo di chi nel calendario non esiste ancora, non ha una riga in `notifications` né preferenze da consultare, e va diritto al sink email. Parte solo se l'invito ha un `email_hint`; senza, il link si passa a voce ed è un uso legittimo.
-> - Il canale **Telegram non è stato aggiunto**: è la decisione aperta #6, e va chiusa parlando con gli organizzatori. L'interfaccia `NotificationSink` c'è, con un solo sink dentro. L'in-app non è un sink e non è una dimenticanza — non esce da nessuna parte, è la riga stessa.
+> - L'in-app non è un sink e non è una dimenticanza — non esce da nessuna parte, è la riga stessa.
+
+> **Correzione (2026-08-25). La tabella qui sopra dice "email" e non è più vero: il canale è Telegram** ([ADR-0039](DECISIONS.md)).
+>
+> Mandare email a destinatari arbitrari richiede un dominio verificato — è SPF e DKIM, non una politica di un fornitore — e il dominio non c'è. Un bot Telegram non chiede domini né record DNS, e la community degli organizzatori quel canale ce l'ha già aperto. La decisione aperta #6 si chiude così: per un vincolo di budget, e non parlando con gli organizzatori come il registro prescriveva.
+>
+> Le righe di §10 restano valide leggendo "email" come "consegna fuori dall'applicazione", con **due eccezioni**:
+>
+> - l'**invito** non ha più nessun canale. Arriva a chi non ha ancora un profilo, quindi non ha una chat collegata, e non c'è modo di dargliene una prima che entri: il suo link si passa a mano, come l'interfaccia già offriva;
+> - chi **non ha collegato la chat** non riceve niente fuori dall'applicazione. Non è un errore da riparare, è la condizione predefinita di chiunque, e il sink lo salta senza segnarlo fra i falliti — altrimenti la corsa notturna ritenterebbe per tre giorni una consegna impossibile.
+>
+> Il collegamento della chat non passa da un webhook ma da una lettura di `getUpdates` a richiesta, così funziona anche da `localhost` e si è potuto provare prima del deploy ([ADR-0040](DECISIONS.md)).
 
 ---
 
@@ -641,7 +652,7 @@ src/
                      llm.ts, match.ts, service.ts, retention.ts (con I/O)
       geocode/
       musicbrainz/
-      notifications/  sinks/{email,inapp,telegram}.ts
+      notifications/  sinks/telegram.ts   (l'in-app non è un sink: ADR-0039)
       audit.ts
     schemas/         zod: event.ts, artist.ts, venue.ts, organization.ts
     components/
@@ -664,8 +675,8 @@ PUBLIC_SUPABASE_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY
 DATABASE_URL              # pooler 6543, transaction mode, ?prepare=false
 DIRECT_DATABASE_URL       # 5432, solo migrazioni
-RESEND_API_KEY
-EMAIL_FROM
+TELEGRAM_BOT_TOKEN        # bot delle notifiche; senza, gli avvisi restano in pagina
+TELEGRAM_BOT_USERNAME     # solo per costruire il link "apri il bot"
 LLM_API_KEY
 LLM_MODEL
 GEOCODER_BASE_URL
@@ -693,7 +704,8 @@ PUBLIC_APP_URL
 - `parse-ics` e `parse-csv`: i due parser deterministici di §9. I casi obbligatori sono quelli in cui l'errore non si vede — i fusi (`Z`, `TZID`, ora fluttuante) dove una data giusta scivola di due ore, il `DTEND` esclusivo delle giornate intere che allunga ogni concerto di un giorno, e una cella CSV quotata che contiene un a-capo, dove uno `split('\n')` fa slittare tutte le colonne. Più il giro di andata e ritorno con `export/csv.ts`, che è l'unica prova che le due metà non si siano allontanate
 - `audit`: il registro. `calcolaDiff` confronta per **valore serializzato** e non per identità — lineup e generi cambiano riferimento a ogni lettura dal database, e un confronto per identità farebbe risultare modificato tutto a ogni salvataggio — e `metricaHold` conta ogni data una volta sola, alla prima conferma
 - `parse-sniff`: il riconoscimento della sorgente, guardando soprattutto il verso pericoloso — un post di Instagram non deve mai passare per una tabella
-- `notifications`: le tabelle di decisione di §10 — quale avviso prevede un'email, quale interruttore lo governa — e soprattutto la redazione dei testi. Il caso obbligatorio è lo stesso di `conflict-visibility`, guardato dall'uscita che non si può ritirare: **la band annunciata da un lato solo non compare in nessuna email**, e all'organizzazione che l'ha annunciata non arriva alcun avviso. Si controlla cercando il nome nell'avviso serializzato per intero, non nei campi in cui ci si aspetterebbe di trovarlo
+- `notifications`: le tabelle di decisione di §10 — quale avviso esce dall'applicazione, quale interruttore lo governa — e soprattutto la redazione dei testi. Il caso obbligatorio è lo stesso di `conflict-visibility`, guardato dall'uscita che non si può ritirare: **la band annunciata da un lato solo non compare in nessun avviso consegnato**, e all'organizzazione che l'ha annunciata non arriva niente. Si controlla cercando il nome nell'avviso serializzato per intero, non nei campi in cui ci si aspetterebbe di trovarlo
+- `telegram`: il canale. La parte che conta è il **riconoscimento del codice di collegamento**, che è per parola intera e non per sottostringa: è l'unico punto del canale che può bucare la matrice di §5, perché un codice confuso con un altro consegna a una chat sbagliata un conflitto redatto per qualcun altro ([ADR-0040](DECISIONS.md)). Più il taglio dei messaggi lunghi, senza il quale un digest fitto verrebbe rifiutato da Telegram e l'avviso si perderebbe per la sua lunghezza
 - `parse-to-form`: la mappatura verso il form, e in particolare le tre cose che il parser **non** decide — stato, annuncio delle band, collegamento all'anagrafica ([ADR-0031](DECISIONS.md)). Sono i test da leggere per primi se qualcuno si chiederà perché l'import «non finisce il lavoro»
 
 **E2E (Playwright)**: invito → registrazione → creazione evento → comparsa conflitto per la seconda organizzazione → sottoscrizione feed ICS.
@@ -730,4 +742,4 @@ Con la chiusura del punto 5, **l'elenco è esaurito**: tutti e cinque i punti ch
 
 Restano aperte, fuori da questo elenco perché non hanno una scadenza di fase: il titolare del trattamento dei dati (§16, prima del lancio) e un LLM ospitato in locale (#7, quando il server esiste). Sono tracciate in `DECISIONS.md`.
 
-> **Aggiornamento (2026-08-24, chiusa la Fase 6).** Il **canale Telegram** aveva la Fase 6 come scadenza ed è arrivato in fondo alla fase **senza essere deciso**. Non è una dimenticanza: è una domanda da fare agli organizzatori — se un avviso di conflitto su un canale che leggono tutti sia utile o invadente — e a tavolino ha una sola risposta, che è quella sbagliata. Quello che la fase doveva garantire l'ha garantito: l'interfaccia `NotificationSink` esiste, e aggiungere il canale sarà un file accanto a `sinks/email.ts` ([ADR-0035](DECISIONS.md)).
+> **Aggiornamento (2026-08-25).** Il **canale Telegram** è stato deciso, ed è diventato l'unico: non un'aggiunta all'email ma il suo rimpiazzo, perché mandare email a destinatari arbitrari richiede un dominio verificato che non c'è ([ADR-0039](DECISIONS.md)). La decisione #6 si chiude quindi **fuori dal modo che il registro prescriveva** — «parlando con gli organizzatori, non a tavolino» — e va detto: l'ha chiusa un vincolo di budget. La domanda vera, se un avviso di conflitto su un canale che leggono tutti sia utile o invadente, resta da fare. Se la risposta fosse no, l'interfaccia `NotificationSink` regge il cambio: in Fase 6 è già servita una volta.

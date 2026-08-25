@@ -136,7 +136,10 @@ async function consegna(db: Database, righe: RigaDaConsegnare[]): Promise<[numbe
 	const adesso = new Date();
 
 	for (const sink of attivi) {
-		const esito = await sink.consegna(righe.map((r) => r.avviso));
+		const esito = await sink.consegna(
+			db,
+			righe.map((r) => r.avviso)
+		);
 
 		const idRiusciti = esito.riusciti.flatMap((p) => (perProfilo.get(p) ?? []).map((r) => r.id));
 		if (idRiusciti.length) {

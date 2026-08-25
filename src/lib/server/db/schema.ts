@@ -818,6 +818,28 @@ export const notificationPrefs = pgTable('notification_prefs', {
 	avvisaDigest: boolean('avvisa_digest').notNull().default(true),
 	/** Il promemoria su una data opzionata che avrebbe dovuto essere annunciata. */
 	avvisaSolleciti: boolean('avvisa_solleciti').notNull().default(true),
+
+	/**
+	 * La chat di Telegram su cui consegnare, quando il profilo l'ha collegata.
+	 *
+	 * `NULL` significa "non collegato", e vuol dire che gli avvisi restano solo
+	 * in pagina: non è un errore né uno stato da riparare, è la condizione
+	 * predefinita di chiunque non abbia fatto niente.
+	 *
+	 * È l'unica colonna di questa tabella che nomina un canale, e sta qui e non
+	 * su `profiles` perché è configurazione di notifica, non identità.
+	 */
+	telegramChatId: text('telegram_chat_id'),
+	/**
+	 * Il codice usa-e-getta con cui si collega la chat.
+	 *
+	 * Chi vuole collegarsi lo manda al bot; l'applicazione poi lo ricerca fra i
+	 * messaggi ricevuti e ne ricava la chat. Sparisce appena il collegamento
+	 * riesce, e scade da solo (`telegram_token_at`).
+	 */
+	telegramToken: text('telegram_token'),
+	telegramTokenAt: timestamp('telegram_token_at', { withTimezone: true }),
+
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 }).enableRLS();
 

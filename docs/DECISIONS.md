@@ -1059,6 +1059,96 @@ Sulla CI: farli girare lì significherebbe mettere `SUPABASE_SERVICE_ROLE_KEY` f
 
 ---
 
+## ADR-0039 — Il canale delle notifiche è Telegram, non l'email
+
+**Data:** 2026-08-25 · **Stato:** Accettata · **Chiude:** decisione aperta #6
+
+**Contesto.** La Fase 6 aveva costruito il layer di notifica di §10 con l'email come unico sink, e l'aveva consegnato senza che una sola email fosse mai partita: serviva una `RESEND_API_KEY` che non c'era. Andando a configurarla è emerso il vero ostacolo, che non è la chiave.
+
+**Per mandare email a destinatari arbitrari serve un dominio verificato.** Non è una politica di Resend: è SPF e DKIM, cioè il modo in cui si dimostra di essere autorizzati a scrivere a nome di un dominio. Postmark, Brevo, Mailgun, SendGrid chiedono tutti la stessa cosa, e chi non la chiedesse manderebbe la posta dritta nello spam. Il mittente condiviso di Resend (`onboarding@resend.dev`) consegna **solo all'indirizzo con cui ci si registra**: basta a provare l'integrazione, non a usarla.
+
+Si è verificato anche il piano gratuito di Cloudflare, dove l'applicazione è comunque destinata a girare. Cloudflare Email Service esiste dall'aprile 2026 e fa invio transazionale, ma sul piano gratuito consegna **solo a indirizzi verificati uno per uno**; per i destinatari arbitrari vuole Workers Paid, 5 $ al mese. Il piano gratuito di Resend, con un dominio verificato, è più generoso: stessa quota di 3.000 messaggi al mese, destinatari arbitrari, zero euro.
+
+Restava quindi un dominio da comprare — una decina di euro l'anno — e il manutentore ha deciso di non farlo ora.
+
+**Decisione.** L'email esce dal prodotto. Il canale di consegna diventa **Telegram**, tramite un bot. Contestualmente:
+
+1. Il sink Resend, l'email di invito e le variabili `RESEND_API_KEY`/`EMAIL_FROM` sono rimossi.
+2. Le colonne che nominavano l'email sono **rinominate**, non ricreate: `email_requested`, `emailed_at` ed `email_error` diventano `consegna_richiesta`, `consegnata_at` ed `errore_consegna`; le tre preferenze perdono il prefisso `email_`.
+3. `NotificationSink.consegna()` riceve il `Database`: **il sink si ricava da sé dove consegnare**.
+4. L'**invito** perde ogni canale e torna a essere un link da passare a mano.
+
+**Motivazioni.**
+
+Telegram è gratuito, non chiede domini né record DNS, e la community degli organizzatori quel canale ce l'ha già aperto sul telefono — che è esattamente l'osservazione con cui `ARCHITECTURE.md` §10 aveva messo l'ipotesi Telegram nel documento fin dall'inizio. Il vincolo «zero euro» la trasforma da aggiunta gradita nella risposta principale.
+
+Sulle **rinomine invece delle sostituzioni**: le righe in coda restano in coda e cambiano solo nome, così il canale nuovo le riprende da dove l'email le aveva lasciate. Ed è anche la ragione per cui i nomi nuovi non citano nessun canale — questa è la prima volta che il canale cambia, e non sarà l'ultima.
+
+Sul **`Database` passato al sink**: l'indirizzo di una persona su Telegram è una chat, su un altro canale sarebbe altro. Farlo risolvere al servizio significherebbe insegnargli quale canale è attivo, cioè proprio ciò che l'interfaccia esiste per non dover sapere. Il sink smette di essere puro — non lo era comunque, fa I/O di rete — e in cambio il resto del layer non nomina mai un canale.
+
+Sull'**invito**: era l'unico avviso senza alternativa in pagina, e non è un caso. Arriva a chi non ha ancora un profilo, quindi non ha una chat collegata, e non c'è modo di dargliene una prima che entri. Il link a mano è ciò che l'interfaccia già offriva e già spiegava.
+
+**Alternative scartate.**
+
+- _Comprare il dominio e tenere l'email._ Dieci euro l'anno, e resta la scelta migliore in assoluto: il dominio serve comunque per il deploy, e `PUBLIC_APP_URL` è una porta a senso unico che conviene chiudere prima che qualcuno sottoscriva un feed. Scartata dal manutentore, che ha preferito non spendere.
+- _Cloudflare Email Service sul piano gratuito._ Consegna solo a indirizzi verificati: la stessa restrizione della sandbox di Resend con un altro nome, e con in più l'attrito di far cliccare a ogni organizzatore un'email di verifica di Cloudflare.
+- _Verificare a uno a uno i venti indirizzi degli organizzatori._ Funzionerebbe per i conflitti e **non** per gli inviti, che è il caso in cui non si può pre-verificare nessuno. E aggiungerebbe un passaggio incomprensibile all'ingresso.
+- _La casella Gmail del manutentore, già configurata per il magic link._ Gmail parla SMTP, e su Cloudflare Workers una connessione SMTP non si apre. È la ragione per cui §3 aveva scelto un fornitore con API HTTP.
+- _Tenere il codice dell'email dormiente._ Lascerebbe una pagina di preferenze che promette avvisi che non partono, e la coda di uscita che si riempie senza svuotarsi mai.
+
+**Conseguenze.**
+
+- **Chi non collega la chat non riceve niente fuori dall'applicazione**, e non è un errore: è la condizione predefinita di chiunque non abbia fatto nulla. Un profilo non collegato viene saltato senza finire fra i falliti, altrimenti la corsa notturna ritenterebbe per tre giorni una consegna impossibile.
+- Il collegamento è un passaggio in più all'ingresso, e va spiegato agli organizzatori.
+- Un bot non può scrivere per primo: è Telegram a proibirlo, ed è il motivo per cui il collegamento esiste come flusso e non come campo da compilare.
+- La decisione #6 si chiude, ma **non nel modo che il registro prescriveva** — «parlando con gli organizzatori, non a tavolino». È stata chiusa da un vincolo di budget. Se gli organizzatori dicessero che Telegram non lo vogliono, l'interfaccia `NotificationSink` regge il cambio: è la seconda volta che serve.
+
+**Da rivedere se.** Il dominio viene comprato — a quel punto l'email torna possibile e ha senso **accanto** a Telegram, non al suo posto, perché è l'unico canale che raggiunge chi non è ancora iscritto e quindi rimetterebbe in piedi l'invito.
+
+---
+
+## ADR-0040 — La chat si collega leggendo i messaggi del bot, non con un webhook
+
+**Data:** 2026-08-25 · **Stato:** Accettata
+
+**Contesto.** Un bot Telegram non può scrivere per primo a nessuno: serve che la persona apra la conversazione. Il prodotto deve quindi collegare una chat a un profilo, e il modo consueto è un **webhook** — si registra un indirizzo, Telegram ci manda ogni messaggio ricevuto. Quell'indirizzo dev'essere pubblico e raggiungibile, e questa applicazione non è ancora deployata.
+
+**Decisione.** Nessun webhook. Il collegamento funziona così:
+
+1. La pagina delle impostazioni genera un codice usa-e-getta e lo salva sul profilo.
+2. La persona apre il bot con un link `https://t.me/<bot>?start=CODICE` e preme Avvia, che manda `/start CODICE`.
+3. Torna nell'applicazione e preme un pulsante.
+4. Il server chiama `getUpdates`, cerca il codice fra i messaggi ricevuti e ne ricava la chat.
+
+Il codice vale trenta minuti e sparisce appena il collegamento riesce. Gli aggiornamenti **non si consumano**: nessun `offset`.
+
+**Motivazioni.**
+
+`getUpdates` è una POST come le altre e funziona da `localhost`. Questo rende il giro **provabile prima del deploy**, che è precisamente il problema con cui la Fase 6 si era chiusa: tre pezzi consegnati e mai visti girare perché mancava un indirizzo pubblico. Un webhook avrebbe aggiunto il quarto.
+
+Il codice si cerca **per parola intera** e non per sottostringa. È l'unico punto del canale che può bucare la matrice di visibilità: se `ABC23456` corrispondesse dentro `ABC234567`, un conflitto redatto per un'organizzazione finirebbe nella chat di un'altra. C'è un test apposta.
+
+Gli aggiornamenti non si consumano perché due profili che si collegano nello stesso minuto si ruberebbero i messaggi a vicenda: chi chiama `getUpdates` con un `offset` cancella la coda per tutti. Telegram li lascia cadere da solo dopo circa un giorno, il che a questi volumi è la pulizia che serve.
+
+L'alfabeto del codice esclude `O`, `0`, `I` e `1`: si legge da uno schermo e si riscrive su un telefono, e quelle quattro sono il modo più rapido di far fallire un collegamento che sarebbe andato bene.
+
+**Alternative scartate.**
+
+- _Webhook._ Vuole un indirizzo pubblico, cioè il deploy, cioè la cosa che non c'è. Resta la scelta giusta il giorno in cui il volume dei messaggi conti — ma un bot che riceve solo `/start` non ha volume.
+- _Chiedere all'utente di incollare il proprio `chat_id`._ Va cercato con un altro bot, è un numero senza significato, e sbagliarlo a copiare significa mandare le proprie notifiche a uno sconosciuto.
+- _Consumare gli aggiornamenti con `offset`._ Più pulito in teoria, rotto in pratica appena due persone si collegano insieme.
+- _Un codice più corto._ Sotto gli otto caratteri le collisioni fra codici contemporanei smettono di essere teoriche, e una collisione qui è un avviso consegnato alla persona sbagliata.
+
+**Conseguenze.**
+
+- `getUpdates` e i webhook si escludono a vicenda: finché si usa questo, **nessuno deve registrare un webhook** su quel bot.
+- Il collegamento va completato entro trenta minuti dall'apertura, e chi preme troppo presto riceve «il messaggio non è ancora arrivato» invece di un errore.
+- Il pulsante di verifica è un passaggio manuale in più rispetto a un webhook, che collegherebbe da solo. È il prezzo di poterlo provare senza essere online.
+
+**Da rivedere se.** Il bot comincia a ricevere messaggi che non siano `/start`, o gli iscritti diventano abbastanza da far scorrere via gli aggiornamenti prima che qualcuno prema il pulsante. In entrambi i casi la risposta è il webhook, che a quel punto avrà anche un indirizzo dove vivere.
+
+---
+
 ## Template per nuove voci
 
 ```markdown
@@ -1092,7 +1182,7 @@ Non ancora decise, elencate per non perderle di vista. Vanno chiuse **parlando c
 | 3   | ~~Serve un ruolo di moderatore con poteri di correzione e merge su anagrafiche artisti e venue?~~ **Chiusa: sì, vedi ADR-0016.** Resta da capire con gli organizzatori chi nominare, e se lo strumento di merge serva davvero. | ~~Fase 1~~ chiusa |
 | 4   | ~~La visibilità ridotta in `hold` è sufficiente a far fidare gli organizzatori?~~ **Chiusa per assunzione, non verificata: vedi ADR-0023.** Il segnale che la smentisce è misurabile da `audit_log`: la quota di date che passano da `hold` prima di `confirmed` | ~~Fase 2~~ assunta |
 | 5   | Chi è formalmente titolare del trattamento dei dati: una delle associazioni o il manutentore a titolo personale?               | Prima del lancio |
-| 6   | Canale Telegram come sink di notifica aggiuntivo, dato che la community esiste già? **Arrivata in fondo alla Fase 6 senza essere decisa**, e va bene così: è una domanda da fare agli organizzatori, non da chiudere a tavolino. Il layer è pronto ad accoglierlo ([ADR-0035](#adr-0035--una-notifica-nasce-già-redatta-per-un-destinatario-solo)). | ~~Fase 6~~ aperta |
+| 6   | ~~Canale Telegram come sink di notifica aggiuntivo?~~ **Chiusa: sì, ed è diventato l'unico canale, vedi [ADR-0039](#adr-0039--il-canale-delle-notifiche-è-telegram-non-lemail).** Chiusa da un vincolo di budget e non parlando con gli organizzatori, come il registro prescriveva: se dicessero di non volerlo, l'interfaccia regge un altro cambio. | ~~Fase 6~~ chiusa |
 | 7   | Un LLM ospitato in locale al posto della Claude API, su un server in casa del manutentore. Ribalterebbe [ADR-0034](#adr-0034--claude-haiku-con-schema-forzato-dallapi-musicbrainz-resta-fuori-dallincolla). Le tre domande vere sono sotto. | Quando il server esiste |
 
 **Sul punto 7**, perché non vada perso il ragionamento già fatto.

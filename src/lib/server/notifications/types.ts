@@ -11,6 +11,7 @@
  * governa — si
  * leggono qui e si testano senza database.
  */
+import type { Database } from '$lib/server/db/client';
 import type { NotificationKind } from '$lib/server/db/schema';
 
 /**
@@ -117,10 +118,16 @@ export const CONSEGNA_VUOTA: EsitoConsegna = { riusciti: [], falliti: [] };
 /**
  * Un canale di uscita. Non solleva mai: un canale rotto è un avviso non
  * consegnato, non un salvataggio perso.
+ *
+ * **Il sink riceve il database, e si ricava da sé dove consegnare.** È il
+ * motivo per cui il resto del layer non nomina mai un canale: l'indirizzo di
+ * una persona su Telegram è una chat, su un altro canale sarebbe altro, e
+ * farlo risolvere al servizio vorrebbe dire insegnargli quale canale è attivo
+ * — cioè esattamente la cosa che l'interfaccia esiste per non dover sapere.
  */
 export interface NotificationSink {
 	readonly nome: string;
 	/** `false` quando manca la configurazione: il layer lo salta senza rumore. */
 	disponibile(): boolean;
-	consegna(avvisi: Avviso[]): Promise<EsitoConsegna>;
+	consegna(db: Database, avvisi: Avviso[]): Promise<EsitoConsegna>;
 }

@@ -49,8 +49,12 @@ npm run db:migrate # applica (usa DIRECT_DATABASE_URL, porta 5432)
   già committata.
 - Le **notifiche** nascono già redatte, per un destinatario solo: il testo
   si costruisce da un evento o da un conflitto **già serializzato**, e se il
-  serializzatore restituisce `null` non nasce nessuna riga. Niente email
+  serializzatore restituisce `null` non nasce nessuna riga. Niente avviso
   senza nomi, niente avviso vuoto: proprio niente. Vedi ADR-0035.
+- Il **canale** delle notifiche è Telegram, e niente nel layer lo nomina
+  tranne `sinks/telegram.ts`: colonne, preferenze e servizio parlano di
+  "consegna". L'email è stata rimossa in Fase 6 e il canale è già cambiato
+  una volta — il prossimo deve costare un file. Vedi ADR-0039.
 - Il **service worker** non mette in cache nessuna risposta che contenga
   dati di dominio. In cache va solo ciò che è uguale per tutti: build,
   asset statici, la pagina `/offline`. È l'unico posto dell'architettura
