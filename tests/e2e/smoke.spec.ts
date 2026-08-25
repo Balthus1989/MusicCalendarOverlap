@@ -63,8 +63,8 @@ test.describe('Alfa', () => {
 		await page.getByRole('button', { name: 'Genera invito' }).click();
 
 		await expect(page.getByText('Invito creato.')).toBeVisible();
-		// Il link resta comunque valido anche quando l'email parte: è il
-		// comportamento che la pagina promette.
+		// Il link è l'unica strada: chi lo riceve non ha ancora un profilo,
+		// quindi non c'è nessun canale su cui raggiungerlo.
 		await expect(page.getByText('/invite/')).toBeVisible();
 	});
 
@@ -185,7 +185,7 @@ test.describe('Beta', () => {
 		expect(await page.content()).not.toContain(TITOLO_ALFA);
 	});
 
-	test('sceglie quali email ricevere', async ({ page }) => {
+	test('sceglie quali avvisi ricevere fuori dall’applicazione', async ({ page }) => {
 		await apri(page, '/settings/notifications');
 
 		const digest = page.getByRole('checkbox', { name: /Riepilogo settimanale/ });

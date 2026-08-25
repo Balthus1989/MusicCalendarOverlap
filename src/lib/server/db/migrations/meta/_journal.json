@@ -57,6 +57,13 @@
       "when": 1787576078331,
       "tag": "0007_fase6_rate_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787648419937,
+      "tag": "0008_fase6_niente_email",
+      "breakpoints": true
     }
   ]
 }

@@ -5,7 +5,7 @@
  * conflitto **si serializza una volta per organizzazione**, non una volta per
  * conflitto, perché quanto se ne può raccontare dipende da chi guarda
  * (ADR-0024). Se `serializeConflict` restituisce `null` per un lato, quel lato
- * non riceve niente — non un'email senza nomi, proprio niente: il caso
+ * non riceve niente — non un avviso senza nomi, proprio niente: il caso
  * obbligatorio è la band che una sola delle due organizzazioni ha annunciato,
  * dove anche il solo fatto che un conflitto esista direbbe chi l'ha ingaggiata.
  *

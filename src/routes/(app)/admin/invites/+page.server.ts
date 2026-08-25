@@ -11,7 +11,6 @@ import { canCreateOrgInvite } from '$lib/server/auth/permissions';
 import { getDb } from '$lib/server/db/client';
 import { invites, organizations, profiles } from '$lib/server/db/schema';
 import { generateInviteCode } from '$lib/server/invites/code';
-import { spedisciInvito } from '$lib/server/notifications/inviti';
 import { inviteSchema } from '$lib/schemas/invite';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -51,13 +50,11 @@ export const load: PageServerLoad = async ({ parent }) => {
 export const actions: Actions = {
 	crea: async ({ request, locals }) => {
 		const viewer = locals.viewer;
-		if (!viewer)
-			return fail(401, { error: 'Sessione non valida.', invitoCreato: null, emailInvito: null });
+		if (!viewer) return fail(401, { error: 'Sessione non valida.', invitoCreato: null });
 		if (!canCreateOrgInvite(viewer)) {
 			return fail(403, {
 				error: 'Solo un amministratore della piattaforma può creare organizzazioni.',
-				invitoCreato: null,
-				emailInvito: null
+				invitoCreato: null
 			});
 		}
 
@@ -72,8 +69,7 @@ export const actions: Actions = {
 		if (!parsed.success) {
 			return fail(400, {
 				error: parsed.error.issues[0]?.message ?? 'Dati non validi.',
-				invitoCreato: null,
-				emailInvito: null
+				invitoCreato: null
 			});
 		}
 
@@ -96,27 +92,14 @@ export const actions: Actions = {
 			})
 			.returning({ code: invites.code });
 
-		// L'email parte solo se l'invito ha un indirizzo: senza, il codice si
-		// passa a voce ed è un uso legittimo. L'esito torna in pagina perché
-		// senza posta configurata il link va copiato a mano, e chi ha appena
-		// creato l'invito deve saperlo subito (§10, riga 3).
-		const emailInvito = await spedisciInvito(getDb(), {
-			code: creato[0].code,
-			email: emailHint,
-			organizationId: null,
-			invitanteProfileId: viewer.profileId,
-			scadenza
-		});
-
-		return { invitoCreato: creato[0].code, error: null, emailInvito };
+		return { invitoCreato: creato[0].code, error: null };
 	},
 
 	revoca: async ({ request, locals }) => {
 		const viewer = locals.viewer;
-		if (!viewer)
-			return fail(401, { error: 'Sessione non valida.', invitoCreato: null, emailInvito: null });
+		if (!viewer) return fail(401, { error: 'Sessione non valida.', invitoCreato: null });
 		if (!canCreateOrgInvite(viewer)) {
-			return fail(403, { error: 'Non hai i permessi.', invitoCreato: null, emailInvito: null });
+			return fail(403, { error: 'Non hai i permessi.', invitoCreato: null });
 		}
 
 		const form = await request.formData();

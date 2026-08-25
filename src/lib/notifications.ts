@@ -24,7 +24,7 @@ export const ETICHETTE_NOTIFICA: Record<NotificationKind, string> = {
  * È congelato di proposito. Ricalcolarlo alla lettura vorrebbe dire rifare la
  * redazione una seconda volta, in un punto dove il contesto di chi guarda
  * potrebbe nel frattempo essere cambiato — una membership aggiunta o tolta —
- * e produrre un avviso diverso da quello che era già stato spedito per email.
+ * e produrre un avviso diverso da quello che era già stato consegnato.
  */
 export type ContenutoNotifica = {
 	titolo: string;

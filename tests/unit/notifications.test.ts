@@ -3,16 +3,16 @@
  *
  * Due cose si controllano qui, e la seconda è quella che conta.
  *
- * La prima sono le tabelle di decisione: quale avviso prevede un'email, quale
- * interruttore lo governa. Sono quattro righe di codice e sbagliarle significa
+ * La prima sono le tabelle di decisione: quale avviso esce dall'applicazione,
+ * quale interruttore lo governa. Sono quattro righe di codice e sbagliarle significa
  * o non avvisare nessuno o non poter smettere di avvisare.
  *
- * La seconda è che **un nome di band non annunciata non finisca in un'email.**
- * Un'email è l'unica uscita del prodotto da cui un dato non si può più
- * ritirare: la dashboard si corregge, un feed ICS si revoca, un messaggio già
- * consegnato no. I test cercano quindi il nome nell'avviso intero, non nei
- * campi in cui ci si aspetterebbe di trovarlo — la stessa tecnica delle
- * uscite di Fase 4.
+ * La seconda è che **un nome di band non annunciata non finisca in un avviso
+ * consegnato.** Un messaggio già uscito è l'unica cosa del prodotto che non si
+ * può più ritirare: la dashboard si corregge, un feed ICS si revoca, un
+ * messaggio recapitato no. I test cercano quindi il nome nell'avviso intero,
+ * non nei campi in cui ci si aspetterebbe di trovarlo — la stessa tecnica
+ * delle uscite di Fase 4.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -22,14 +22,12 @@ import {
 	avvisoSollecito,
 	digestVuoto,
 	giornoEsteso,
-	testoInvito,
 	type RiepilogoDigest
 } from '../../src/lib/server/notifications/messages';
-import { corpoHtml, corpoTesto } from '../../src/lib/server/notifications/sinks/email';
 import {
-	EMAIL_PREVISTA,
+	CONSEGNA_PREVISTA,
 	PREFERENZE_PREDEFINITE,
-	vuoleEmail,
+	vuoleConsegna,
 	type Destinatario
 } from '../../src/lib/server/notifications/types';
 import { etichettaSettimana } from '../../src/lib/server/notifications/digest';
@@ -172,41 +170,43 @@ function conflittoDi(
  * Tabelle di decisione
  * ------------------------------------------------------------------ */
 
-describe('quali avvisi prevedono un’email', () => {
+describe('quali avvisi escono dall’applicazione', () => {
 	it('segue la tabella di §10', () => {
-		expect(EMAIL_PREVISTA.conflitto_nuovo).toBe(true);
+		expect(CONSEGNA_PREVISTA.conflitto_nuovo).toBe(true);
 		// Una buona notizia non ha bisogno di raggiungere nessuno al lavoro.
-		expect(EMAIL_PREVISTA.conflitto_risolto).toBe(false);
-		expect(EMAIL_PREVISTA.invito).toBe(true);
-		expect(EMAIL_PREVISTA.digest_settimanale).toBe(true);
-		expect(EMAIL_PREVISTA.sollecito_annuncio).toBe(true);
+		expect(CONSEGNA_PREVISTA.conflitto_risolto).toBe(false);
+		expect(CONSEGNA_PREVISTA.invito).toBe(true);
+		expect(CONSEGNA_PREVISTA.digest_settimanale).toBe(true);
+		expect(CONSEGNA_PREVISTA.sollecito_annuncio).toBe(true);
 	});
 
 	it('senza preferenze salvate manda tutto', () => {
 		// L'assenza di riga vale "tutto acceso": un profilo appena creato deve
 		// essere avvisato di un conflitto grave, e farlo dipendere da una riga
 		// che nessuno ha inserito sarebbe un silenzio per errore.
-		expect(vuoleEmail('conflitto_nuovo', PREFERENZE_PREDEFINITE)).toBe(true);
-		expect(vuoleEmail('digest_settimanale', PREFERENZE_PREDEFINITE)).toBe(true);
-		expect(vuoleEmail('sollecito_annuncio', PREFERENZE_PREDEFINITE)).toBe(true);
+		expect(vuoleConsegna('conflitto_nuovo', PREFERENZE_PREDEFINITE)).toBe(true);
+		expect(vuoleConsegna('digest_settimanale', PREFERENZE_PREDEFINITE)).toBe(true);
+		expect(vuoleConsegna('sollecito_annuncio', PREFERENZE_PREDEFINITE)).toBe(true);
 	});
 
 	it('ogni interruttore spegne solo la propria famiglia', () => {
-		const soloConflitti = { emailConflitti: true, emailDigest: false, emailSolleciti: false };
-		expect(vuoleEmail('conflitto_nuovo', soloConflitti)).toBe(true);
-		expect(vuoleEmail('digest_settimanale', soloConflitti)).toBe(false);
-		expect(vuoleEmail('sollecito_annuncio', soloConflitti)).toBe(false);
+		const soloConflitti = { avvisaConflitti: true, avvisaDigest: false, avvisaSolleciti: false };
+		expect(vuoleConsegna('conflitto_nuovo', soloConflitti)).toBe(true);
+		expect(vuoleConsegna('digest_settimanale', soloConflitti)).toBe(false);
+		expect(vuoleConsegna('sollecito_annuncio', soloConflitti)).toBe(false);
 	});
 
-	it('l’invito parte anche con tutto spento', () => {
-		// Arriva a chi non ha ancora un profilo: non c'è nessuna preferenza da
-		// consultare prima di mandare l'invito a entrare.
-		const spento = { emailConflitti: false, emailDigest: false, emailSolleciti: false };
-		expect(vuoleEmail('invito', spento)).toBe(true);
+	it('l’invito non è disattivabile, ma è comunque inerte', () => {
+		// Nessuna preferenza lo governa — arriva a chi non ha ancora un profilo
+		// su cui esprimerne una — e infatti non produce mai una riga: senza
+		// `profile_id` non c'è niente da scrivere. Il valore resta `true`
+		// perché la tabella copra l'enum per intero.
+		const spento = { avvisaConflitti: false, avvisaDigest: false, avvisaSolleciti: false };
+		expect(vuoleConsegna('invito', spento)).toBe(true);
 	});
 
-	it('il conflitto risolto non manda email nemmeno con tutto acceso', () => {
-		expect(vuoleEmail('conflitto_risolto', PREFERENZE_PREDEFINITE)).toBe(false);
+	it('il conflitto risolto non esce nemmeno con tutto acceso', () => {
+		expect(vuoleConsegna('conflitto_risolto', PREFERENZE_PREDEFINITE)).toBe(false);
 	});
 });
 
@@ -346,7 +346,7 @@ describe('il digest settimanale', () => {
 	const vuoto: RiepilogoDigest = { nuoveDate: [], conflittiAperti: [], holdInScadenza: [] };
 
 	it('non parte quando non c’è niente da dire', () => {
-		// Un'email settimanale che arriva anche a settimana vuota insegna a non
+		// Un riepilogo che arriva anche a settimana vuota insegna a non
 		// aprirla, e la settimana con dentro un conflitto grave finisce nello
 		// stesso scorrimento di pollice delle altre.
 		expect(digestVuoto(vuoto)).toBe(true);
@@ -398,86 +398,6 @@ describe('l’etichetta della settimana', () => {
 		const lunedi = etichettaSettimana(daLocaleAIstante('2026-08-24T07:00'));
 		const domenica = etichettaSettimana(daLocaleAIstante('2026-08-30T23:00'));
 		expect(lunedi).toBe(domenica);
-	});
-});
-
-/* ------------------------------------------------------------------ *
- * Corpo delle email
- * ------------------------------------------------------------------ */
-
-describe('il corpo dell’email', () => {
-	const serializzato = () => conflittoDi(conflitto(), ORG_MIA)!;
-
-	it('il testo semplice contiene tutto l’avviso', () => {
-		const avviso = avvisoConflittoNuovo(serializzato(), destinatario);
-		expect(corpoTesto(avviso)).toContain(avviso.testo);
-	});
-
-	it('l’HTML fa l’escape di ciò che arriva dai dati', () => {
-		// Il titolo di una data lo scrive un utente. Se finisse in pagina senza
-		// escape, sarebbe HTML dentro l'email di qualcun altro.
-		const conTitoloOstile = serializzato();
-		conTitoloOstile.mia.title = 'Serata <script>alert(1)</script>';
-		const avviso = avvisoConflittoNuovo(conTitoloOstile, destinatario);
-		const html = corpoHtml(avviso);
-		expect(html).not.toContain('<script>');
-		expect(html).toContain('&lt;script&gt;');
-	});
-
-	it('rimanda sempre alle impostazioni di notifica', () => {
-		// Un'email periodica senza il modo di smettere di riceverla è la
-		// ragione per cui le email periodiche finiscono nello spam.
-		const avviso = avvisoDigest(
-			{
-				nuoveDate: [{ giorno: '2026-10-12', testo: 'Serata jazz — Terni' }],
-				conflittiAperti: [],
-				holdInScadenza: []
-			},
-			destinatario,
-			'2026-W35'
-		)!;
-		expect(corpoHtml(avviso)).toContain('/settings/notifications');
-	});
-});
-
-/* ------------------------------------------------------------------ *
- * Invito
- * ------------------------------------------------------------------ */
-
-describe('l’email di invito', () => {
-	it('nomina l’organizzazione quando l’invito ne ha una', () => {
-		const { oggetto, testo } = testoInvito({
-			organizzazione: 'Circolo Arci Il Grifo',
-			invitante: 'Anna',
-			url: 'https://calendario.example/invite/abc123',
-			scadenza: daLocaleAIstante('2026-09-30T12:00')
-		});
-		expect(oggetto).toContain('Circolo Arci Il Grifo');
-		expect(testo).toContain('da Anna');
-		expect(testo).toContain('https://calendario.example/invite/abc123');
-		expect(testo).toContain('30 settembre');
-	});
-
-	it('senza organizzazione invita a crearne una', () => {
-		const { testo } = testoInvito({
-			organizzazione: null,
-			invitante: null,
-			url: 'https://calendario.example/invite/abc123',
-			scadenza: null
-		});
-		expect(testo).toContain('registrare la tua organizzazione');
-		expect(testo).not.toContain('scade');
-	});
-
-	it('spiega che cos’è, perché arriva a chi non conosce il prodotto', () => {
-		const { testo } = testoInvito({
-			organizzazione: 'Circolo Arci Il Grifo',
-			invitante: 'Anna',
-			url: 'https://calendario.example/invite/abc123',
-			scadenza: null
-		});
-		expect(testo).toContain('opzionato');
-		expect(testo).toContain('ignorare');
 	});
 });
 

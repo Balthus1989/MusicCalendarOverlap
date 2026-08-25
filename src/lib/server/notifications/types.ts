@@ -1,19 +1,25 @@
 /**
  * Il contratto del layer di notifica (ARCHITECTURE.md §10, ADR-0035).
  *
- * `NotificationSink` esiste perché la specifica lo chiede per nome: la
- * community ha già un canale Telegram, e se un giorno si deciderà di usarlo
- * (decisione aperta #6 in `DECISIONS.md`) dovrà essere un file in più in
- * `sinks/`, non una riscrittura. Il resto del codice non sa quali sink
- * esistono: costruisce avvisi e li consegna.
+ * `NotificationSink` esiste perché la specifica lo chiede per nome, e in Fase 6
+ * ha già ripagato: il canale è passato dall'email a Telegram cambiando i file
+ * dentro `sinks/` e nient'altro ([ADR-0039](../../../../docs/DECISIONS.md)). Il
+ * resto del codice non sa quali sink esistano: costruisce avvisi e li consegna.
  *
  * Il file è codice puro: nessuna query, nessun `fetch`. Le tabelle di
- * decisione — quale avviso va per email, quale interruttore lo governa — si
+ * decisione — quale avviso esce dall'applicazione, quale interruttore lo
+ * governa — si
  * leggono qui e si testano senza database.
  */
 import type { NotificationKind } from '$lib/server/db/schema';
 
-/** Chi riceve. L'email c'è sempre: è il campo su cui si fa il login. */
+/**
+ * Chi riceve.
+ *
+ * L'email c'è sempre — è il campo su cui si fa il login — anche ora che non
+ * serve più a consegnare: resta l'unico modo di dire *chi* è un destinatario
+ * quando si legge un registro o si diagnostica una consegna mancata.
+ */
 export type Destinatario = {
 	profileId: string;
 	displayName: string;
@@ -25,15 +31,15 @@ export type Destinatario = {
  *
  * Nasce con dentro il testo definitivo e non con gli id da cui ricavarlo:
  * la redazione dipende da chi guarda (ADR-0024), e farla una volta sola al
- * momento giusto è l'unico modo perché l'email e la riga in-app raccontino la
- * stessa cosa.
+ * momento giusto è l'unico modo perché la copia consegnata e la riga in
+ * pagina raccontino la stessa cosa.
  */
 export type Avviso = {
 	kind: NotificationKind;
 	destinatario: Destinatario;
 	titolo: string;
 	testo: string;
-	/** Percorso interno, senza dominio: chi manda l'email ci mette davanti `PUBLIC_APP_URL`. */
+	/** Percorso interno, senza dominio: chi consegna ci mette davanti `PUBLIC_APP_URL`. */
 	url: string | null;
 	/**
 	 * Identità dell'avviso, per non ripeterlo. `null` per ciò che nasce da un
@@ -44,15 +50,19 @@ export type Avviso = {
 };
 
 /**
- * Quali avvisi prevedono una copia per email (§10).
+ * Quali avvisi prevedono una copia **fuori dall'applicazione** (§10).
  *
  * La riga in `notifications` viene scritta **sempre**, anche per ciò che §10
- * manda solo per posta: quella tabella è anche la coda di uscita delle email
- * (ADR-0036), e nascondere in-app un avviso già spedito significherebbe
+ * manda solo sul canale esterno: quella tabella è anche la coda di uscita
+ * (ADR-0036), e nascondere in pagina un avviso già consegnato significherebbe
  * costruire un filtro il cui unico effetto è far dimenticare
  * all'applicazione di aver scritto a qualcuno.
+ *
+ * `invito` resta `true` e resta **inerte**: un invito non ha una `profile_id`
+ * a cui appartenere, quindi non produce nessuna riga e non arriva mai qui. Il
+ * valore è tenuto perché la tabella copra l'enum per intero.
  */
-export const EMAIL_PREVISTA: Record<NotificationKind, boolean> = {
+export const CONSEGNA_PREVISTA: Record<NotificationKind, boolean> = {
 	conflitto_nuovo: true,
 	conflitto_risolto: false,
 	invito: true,
@@ -62,39 +72,40 @@ export const EMAIL_PREVISTA: Record<NotificationKind, boolean> = {
 
 /** Gli interruttori di `notification_prefs`, uno per famiglia di avvisi. */
 export type Preferenze = {
-	emailConflitti: boolean;
-	emailDigest: boolean;
-	emailSolleciti: boolean;
+	avvisaConflitti: boolean;
+	avvisaDigest: boolean;
+	avvisaSolleciti: boolean;
 };
 
 /** Nessuna riga in tabella vale "tutto acceso": il silenzio non si eredita da una dimenticanza. */
 export const PREFERENZE_PREDEFINITE: Preferenze = {
-	emailConflitti: true,
-	emailDigest: true,
-	emailSolleciti: true
+	avvisaConflitti: true,
+	avvisaDigest: true,
+	avvisaSolleciti: true
 };
 
 /**
  * Quale interruttore governa quale avviso. `null` significa "non
  * disattivabile": l'invito arriva a chi non ha ancora un profilo su cui
- * esprimere una preferenza, e il conflitto risolto non manda email comunque.
+ * esprimere una preferenza, e il conflitto risolto non esce comunque
+ * dall'applicazione.
  */
 const INTERRUTTORE: Record<NotificationKind, keyof Preferenze | null> = {
-	conflitto_nuovo: 'emailConflitti',
+	conflitto_nuovo: 'avvisaConflitti',
 	conflitto_risolto: null,
 	invito: null,
-	digest_settimanale: 'emailDigest',
-	sollecito_annuncio: 'emailSolleciti'
+	digest_settimanale: 'avvisaDigest',
+	sollecito_annuncio: 'avvisaSolleciti'
 };
 
-/** Se per questo avviso, con queste preferenze, va spedita un'email. */
-export function vuoleEmail(kind: NotificationKind, preferenze: Preferenze): boolean {
-	if (!EMAIL_PREVISTA[kind]) return false;
+/** Se questo avviso, con queste preferenze, va consegnato fuori dall'applicazione. */
+export function vuoleConsegna(kind: NotificationKind, preferenze: Preferenze): boolean {
+	if (!CONSEGNA_PREVISTA[kind]) return false;
 	const chiave = INTERRUTTORE[kind];
 	return chiave === null ? true : preferenze[chiave];
 }
 
-/** Esito della consegna, per riga: serve a segnare `emailed_at` solo a chi è partita. */
+/** Esito della consegna, per riga: serve a segnare `consegnata_at` solo a chi è riuscita. */
 export type EsitoConsegna = {
 	/** Le chiavi sono i `profileId` dei destinatari serviti. */
 	riusciti: string[];

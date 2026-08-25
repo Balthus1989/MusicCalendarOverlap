@@ -731,7 +731,8 @@ export const notificationKind = pgEnum('notification_kind', [
 ]);
 
 /**
- * Le notifiche ricevute da un profilo, in-app e via email.
+ * Le notifiche ricevute da un profilo: in pagina, e fuori dall'applicazione
+ * sul canale configurato.
  *
  * La riga è **già redatta**: `payload` contiene il testo come lo vedrà questo
  * destinatario e nient'altro, perché la redazione dipende da chi guarda e
@@ -739,10 +740,10 @@ export const notificationKind = pgEnum('notification_kind', [
  * ([ADR-0035](../../../../docs/DECISIONS.md)). Un conflitto che a questo
  * profilo non si può raccontare non produce nessuna riga qui dentro.
  *
- * La tabella è anche la **coda di uscita** delle email: `email_requested` dice
- * che una copia per posta era prevista, `emailed_at` che è partita. Le due
- * cose insieme fanno un elenco di email dovute e non ancora spedite, che la
- * corsa notturna ritenta ([ADR-0036](../../../../docs/DECISIONS.md)).
+ * La tabella è anche la **coda di uscita**: `consegna_richiesta` dice che una
+ * copia fuori dall'applicazione era prevista, `consegnata_at` che è partita.
+ * Le due cose insieme fanno un elenco di consegne dovute e mai riuscite, che
+ * la corsa notturna ritenta ([ADR-0036](../../../../docs/DECISIONS.md)).
  */
 export const notifications = pgTable(
 	'notifications',
@@ -763,47 +764,60 @@ export const notifications = pgTable(
 		 * nascono da un fatto puntuale e non si ripetono da sé.
 		 */
 		dedupeKey: text('dedupe_key'),
-		/** Una copia per email era prevista da §10 e non rifiutata nelle preferenze. */
-		emailRequested: boolean('email_requested').notNull().default(false),
-		emailedAt: timestamp('emailed_at', { withTimezone: true }),
+		/**
+		 * Una copia **fuori dall'applicazione** era prevista da §10 e non
+		 * rifiutata nelle preferenze.
+		 *
+		 * Le colonne non nominano il canale di proposito: fino alla Fase 6 era
+		 * l'email, adesso è Telegram, e il layer è costruito perché possa
+		 * essere un altro ancora senza toccare niente qui
+		 * ([ADR-0039](../../../../docs/DECISIONS.md)).
+		 */
+		consegnaRichiesta: boolean('consegna_richiesta').notNull().default(false),
+		consegnataAt: timestamp('consegnata_at', { withTimezone: true }),
 		/** Perché non è partita: serve al manutentore, non all'utente. */
-		emailError: text('email_error'),
+		erroreConsegna: text('errore_consegna'),
 		readAt: timestamp('read_at', { withTimezone: true }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 	},
 	(t) => [
 		index('notifications_profile_idx').on(t.profileId, t.createdAt),
 		uniqueIndex('notifications_dedupe_idx').on(t.profileId, t.dedupeKey),
-		// Le email dovute e non spedite. Parziale perché è l'unica riga che la
-		// corsa notturna cerca, e a regime sono zero.
-		index('notifications_da_spedire_idx')
+		// Le consegne dovute e mai riuscite. Parziale perché è l'unica riga che
+		// la corsa notturna cerca, e a regime sono zero.
+		index('notifications_da_consegnare_idx')
 			.on(t.createdAt)
-			.where(sql`${t.emailRequested} and ${t.emailedAt} is null`)
+			.where(sql`${t.consegnaRichiesta} and ${t.consegnataAt} is null`)
 	]
 ).enableRLS();
 
 /**
- * Quali email un profilo accetta di ricevere.
+ * Quali avvisi un profilo accetta di ricevere **fuori dall'applicazione**.
+ *
+ * I nomi non citano il canale: governano la consegna, qualunque essa sia. Fino
+ * alla Fase 6 era l'email, adesso è Telegram
+ * ([ADR-0039](../../../../docs/DECISIONS.md)).
  *
  * L'assenza di riga vale "tutto acceso": un profilo appena creato deve essere
  * avvisato di un conflitto grave, e farlo dipendere da una riga che qualcuno
  * si è dimenticato di inserire sarebbe un silenzio per errore.
  *
- * Non c'è un interruttore per le notifiche in-app: quelle non arrivano
- * addosso a nessuno, si leggono quando si apre la pagina. Nemmeno per
+ * Non c'è un interruttore per le notifiche in pagina: quelle non arrivano
+ * addosso a nessuno, si leggono quando si apre la casella. Nemmeno per
  * l'invito, che arriva a chi non ha ancora un profilo su cui esprimere una
- * preferenza.
+ * preferenza — ed è anche il motivo per cui l'invito non ha nessun canale
+ * esterno possibile, e il suo link si passa a mano.
  */
 export const notificationPrefs = pgTable('notification_prefs', {
 	profileId: uuid('profile_id')
 		.primaryKey()
 		.references(() => profiles.id, { onDelete: 'cascade' }),
 	/** Conflitti nuovi di severity `medium` o `high`. */
-	emailConflitti: boolean('email_conflitti').notNull().default(true),
+	avvisaConflitti: boolean('avvisa_conflitti').notNull().default(true),
 	/** Il riepilogo del lunedì mattina. */
-	emailDigest: boolean('email_digest').notNull().default(true),
+	avvisaDigest: boolean('avvisa_digest').notNull().default(true),
 	/** Il promemoria su una data opzionata che avrebbe dovuto essere annunciata. */
-	emailSolleciti: boolean('email_solleciti').notNull().default(true),
+	avvisaSolleciti: boolean('avvisa_solleciti').notNull().default(true),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 }).enableRLS();
 

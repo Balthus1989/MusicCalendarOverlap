@@ -13,25 +13,25 @@
 	 */
 	const voci = $derived([
 		{
-			nome: 'emailConflitti',
+			nome: 'avvisaConflitti',
 			etichetta: 'Conflitti nuovi',
 			spiegazione:
 				'Quando una data nuova — tua o di un altro iscritto — si sovrappone a una tua in modo serio. Solo i casi gravi o da guardare: quelli informativi restano in dashboard.',
-			acceso: data.preferenze.emailConflitti
+			acceso: data.preferenze.avvisaConflitti
 		},
 		{
-			nome: 'emailDigest',
+			nome: 'avvisaDigest',
 			etichetta: 'Riepilogo settimanale',
 			spiegazione:
 				'Il lunedì mattina: le date nuove della settimana, i conflitti ancora aperti, le tue opzioni con l’annuncio in scadenza. Se non c’è niente da dire non arriva.',
-			acceso: data.preferenze.emailDigest
+			acceso: data.preferenze.avvisaDigest
 		},
 		{
-			nome: 'emailSolleciti',
+			nome: 'avvisaSolleciti',
 			etichetta: 'Promemoria sulle tue opzioni',
 			spiegazione:
 				'Quando una tua data resta opzionata oltre la scadenza di annuncio che le avevi dato. Non chiede di confermarla: dice solo che quella scadenza è passata.',
-			acceso: data.preferenze.emailSolleciti
+			acceso: data.preferenze.avvisaSolleciti
 		}
 	]);
 </script>
@@ -40,12 +40,19 @@
 
 <h1 class="text-2xl font-semibold tracking-tight">Impostazioni di notifica</h1>
 <p class="text-muted-foreground mt-1 mb-6 text-sm">
-	Le email arrivano a <strong>{data.email}</strong>. Qualunque cosa scegli qui, gli avvisi restano
-	leggibili nella
-	<a class="underline underline-offset-4" href={resolve('/notifications')}>
-		casella degli avvisi</a
-	>: questi interruttori tolgono le email, non le notifiche.
+	Questi interruttori governano gli avvisi che ti raggiungono <strong
+		>fuori dall’applicazione</strong
+	>. Qualunque cosa scegli, restano tutti leggibili nella
+	<a class="underline underline-offset-4" href={resolve('/notifications')}>casella degli avvisi</a>.
 </p>
+
+{#if data.canaliAttivi.length === 0}
+	<p class="border-border mb-6 rounded-lg border p-4 text-sm">
+		<strong>Nessun canale è configurato su questo server</strong>, quindi al momento non ti
+		raggiunge niente: gli avvisi restano in coda e si leggono solo qui dentro. Le preferenze qui
+		sotto si salvano lo stesso, e valgono dal momento in cui un canale ci sarà.
+	</p>
+{/if}
 
 {#if form?.salvato}
 	<p role="status" class="border-border mb-4 rounded-lg border p-3 text-sm">Preferenze salvate.</p>
@@ -56,7 +63,7 @@
 
 <form method="POST" action="?/salva" use:enhance class="grid max-w-2xl gap-5">
 	<fieldset class="grid gap-5">
-		<legend class="sr-only">Email che vuoi ricevere</legend>
+		<legend class="sr-only">Avvisi che vuoi ricevere fuori dall’applicazione</legend>
 
 		{#each voci as voce (voce.nome)}
 			<div class="border-border rounded-lg border p-4">
@@ -82,6 +89,6 @@
 </form>
 
 <p class="text-muted-foreground mt-8 max-w-2xl text-sm">
-	L’email di invito non è in questo elenco perché arriva a chi non ha ancora un profilo: non c’è
-	nessuna preferenza da consultare prima di mandarla.
+	L’invito non è in questo elenco perché si rivolge a chi non ha ancora un profilo: non c’è nessun
+	canale su cui raggiungerlo, e il suo link si passa a mano.
 </p>

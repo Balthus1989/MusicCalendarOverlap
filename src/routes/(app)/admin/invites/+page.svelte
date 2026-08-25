@@ -46,15 +46,10 @@
 {#if form?.invitoCreato}
 	<div class="border-border bg-card mb-6 rounded-lg border p-4">
 		<p class="text-sm font-medium">Invito creato.</p>
-		{#if form.emailInvito?.spedito}
-			<p class="text-muted-foreground mt-1 text-sm">
-				Email inviata a {form.emailInvito.a}. Il link qui sotto resta valido lo stesso.
-			</p>
-		{:else if form.emailInvito}
-			<p class="mt-1 text-sm">
-				Email <strong>non</strong> inviata: {form.emailInvito.motivo} Manda il link a mano.
-			</p>
-		{/if}
+		<p class="text-muted-foreground mt-1 text-sm">
+			Manda questo link a chi vuoi far entrare. Non parte nessuna email: chi lo riceve non ha ancora
+			un profilo, quindi non c’è nessun canale su cui raggiungerlo.
+		</p>
 		<code class="mt-2 block overflow-x-auto text-xs">{linkInvito(form.invitoCreato)}</code>
 	</div>
 {/if}

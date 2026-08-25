@@ -180,8 +180,8 @@ async function holdInScadenza(
  * Gli avvisi di digest per tutti gli iscritti.
  *
  * Chi non ha niente da leggere non riceve niente: `avvisoDigest` restituisce
- * `null` sul riepilogo vuoto, e un'email settimanale che arriva anche quando
- * non è successo nulla insegna a non aprirla.
+ * `null` sul riepilogo vuoto, e un riepilogo che arriva anche quando non è
+ * successo nulla insegna a non aprirlo.
  */
 export async function avvisiDigest(db: Database, adesso = new Date()): Promise<Avviso[]> {
 	const gruppi = await gruppiDiVisibilita(db);

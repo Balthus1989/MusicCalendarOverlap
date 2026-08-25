@@ -17,8 +17,8 @@ export type NotificaInPagina = ContenutoNotifica & {
 	kind: NotificationKind;
 	letta: boolean;
 	createdAt: Date;
-	/** Vero se una copia per email era prevista ed è partita: si vede in pagina. */
-	emailInviata: boolean;
+	/** Vero se una copia fuori dall'applicazione era prevista ed è uscita. */
+	consegnata: boolean;
 };
 
 export const PER_PAGINA = 50;
@@ -34,8 +34,8 @@ export async function elencaNotifiche(
 			kind: notifications.kind,
 			payload: notifications.payload,
 			readAt: notifications.readAt,
-			emailRequested: notifications.emailRequested,
-			emailedAt: notifications.emailedAt,
+			consegnaRichiesta: notifications.consegnaRichiesta,
+			consegnataAt: notifications.consegnataAt,
 			createdAt: notifications.createdAt
 		})
 		.from(notifications)
@@ -48,7 +48,7 @@ export async function elencaNotifiche(
 		kind: r.kind,
 		letta: r.readAt !== null,
 		createdAt: r.createdAt,
-		emailInviata: r.emailRequested && r.emailedAt !== null,
+		consegnata: r.consegnaRichiesta && r.consegnataAt !== null,
 		...leggiContenuto(r.payload)
 	}));
 }

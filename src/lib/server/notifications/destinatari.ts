@@ -6,9 +6,9 @@
  * data è del circolo; mandarlo solo a chi l'ha inserita significherebbe che
  * un avviso grave si perde perché quella sera quella persona era in tour.
  *
- * L'unica eccezione è l'invito, che arriva a un indirizzo email di qualcuno
- * che nel calendario non esiste ancora: non ha un profilo, e infatti non passa
- * da qui (vedi `messages.ts`).
+ * L'unica eccezione è l'invito, che si rivolge a qualcuno che nel calendario
+ * non esiste ancora: non ha un profilo, quindi non ha nemmeno un canale su cui
+ * essere raggiunto, e il suo link si passa a mano (vedi `messages.ts`).
  */
 import { eq, inArray } from 'drizzle-orm';
 import type { Database } from '$lib/server/db/client';

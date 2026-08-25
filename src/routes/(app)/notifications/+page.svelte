@@ -90,8 +90,8 @@
 						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
 						<a class="underline underline-offset-4" href={n.url}>Apri</a>
 					{/if}
-					{#if n.emailInviata}
-						<span class="text-muted-foreground text-xs">Inviato anche per email</span>
+					{#if n.consegnata}
+						<span class="text-muted-foreground text-xs">Consegnato anche fuori dall’app</span>
 					{/if}
 					{#if !n.letta}
 						<span class="text-muted-foreground text-xs">Non letto</span>
