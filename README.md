@@ -120,16 +120,40 @@ potuto provare senza deploy: il codice si cerca fra i messaggi con
 `getUpdates`, che funziona anche da `localhost`
 ([ADR-0040](docs/DECISIONS.md)).
 
+**La PWA è installata, e il guscio offline funziona** (26 agosto 2026). Il
+manutentore l'ha aggiunta alla schermata home da Brave su Android: l'app si apre
+senza barra degli indirizzi, e in modalità aereo compare **«Sei senza rete»**
+invece dell'errore del browser. Le date offline non ci sono, ed è voluto: una
+cache nel browser è l'unico posto dove una risposta sopravvivrebbe al contesto
+che l'ha prodotta.
+
+**La corsa notturna gira da sola.** `recompute-conflicts.yml` è partita alle
+04:21 UTC del 26 agosto senza che nessuno la lanciasse, e ha risposto con i tre
+JSON dei suoi passi. Uno vale più degli altri:
+
+```json
+{
+	"parseJobs": { "cancellati": 0 },
+	"notifiche": { "cancellate": 0 },
+	"rateLimit": { "cancellate": 1 },
+	"durataMs": 926
+}
+```
+
+`rateLimit.cancellate: 1` è la pulizia dei contatori scaduti che faceva **500**
+prima della correzione: ora lavora in produzione, di notte, senza che nessuno
+guardi.
+
+Il **digest settimanale** non ha ancora completato una corsa da GitHub — una
+`startup_failure` senza causa apparente e poi una coda lunga, che è congestione
+della piattaforma e non del progetto. L'endpoint però è verificato chiamandolo
+direttamente, ed è tutto ciò che il workflow fa: risponde
+`{"settimana":"2026-W35","destinatari":1,"registrate":0,"ripetuti":1}`, cioè
+**deduplicato e silenzioso**, che è la risposta giusta per una settimana il cui
+digest è già stato consegnato.
+
 **Non provato, e va detto.**
 
-- **La PWA non è stata installata su nessun dispositivo.** Il manifest e le
-  icone si servono e il service worker si compila, ma in sviluppo SvelteKit non
-  lo registra: il guscio offline vero si prova solo su una build servita in
-  HTTPS, cioè dopo il deploy.
-- **I due workflow schedulati non hanno mai girato.** `recompute-conflicts.yml`
-  e `digest.yml` hanno bisogno dei secret `APP_URL` e `CRON_SECRET`, e di un
-  `APP_URL` che esista. Gli endpoint che chiamano sono provati a mano e dagli
-  smoke test; la corsa automatica no.
 - L'accessibilità è stata corretta dove i difetti erano **misurabili** — voci
   del calendario irraggiungibili da tastiera, bordo dei campi a 1,3:1 contro il
   minimo di 3:1, fuoco perso a ogni riga di lineup rimossa — ma **nessuno l'ha
