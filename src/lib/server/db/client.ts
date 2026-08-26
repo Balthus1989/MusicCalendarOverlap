@@ -29,11 +29,20 @@ import * as schema from './schema';
 
 export type Database = PostgresJsDatabase<typeof schema>;
 
-type Connessione = { db: Database; chiudi: () => Promise<void> };
+/**
+ * Il perimetro di una richiesta. Nasce **vuoto**: la connessione si apre solo
+ * se qualcuno chiede `getDb()`.
+ *
+ * La pigrizia non è un'ottimizzazione, è ciò che tiene il build indipendente
+ * dal database. Aprendo subito, la prerenderizzazione di `/offline` — che una
+ * riga di SQL non la esegue — pretendeva `DATABASE_URL`, e la CI, che quella
+ * variabile non ce l'ha e non deve averla, è diventata rossa.
+ */
+type Perimetro = { db: Database | null; chiudi: (() => Promise<void>) | null };
 
-const perRichiesta = new AsyncLocalStorage<Connessione>();
+const perRichiesta = new AsyncLocalStorage<Perimetro>();
 
-function creaConnessione(): Connessione {
+function creaConnessione(): { db: Database; chiudi: () => Promise<void> } {
 	const url = env.DATABASE_URL;
 	if (!url) {
 		throw new Error(
@@ -77,22 +86,22 @@ function creaConnessione(): Connessione {
 }
 
 /**
- * Apre una connessione per la durata di `fn`, e la chiude alla fine.
+ * Delimita la richiesta, e chiude ciò che è stato aperto dentro.
  *
  * La chiama `hooks.server.ts` una volta per richiesta, avvolgendo tutto il
- * resto della catena. Il client di `postgres.js` è **pigro**: costruirlo non
- * apre nessun socket, quindi le richieste che non toccano il database — un
- * asset, la pagina di login — non pagano niente.
+ * resto della catena. **Non apre niente da sé**: una richiesta che il database
+ * non lo tocca — un asset, la pagina di login, la prerenderizzazione di
+ * `/offline` — non paga niente e non pretende nemmeno che `DATABASE_URL` esista.
  */
 export async function conDatabase<T>(fn: () => Promise<T>): Promise<T> {
-	const connessione = creaConnessione();
+	const perimetro: Perimetro = { db: null, chiudi: null };
 	try {
-		return await perRichiesta.run(connessione, fn);
+		return await perRichiesta.run(perimetro, fn);
 	} finally {
 		// `finally` e non dopo il `return`: una richiesta che fallisce deve
 		// chiudere quello che ha aperto, altrimenti il pooler si riempie di
 		// connessioni che nessuno rivendicherà.
-		await connessione.chiudi();
+		await perimetro.chiudi?.();
 	}
 }
 
@@ -106,7 +115,15 @@ export async function conDatabase<T>(fn: () => Promise<T>): Promise<T> {
  * significherebbe che qualcosa gira fuori da `conDatabase`.
  */
 export function getDb(): Database {
-	return perRichiesta.getStore()?.db ?? creaConnessione().db;
+	const perimetro = perRichiesta.getStore();
+	if (!perimetro) return creaConnessione().db;
+
+	if (perimetro.db) return perimetro.db;
+
+	const connessione = creaConnessione();
+	perimetro.db = connessione.db;
+	perimetro.chiudi = connessione.chiudi;
+	return connessione.db;
 }
 
 export { schema };
