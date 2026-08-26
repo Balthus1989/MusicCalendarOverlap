@@ -415,17 +415,35 @@ browser e da qualunque dispositivo. In più `next` sopravvive, perché non c'è
 più nessuno che riscrive l'URL di ritorno.
 
 Il `?` prima di `token_hash` non è un refuso, ed è il punto in cui è più facile
-sbagliare. L'azione di login costruisce `emailRedirectTo` come
-`/auth/callback?next=…`, ma **Supabase scarta la query string**: confronta
-`redirect_to` con la allow-list dei Redirect URL e rende l'indirizzo così come
-è scritto lì. `{{ .RedirectTo }}` arriva quindi al template senza query, e con
-un `&` si otterrebbe `/auth/callback&token_hash=…` — un percorso unico, che
-risponde **404**.
+sbagliare: con un `&` si otterrebbe `/auth/callback&token_hash=…`, un percorso
+unico, che risponde **404**.
 
-Conseguenza pratica: nel flusso via email il `next` non sopravvive mai, e dopo
+Quel `?` è corretto **a patto che `{{ .RedirectTo }}` arrivi nudo**, senza query
+string. Ed è il motivo per cui l'azione di login passa `emailRedirectTo` come
+`/auth/callback` e basta.
+
+> **Correzione (2026-08-26).** Qui c'era scritto che «Supabase scarta la query
+> string», e che quindi si poteva passare `/auth/callback?next=…` senza
+> conseguenze. **È falso**, e non se n'è accorto nessuno finché il primo magic
+> link non è partito da un indirizzo pubblico: `redirect_to` torna **intero**,
+> il template ci appende il proprio `?`, e nella posta arriva un link con due
+> punti interrogativi —
+> `/auth/callback?next=%2Fcalendar?token_hash=…&type=magiclink`. Un URL ne
+> ammette uno solo: `token_hash` finisce dentro il valore di `next` e al
+> callback non arriva. Il registro diceva
+> `{"via":"nessun parametro utilizzabile","parametri":["next","type"]}`, che è
+> esattamente questo.
+>
+> Nessun test poteva vederlo. La suite E2E entra dalla stessa porta ma
+> costruisce il link da sé, quindi non passa mai dal template: **l'unico modo di
+> incontrarlo era cliccare un link ricevuto per posta**.
+
+Conseguenza pratica: nel flusso via email il `next` non sopravvive, e dopo
 l'accesso si atterra dove decide `safeNext(null)`, cioè `/calendar`. È una
-dipendenza fra un template che vive nel pannello Supabase e una riga di codice
-nel repo — per questo è annotata in tutti e due i posti.
+perdita accettabile — chi arriva da un magic link non stava andando da nessuna
+parte in particolare — ed è una dipendenza fra un template che vive nel
+pannello Supabase e una riga di codice nel repo, per questo annotata in tutti e
+due i posti.
 
 ### 4. Primo accesso
 

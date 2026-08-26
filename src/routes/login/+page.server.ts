@@ -94,30 +94,37 @@ export const actions: Actions = {
 			});
 		}
 
-		const next = safeNext(String(form.get('next') ?? ''));
-
 		/**
-		 * Questo indirizzo finisce nel template email come `{{ .RedirectTo }}`,
-		 * e il template gli appende `?token_hash=…&type=magiclink`.
+		 * L'indirizzo di ritorno finisce nel template email come
+		 * `{{ .RedirectTo }}`, e il template gli appende
+		 * `?token_hash=…&type=magiclink`.
 		 *
-		 * **Supabase scarta la query string.** Confronta `redirect_to` con la
-		 * allow-list dei Redirect URL e rende l'indirizzo così come è scritto
-		 * lì, quindi `?next=…` non arriva mai al callback: il `next` che segue
-		 * è di fatto inerte nel flusso via email, e la destinazione la decide
-		 * `safeNext(null)`, cioè `/calendar`. Lo si tiene perché costa niente e
-		 * perché la stessa funzione serve al redirect dopo il login diretto.
+		 * **Va passato nudo, senza query string.** Qui c'era un `?next=…`, sulla
+		 * convinzione — scritta anche nel README — che Supabase scartasse la
+		 * query e rendesse solo il percorso della allow-list. Non è così:
+		 * `redirect_to` torna **intero**, il template ci appende il suo `?`, e
+		 * il link che arriva nella posta ha due punti interrogativi:
 		 *
-		 * Per questo il template usa `?` e non `&`: con l'`&` l'URL diventa
-		 * `/auth/callback&token_hash=…`, un percorso solo, e risponde 404.
+		 *     /auth/callback?next=%2Fcalendar?token_hash=…&type=magiclink
+		 *
+		 * Un URL ne ammette uno solo. Tutto ciò che segue il primo diventa
+		 * query, quindi `token_hash` finisce **dentro il valore di `next`** e al
+		 * callback non arriva: il login falliva con "nessun parametro
+		 * utilizzabile" su ogni link, anche appena ricevuto.
+		 *
+		 * Il `?` del template resta giusto **perché** questo indirizzo è nudo.
+		 * Con un `&` si otterrebbe `/auth/callback&token_hash=…`, un percorso
+		 * solo, e un 404.
+		 *
+		 * La destinazione dopo l'accesso la decide quindi `safeNext(null)`, cioè
+		 * `/calendar`: nel flusso via email non c'è modo di portarsi dietro un
+		 * `next`, ed è una perdita accettabile — chi arriva da un magic link non
+		 * stava andando da nessuna parte in particolare.
 		 *
 		 * Si costruisce da `url.origin`, quindi lo stesso template vale in
 		 * locale e in produzione senza toccare niente nel pannello.
-		 *
-		 * Il template è la ragione per cui il link non passa da
-		 * `/auth/v1/verify` di Supabase e non ha bisogno del verificatore PKCE:
-		 * vedi il README, sezione Auth, e il ramo `token_hash` del callback.
 		 */
-		const redirectTo = `${url.origin}/auth/callback?next=${encodeURIComponent(next)}`;
+		const redirectTo = `${url.origin}/auth/callback`;
 
 		const { error } = await clientPerInvio().auth.signInWithOtp({
 			email: parsed.data.email,
