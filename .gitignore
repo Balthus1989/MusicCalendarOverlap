@@ -156,3 +156,7 @@ vite.config.ts.timestamp-*
 tests/e2e/.auth/
 playwright-report/
 test-results/
+
+# Segreti per `wrangler dev`: stessa natura di .env, non vanno versionati.
+.dev.vars
+.dev.vars.*

@@ -8,19 +8,46 @@ delle sovrapposizioni tra date.
 
 ## Stato
 
-| Fase                    | Stato                            |
-| ----------------------- | -------------------------------- |
-| 0 — Fondazioni          | codice completo, manca il deploy |
-| 1 — Anagrafiche         | codice completo, manca il deploy |
-| 2 — Eventi e calendario | codice completo, manca il deploy |
-| 3 — Motore conflitti    | codice completo, manca il deploy |
-| 4 — Interoperabilità    | codice completo, manca il deploy |
-| 5 — Import assistito    | verificata; testo libero sospeso |
-| 6 — Rifinitura          | codice completo, manca il deploy |
+| Fase                    | Stato                               |
+| ----------------------- | ----------------------------------- |
+| 0 — Fondazioni          | in produzione                       |
+| 1 — Anagrafiche         | in produzione                       |
+| 2 — Eventi e calendario | in produzione                       |
+| 3 — Motore conflitti    | in produzione                       |
+| 4 — Interoperabilità    | in produzione                       |
+| 5 — Import assistito    | in produzione; testo libero sospeso |
+| 6 — Rifinitura          | in produzione                       |
 
-Fasi da 0 a 6 complete sul codice. Il progetto Supabase esiste, le migrazioni
-fino a `0009_fase6_telegram` sono applicate e i generi sono seminati. Resta
-il primo deploy su Cloudflare. Vedi [Setup](#setup).
+**L'applicazione è online** (26 agosto 2026):
+
+```
+https://calendario-eventi-condiviso.rendar55.workers.dev
+```
+
+Il progetto Supabase esiste, le migrazioni fino a `0009_fase6_telegram` sono
+applicate e i generi sono seminati.
+
+Il primo giro in produzione ha trovato **un difetto che sei fasi di sviluppo
+non potevano vedere**: l'applicazione rispondeva un 500 sì e uno no, sempre
+sulla prima query della richiesta, sempre in una decina di millisecondi. Il
+pool di connessioni stava in una variabile di modulo — la cosa giusta su Node,
+un guasto su Cloudflare, dove un socket aperto nel contesto di una richiesta
+non è utilizzabile da un'altra. Ora la connessione vive quanto la richiesta
+([ADR-0041](docs/DECISIONS.md)).
+
+Si riproduce in locale con `wrangler dev`, che gira lo stesso runtime: vedi il
+runbook, sotto [Riprodurre in locale un difetto che si vede solo in
+produzione](#riprodurre-in-locale-un-difetto-che-si-vede-solo-in-produzione).
+Con la correzione, la suite E2E completa passa contro quel runtime — quindici
+test su quindici, login compreso.
+
+Gli endpoint di cron sono **chiusi a chi non ha il segreto**: `403` senza
+header, JSON con.
+
+Il feed ICS servito da lì porta gli `UID` col dominio definitivo. Erano nati
+con un refuso — una lettera di troppo incollata a mano in `PUBLIC_APP_URL` — e
+sono stati corretti prima che qualcuno sottoscrivesse il feed, che è l'unico
+momento in cui correggerli costa zero.
 
 **La Fase 6 è l'unica senza un criterio di fine dichiarato in `ARCHITECTURE.md`
 §12**: è una lista di rifiniture, non una promessa da verificare. Quello che si
@@ -458,6 +485,10 @@ lunedì) e `DIRECT_DATABASE_URL` più `BACKUP_PASSPHRASE` per il backup.
 Le `PUBLIC_*` possono stare tra le variabili in chiaro del Worker (sono già
 esposte al browser per definizione).
 
+> **Il nome scelto è `calendario-eventi-condiviso.rendar55.workers.dev`**, e
+> viene dal nome del Worker in `wrangler.jsonc` più il sottodominio
+> dell'account Cloudflare. Rinominare il Worker equivale a cambiare dominio.
+>
 > **`PUBLIC_APP_URL` va fissata sul nome definitivo prima che qualcuno
 > sottoscriva un feed, e poi non si cambia.** Da Fase 4 non è più solo
 > cosmetica: il suo host finisce dentro gli `UID` degli eventi ICS, che sono
@@ -756,6 +787,54 @@ quel contesto è ciò su cui si regge tutta la matrice di visibilità. In cache 
 va solo ciò che è uguale per tutti: i file della build, gli asset di `static/`
 e la pagina `/offline`. Se un giorno servisse far funzionare qualcosa senza
 rete, la risposta non è allargare questa lista.
+
+### Riprodurre in locale un difetto che si vede solo in produzione
+
+`npm run dev` gira su Node. Il Worker gira su **workerd**, che ha regole
+diverse — la più importante: un socket aperto nel contesto di una richiesta non
+è utilizzabile da un'altra. Sei fasi di sviluppo su Node non hanno mai potuto
+vedere quel vincolo, e al primo deploy l'applicazione rispondeva un 500 sì e
+uno no ([ADR-0041](docs/DECISIONS.md)).
+
+**`wrangler dev` esegue lo stesso runtime in locale**, e riproduce quella
+classe di guasti senza deployare niente.
+
+Serve un file `.dev.vars` accanto a `.env` — stesse variabili, sintassi
+`CHIAVE="valore"`. È in `.gitignore` per la stessa ragione di `.env`.
+
+```bash
+npm run build
+npx wrangler dev --port 8787
+```
+
+Due avvertenze che costano un'ora se non si conoscono.
+
+**Usa `http://localhost`, non `http://127.0.0.1`.** I cookie di sessione di
+Supabase sono `Secure`: il browser li manda comunque a `localhost`, ma il
+contesto di richiesta di Playwright su `127.0.0.1` no, e ogni chiamata
+autenticata dei test torna `401`. È un artefatto del banco di prova, non un
+difetto del prodotto — in produzione è tutto HTTPS.
+
+**Il guasto delle connessioni si vede solo a raffica.** Una richiesta isolata
+passa sempre: è la seconda, sulla stessa istanza, a trovare il socket della
+prima. Il modo per farlo saltare fuori è ripetere:
+
+```bash
+for i in $(seq 1 8); do
+  curl -s -o /dev/null -w "%{http_code} " -X POST \
+    -H "x-cron-secret: $CRON_SECRET" -H 'content-length: 0' \
+    http://localhost:8787/api/cron/notify
+done
+```
+
+Otto `200` vanno bene. Un `200 500 200 500` alternato è quel difetto.
+
+La suite E2E si può puntare lì contro, ed è la verifica più completa che si
+possa fare prima di un rilascio:
+
+```bash
+E2E_BASE_URL=http://localhost:8787 npm run test:e2e
+```
 
 ### Smoke test end-to-end
 

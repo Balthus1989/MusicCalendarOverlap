@@ -1,9 +1,11 @@
 /**
  * Catena di hook server (ADR-0003).
  *
- * `supabaseHandle` costruisce il client di auth per la richiesta. È l'unico
- * punto in cui Supabase viene usato: i dati di dominio passano da Drizzle.
- * `authGuard` protegge il gruppo di rotte `(app)`.
+ * `databaseHandle` apre e chiude la connessione al database, e sta **per
+ * primo** perché tutti gli altri ne dipendono. `supabaseHandle` costruisce il
+ * client di auth per la richiesta: è l'unico punto in cui Supabase viene usato,
+ * i dati di dominio passano da Drizzle. `authGuard` protegge il gruppo di
+ * rotte `(app)`.
  */
 import { env as publicEnv } from '$env/dynamic/public';
 import { createServerClient } from '@supabase/ssr';
@@ -11,7 +13,7 @@ import { redirect, type Handle } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { loadViewer } from '$lib/server/auth/viewer';
 import { autorizzaCron } from '$lib/server/cron';
-import { getDb } from '$lib/server/db/client';
+import { conDatabase, getDb } from '$lib/server/db/client';
 
 /**
  * Il confine di autenticazione è il **gruppo di rotte** `(app)`, non una lista
@@ -20,6 +22,19 @@ import { getDb } from '$lib/server/db/client';
  * `src/routes/(app)/` perché sia protetto.
  */
 const PROTECTED_GROUP = '/(app)';
+
+/**
+ * Il perimetro della connessione al database (ADR-0041).
+ *
+ * Una connessione per richiesta, chiusa alla fine. Su Cloudflare Workers un
+ * socket aperto nel contesto di una richiesta non è utilizzabile da un'altra, e
+ * il pool tenuto in una variabile di modulo faceva fallire un 500 sì e uno no.
+ *
+ * Sta in testa alla sequenza perché `authGuard` interroga già il database:
+ * mettendolo dopo, il primo a chiedere una connessione la troverebbe fuori dal
+ * perimetro e se ne aprirebbe una che nessuno chiude.
+ */
+const databaseHandle: Handle = ({ event, resolve }) => conDatabase(async () => resolve(event));
 
 const supabaseHandle: Handle = async ({ event, resolve }) => {
 	const url = publicEnv.PUBLIC_SUPABASE_URL;
@@ -121,4 +136,4 @@ const cronGuard: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 
-export const handle = sequence(supabaseHandle, authGuard, cronGuard);
+export const handle = sequence(databaseHandle, supabaseHandle, authGuard, cronGuard);

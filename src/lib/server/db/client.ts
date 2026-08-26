@@ -1,23 +1,39 @@
 /**
- * Connessione al database (ARCHITECTURE.md §3).
+ * Connessione al database (ARCHITECTURE.md §3, ADR-0026, ADR-0041).
  *
  * A runtime si passa **sempre** dal pooler Supavisor (porta 6543, transaction
  * mode, `prepare: false`): è obbligatorio in ambiente serverless. Le migrazioni
  * usano invece `DIRECT_DATABASE_URL` (porta 5432) e girano da locale o da CI,
  * mai a runtime — vedi `drizzle.config.ts`.
+ *
+ * **La connessione vive quanto la richiesta, e non un istante di più.**
+ *
+ * Questo file teneva il pool in una variabile di modulo, riusandolo per tutte
+ * le richieste. Su Node è la cosa giusta. Su Cloudflare Workers è un guasto: un
+ * socket aperto nel contesto di una richiesta **non può essere usato da
+ * un'altra**, e il tentativo fallisce all'istante. Il sintomo in produzione era
+ * un 500 sì e uno no, sempre sulla prima query della richiesta, sempre in
+ * pochi millisecondi — troppo pochi perché ci fosse stata una rete di mezzo
+ * (ADR-0041).
+ *
+ * Il perimetro della richiesta lo tiene `AsyncLocalStorage`, e non un parametro
+ * passato di mano in mano: `getDb()` è chiamata da una trentina di file, e
+ * cambiarne la firma avrebbe voluto dire toccarli tutti per un dettaglio di cui
+ * nessuno di loro deve sapere niente.
  */
 import { env } from '$env/dynamic/private';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema';
 
 export type Database = PostgresJsDatabase<typeof schema>;
 
-let cached: Database | null = null;
+type Connessione = { db: Database; chiudi: () => Promise<void> };
 
-export function getDb(): Database {
-	if (cached) return cached;
+const perRichiesta = new AsyncLocalStorage<Connessione>();
 
+function creaConnessione(): Connessione {
 	const url = env.DATABASE_URL;
 	if (!url) {
 		throw new Error(
@@ -41,23 +57,56 @@ export function getDb(): Database {
 		 * di due minuti muore una query a caso fra quelle in coda.
 		 *
 		 * La concorrenza non è un caso raro: SvelteKit esegue in parallelo la
-		 * `load` del layout e quella della pagina, e un browser apre più
-		 * richieste insieme. Misurato: una richiesta sola a `/calendar`
-		 * rispondeva 200 in 870 ms, tre in parallelo restavano appese tutte e
-		 * tre. Con dieci connessioni, cinque richieste insieme tornano 200 in
-		 * circa 1,4 secondi.
+		 * `load` del layout e quella della pagina.
 		 *
-		 * Dieci e non una: bastano a coprire le `load` in parallelo con
-		 * margine, e moltiplicare le connessioni client è esattamente il
-		 * lavoro per cui esiste un pooler. Vedi ADR-0026.
+		 * **Cinque e non dieci**, da quando il pool dura una richiesta sola: il
+		 * numero non deve più coprire tutte le richieste insieme, ma solo le
+		 * query concorrenti di una — che sono due o tre. Dieci per richiesta
+		 * moltiplicherebbero le connessioni verso il pooler senza che nessuno
+		 * le usi. Vedi ADR-0026 e ADR-0041.
 		 */
-		max: 10,
+		max: 5,
 		idle_timeout: 20,
 		connect_timeout: 10
 	});
 
-	cached = drizzle(sql, { schema });
-	return cached;
+	return {
+		db: drizzle(sql, { schema }),
+		chiudi: () => sql.end({ timeout: 5 }).catch(() => {})
+	};
+}
+
+/**
+ * Apre una connessione per la durata di `fn`, e la chiude alla fine.
+ *
+ * La chiama `hooks.server.ts` una volta per richiesta, avvolgendo tutto il
+ * resto della catena. Il client di `postgres.js` è **pigro**: costruirlo non
+ * apre nessun socket, quindi le richieste che non toccano il database — un
+ * asset, la pagina di login — non pagano niente.
+ */
+export async function conDatabase<T>(fn: () => Promise<T>): Promise<T> {
+	const connessione = creaConnessione();
+	try {
+		return await perRichiesta.run(connessione, fn);
+	} finally {
+		// `finally` e non dopo il `return`: una richiesta che fallisce deve
+		// chiudere quello che ha aperto, altrimenti il pooler si riempie di
+		// connessioni che nessuno rivendicherà.
+		await connessione.chiudi();
+	}
+}
+
+/**
+ * Il database della richiesta in corso.
+ *
+ * Fuori da una richiesta — uno script di seed, un test — non c'è nessun
+ * perimetro e si costruisce un client usa-e-getta. Non viene chiuso da
+ * nessuno, ed è accettabile solo perché quei processi finiscono: **dentro
+ * l'applicazione questo ramo non deve essere raggiunto**, e se lo fosse
+ * significherebbe che qualcosa gira fuori da `conDatabase`.
+ */
+export function getDb(): Database {
+	return perRichiesta.getStore()?.db ?? creaConnessione().db;
 }
 
 export { schema };

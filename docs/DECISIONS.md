@@ -1153,6 +1153,44 @@ L'alfabeto del codice esclude `O`, `0`, `I` e `1`: si legge da uno schermo e si 
 
 ---
 
+## ADR-0041 — La connessione al database vive quanto la richiesta
+
+**Data:** 2026-08-26 · **Stato:** Accettata · **Corregge:** [ADR-0026](#adr-0026--il-pool-ha-più-di-una-connessione-perché-il-pooler-non-tollera-il-pipelining)
+
+**Contesto.** Al primo deploy su Cloudflare l'applicazione rispondeva **un 500 sì e uno no**. Il log del Worker diceva sempre la stessa cosa: la prima query della richiesta falliva, in una decina di millisecondi — troppo pochi perché ci fosse stata una rete di mezzo.
+
+Il colpevole era `getDb()`, che teneva il pool di `postgres.js` in una variabile di modulo e lo riusava per tutte le richieste. È la cosa giusta su Node, ed è quello che il progetto ha fatto per sei fasi senza problemi. Su Cloudflare Workers è un guasto: **un socket aperto nel contesto di una richiesta non può essere usato da un'altra**, e il tentativo fallisce all'istante.
+
+L'alternanza regolare è la firma del meccanismo: la prima richiesta apre la connessione e funziona; la seconda prova a riusarla e viene respinta; `postgres.js` la marca morta e ne apre una nuova; la terza funziona. E così via.
+
+**Decisione.** Una connessione **per richiesta**, aperta da un hook in testa alla catena e chiusa in `finally` quando la richiesta finisce. Il perimetro lo tiene un `AsyncLocalStorage`: `getDb()` non cambia firma e nessuno dei suoi trenta chiamanti sa che è successo qualcosa. Il `max` del pool scende da 10 a 5.
+
+**Motivazioni.**
+
+Sull'`AsyncLocalStorage` invece di un parametro passato di mano in mano: `getDb()` è chiamata da una trentina di file, e nessuno di loro deve sapere quanto vive una connessione. Passare il database come argomento avrebbe voluto dire toccarli tutti per un dettaglio del runtime, e lasciare a chiunque scriva codice nuovo la possibilità di dimenticarsene. Su Workers `AsyncLocalStorage` c'è, sotto `nodejs_compat`, che il progetto usa già per `postgres.js`.
+
+Sull'hook **in testa** alla sequenza: `authGuard` interroga già il database per costruire il viewer. Mettendo l'apertura più in basso, il primo a chiedere una connessione la troverebbe fuori dal perimetro e se ne aprirebbe una che nessuno chiude.
+
+Sul `max` da 10 a 5: ADR-0026 aveva alzato quel numero perché con `max: 1` `postgres.js` accoda in pipeline le query concorrenti, e Supavisor in transaction mode non lo tollera. **Quella ragione resta valida** — SvelteKit esegue in parallelo la `load` del layout e quella della pagina — ma il numero non deve più coprire tutte le richieste insieme: solo le query concorrenti di una, che sono due o tre. Dieci per richiesta moltiplicherebbero le connessioni verso il pooler senza che nessuno le usi.
+
+**Alternative scartate.**
+
+- _Tenere il pool globale e riaprire su errore._ Curerebbe il sintomo lasciando in piedi la causa, e il primo utente di ogni ondata pagherebbe comunque un 500.
+- _Cloudflare Hyperdrive_, che è fatto apposta per questo: mette il pooling al confine e la connessione diventa riusabile. Richiede il piano Workers a pagamento, e questo progetto ha scelto di stare a zero euro ([ADR-0039](#adr-0039--il-canale-delle-notifiche-è-telegram-non-lemail)). Resta la risposta giusta il giorno in cui il piano cambia.
+- _Passare il `Database` come argomento ovunque._ Trenta file toccati e una trappola permanente per il codice nuovo.
+- _Abbandonare `postgres.js` per l'API HTTP di Supabase._ Vorrebbe dire buttare Drizzle e con lui lo schema come unica fonte di verità dei tipi ([ADR-0001](#adr-0001--typescript-full-stack-invece-di-pythonfastapi)).
+
+**Conseguenze.**
+
+- **Una connessione TCP nuova per ogni richiesta che tocca il database.** È il costo vero di questa scelta: una manciata di millisecondi di handshake verso il pooler. A venti organizzazioni non si misura; è la prima cosa da guardare se un giorno la latenza diventasse un tema.
+- Le richieste che il database non lo toccano — un asset, la pagina di login — non pagano niente: il client di `postgres.js` è pigro e non apre nessun socket finché non arriva una query.
+- **Il ramo "fuori da una richiesta" di `getDb()` non deve essere raggiunto dall'applicazione.** Esiste per i test e per gli script, che finiscono e si portano via tutto. Se ci finisse una rotta, vorrebbe dire che qualcosa gira fuori da `conDatabase` — e quella connessione non la chiuderebbe nessuno.
+- Sei fasi di sviluppo su Node non hanno mai potuto vedere questo difetto. Il modo per vederlo senza deployare c'era ed è `wrangler dev`, che gira il runtime vero in locale: è nel runbook.
+
+**Da rivedere se.** Si passa al piano Workers a pagamento — allora Hyperdrive fa sparire sia il costo dell'handshake sia questa complicazione — oppure la latenza della prima query diventa il collo di bottiglia.
+
+---
+
 ## Template per nuove voci
 
 ```markdown
