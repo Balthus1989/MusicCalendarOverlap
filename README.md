@@ -38,11 +38,21 @@ non è utilizzabile da un'altra. Ora la connessione vive quanto la richiesta
 Si riproduce in locale con `wrangler dev`, che gira lo stesso runtime: vedi il
 runbook, sotto [Riprodurre in locale un difetto che si vede solo in
 produzione](#riprodurre-in-locale-un-difetto-che-si-vede-solo-in-produzione).
-Con la correzione, la suite E2E completa passa contro quel runtime — quindici
-test su quindici, login compreso.
+
+**Corretto e verificato sul dominio vero**: ventidue richieste consecutive
+tutte `200` dove prima alternava, e la **suite E2E completa passa contro la
+produzione** — quindici test su quindici. Che chiude anche i due criteri
+rimasti indietro dall'inizio:
+
+- _login e logout in produzione_ (**Fase 0**): il magic link viene convertito in
+  sessione da `/auth/callback` sul dominio pubblico, e da lì l'applicazione si
+  apre;
+- _due utenti in due organizzazioni diverse_ (**Fase 1**): due profili, due
+  circoli, e la matrice di visibilità che si comporta come deve fra loro.
 
 Gli endpoint di cron sono **chiusi a chi non ha il segreto**: `403` senza
-header, JSON con.
+header, JSON con. Dopo ogni corsa il database resta pulito: zero organizzazioni,
+profili ed eventi con il prefisso `e2e-`.
 
 Il feed ICS servito da lì porta gli `UID` col dominio definitivo. Erano nati
 con un refuso — una lettera di troppo incollata a mano in `PUBLIC_APP_URL` — e
@@ -277,15 +287,18 @@ genere principale e contatto, la confermata espone la sola lineup annunciata,
 l'annullata resta visibile col suo badge, e la propria data opzionata si apre
 per intero, note interne comprese.
 
-Restano invece da verificare i criteri che richiedono **due account veri**:
-_login e logout in produzione_ (Fase 0) e _due utenti in due organizzazioni
-diverse_ (Fase 1). Il collo di bottiglia non è il codice ma la posta: il
-servizio email integrato di Supabase ammette pochissimi invii all'ora, quindi
-il secondo account conviene crearlo dopo aver configurato un SMTP
-personalizzato (vedi [L'SMTP del magic link](#lsmtp-del-magic-link) nel
-runbook). **Quell'SMTP non ha niente a che vedere con le email di notifica**,
-che passano da tutt'altra parte: le due strade sono messe a confronto in
-[Le due strade dell'email](#le-due-strade-dellemail).
+I criteri che richiedevano **due account veri** — _login e logout in
+produzione_ (Fase 0) e _due utenti in due organizzazioni diverse_ (Fase 1) —
+sono stati verificati il 26 agosto 2026 dalla suite E2E contro la produzione,
+senza passare dalla posta: i token di accesso si generano con il ruolo di
+servizio e si spendono su `/auth/callback`, che è la stessa porta del magic
+link ([ADR-0038](docs/DECISIONS.md)).
+
+Resta però da configurare un **SMTP personalizzato** prima di invitare persone
+vere: il servizio integrato di Supabase ammette pochissimi invii all'ora. Vedi
+[L'SMTP del magic link](#lsmtp-del-magic-link) nel runbook. **Quell'SMTP non ha
+niente a che vedere con le notifiche**, che passano da Telegram: le due strade
+sono a confronto in [Le due strade degli avvisi](#le-due-strade-degli-avvisi).
 
 ## Setup
 
