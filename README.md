@@ -19,7 +19,7 @@ delle sovrapposizioni tra date.
 | 6 — Rifinitura          | codice completo, manca il deploy |
 
 Fasi da 0 a 6 complete sul codice. Il progetto Supabase esiste, le migrazioni
-fino a `0007_fase6_rate_limit` sono applicate e i generi sono seminati. Resta
+fino a `0009_fase6_telegram` sono applicate e i generi sono seminati. Resta
 il primo deploy su Cloudflare. Vedi [Setup](#setup).
 
 **La Fase 6 è l'unica senza un criterio di fine dichiarato in `ARCHITECTURE.md`
@@ -962,36 +962,45 @@ dichiarata in `vite.config.ts` sotto **`environments.client.optimizeDeps`**:
 viene preparata all'avvio, non a metà sessione. Se in futuro aggiungi una
 dipendenza usata da una rotta sola, elencala lì.
 
-### La build muore su «Could not find file … in Vite manifest»
+### La build o il deploy si fermano dicendo «Stai lavorando da un percorso che è un collegamento»
 
-```
-Could not find file "../../Documents/MusicCalendarOverlap/node_modules/@sveltejs/kit/
-src/runtime/components/svelte-5/error.svelte" in Vite manifest
-```
-
-Il file c'è. Il problema è **da quale nome hai aperto la cartella**.
-
-Su Windows in italiano `C:Users<tu>Documenti` e `C:Users<tu>Documents`
-sono la stessa cartella: il primo è un collegamento al secondo. SvelteKit
-costruisce le chiavi del manifest come percorsi **relativi alla radice**, e con
-la radice a `Documenti` e i moduli risolti sotto `Documents` quel percorso
-comincia a risalire con `../..` — e non corrisponde più a nessuna chiave.
-
-Il dettaglio che rende la cosa sfuggente è che **dipende dalla shell**. Il `cd`
-di PowerShell conserva il nome con cui ti sei spostato e lo passa così ai
-processi figli; Git Bash consegna a Node il percorso fisico. Stesso comando,
-stessa cartella, due esiti.
-
-Da Fase 6 `vite.config.ts` se ne accorge e si sposta da sé sul nome vero prima
-che qualcuno legga `process.cwd()`, quindi non dovrebbe più capitare. Se
-ricompare, la via d'uscita è entrare col nome reale:
+È un controllo del progetto, non un guasto. Rilancia da dove ti dice:
 
 ```powershell
 cd C:Users<tu>DocumentsMusicCalendarOverlap
 ```
 
-Resta un avviso innocuo, `outDir … is not inside project root`: la build lo
-scrive e finisce lo stesso.
+Su Windows in italiano `C:Users<tu>Documenti` è una **giunzione di
+sistema** che punta a `Documents`. Non è un alias innocuo: Windows le mette una
+ACL che **nega l'elenco del contenuto** e lascia solo la traversata. Un percorso
+che ci passa dentro apre i file e fallisce appena qualcuno prova a leggere la
+cartella.
+
+Senza il controllo si presenta in due modi, in due punti diversi della catena:
+
+```
+Could not find file "../../Documenti/…/node_modules/@sveltejs/kit/…" in Vite manifest
+```
+
+```
+X [ERROR] Cannot read directory "../../Documenti": Accesso negato.
+```
+
+Il primo è `vite build`: le chiavi del manifest sono percorsi relativi alla
+radice, e con la radice a `Documenti` e i moduli sotto `Documents` quel
+percorso risale con `../..` e non corrisponde a niente. Il secondo è
+`wrangler deploy`, che prova a leggere quella cartella e viene respinto.
+
+**Perché non capita a tutti**: il `cd` di PowerShell conserva il nome con cui ti
+sei spostato e lo passa ai processi figli, Git Bash consegna a Node il percorso
+fisico. Stesso comando, stessa cartella, due esiti.
+
+C'è stato un tentativo di aggiustarlo dall'interno con un `process.chdir()` in
+`vite.config.ts`. **Era peggio del problema**: gli `import` dei moduli girano
+prima, SvelteKit aveva già letto la cwd vecchia, e il risultato era una build
+che passava e produceva un artefatto con dentro percorsi illeggibili — cioè il
+guasto spostato al deploy, dove costa di più. Ora ci si ferma e basta:
+`scripts/controlla-cartella.mjs`.
 
 ### `npm run build` fallisce con EPERM su `.svelte-kit/cloudflare`
 
