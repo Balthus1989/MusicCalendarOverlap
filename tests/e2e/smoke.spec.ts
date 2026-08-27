@@ -57,14 +57,26 @@ async function apri(page: Page, percorso: string) {
 test.describe('Alfa', () => {
 	test.use({ storageState: ALFA.statoFile });
 
+	/**
+	 * **L'indirizzo si lascia vuoto di proposito**, ed è cambiato con ADR-0045.
+	 *
+	 * Da quando l'invito con un indirizzo fa partire un'email vera, compilare
+	 * quel campo qui avrebbe tre effetti a ogni rilascio: un account inerte in
+	 * `auth.users` che il teardown non rimuove — ripulisce Alfa e Beta, non gli
+	 * invitati — un messaggio verso un dominio `.test` che rimbalza dalla
+	 * casella personale del manutentore, e un'unità sul limite di dieci inviti
+	 * l'ora, che quella casella esiste per difendere.
+	 *
+	 * Quello che il test deve dimostrare non ne ha bisogno: che un invito si
+	 * generi e produca un link. Senza indirizzo è esattamente il ramo
+	 * `senza-indirizzo`, che è anche l'uso legittimo descritto da ADR-0039 —
+	 * il link passato a voce.
+	 */
 	test('genera un invito e ne ottiene il link', async ({ page }) => {
 		await apri(page, '/org');
-		await page.getByLabel('Email suggerita').fill('e2e-invitato@calendario.test');
 		await page.getByRole('button', { name: 'Genera invito' }).click();
 
 		await expect(page.getByText('Invito creato.')).toBeVisible();
-		// Il link è l'unica strada: chi lo riceve non ha ancora un profilo,
-		// quindi non c'è nessun canale su cui raggiungerlo.
 		await expect(page.getByText('/invite/')).toBeVisible();
 	});
 

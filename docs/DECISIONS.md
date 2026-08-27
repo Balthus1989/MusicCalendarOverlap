@@ -1444,6 +1444,14 @@ Sull'**account che nasce prima**, che è il costo vero: modifica l'invariante di
 
 **Da rivedere se.** Arriva il dominio. A quel punto l'invito può tornare a essere un'email scritta da noi, con il testo versionato nel repository invece che in un pannello, e questa strada diventa il ripiego invece della principale.
 
+> **Precisazione (2026-08-27, al primo rilascio con `npm run rilascia`).** I controlli di [ADR-0046](#adr-0046--il-rilascio-ha-un-numero-e-il-numero-sta-dentro-lartefatto) si sono fermati esattamente qui, e hanno trovato due cose che i due commit di questa decisione avevano lasciato indietro.
+>
+> La prima: lo smoke test dell'invito cercava un'etichetta — «Email suggerita» — rinominata insieme al campo. Nessuno se n'era accorto perché quei test non girano in CI ([ADR-0038](#adr-0038--gli-smoke-test-girano-contro-il-database-vero-si-puliscono-da-soli-e-restano-fuori-dalla-ci)) e l'unica cosa che li lanciava era la memoria di chi rilasciava. È il primo caso concreto a favore di averli messi nel percorso.
+>
+> La seconda è la più grave delle due, perché la leggevano gli utenti: il suggerimento sotto il campo continuava a dire «Non fa partire nessuna email» **mentre l'email partiva**. Era vero quando è stato scritto, un commit prima di questo, ed è rimasto lì quando la decisione l'ha reso falso. Un'interfaccia che promette che non esce niente, mentre esce, è peggio di un'interfaccia che tace.
+>
+> E una conseguenza che qui non era stata prevista: **gli smoke test non compilano più quel campo.** Un indirizzo di prova, a ogni rilascio, lascerebbe un account inerte che il teardown non ripulisce — rimuove Alfa e Beta, non gli invitati — manderebbe un messaggio a un dominio `.test` che rimbalza sulla casella personale del manutentore, e consumerebbe un'unità del limite che questa decisione ha introdotto proprio per difenderla. Il ramo dell'invio resta senza copertura E2E, ed è la scelta meno cara fra le due.
+
 ---
 
 ## ADR-0046 — Il rilascio ha un numero, e il numero sta dentro l'artefatto

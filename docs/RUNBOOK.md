@@ -1146,6 +1146,12 @@ i test si fermano dicendolo.
 chiave di servizio fra i secret del repository. Vanno lanciati **prima di un
 rilascio**, non a ogni commit.
 
+**Non fanno partire nessuna email**, ed è una condizione da mantenere: il test
+dell'invito lascia vuoto il campo dell'indirizzo di proposito, perché da
+ADR-0045 compilarlo manderebbe posta vera a ogni rilascio e lascerebbe un
+account che il teardown non ripulisce. Il perché per esteso sta nel commento
+sopra quel test.
+
 Se falliscono con uno screenshot di un modulo vuoto, la causa è quasi sempre
 l'idratazione: riempire i campi subito dopo il caricamento non funziona, perché
 Svelte rimette a ogni input il valore della sua prop. L'helper `apri()` in
