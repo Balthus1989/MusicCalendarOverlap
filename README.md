@@ -170,6 +170,57 @@ porta dentro l'etichetta ISO della settimana. È la prova che **rilanciare a man
 il workflow non manda niente a nessuno**, che è ciò che rende sicuro il pulsante
 «Run workflow» — e non si poteva sapere senza premerlo due volte.
 
+**L'applicazione si apre dal telefono** (27 agosto 2026). Fino a oggi non si
+apriva: su 28 file `.svelte` il layout applicativo non aveva **nessuna** utility
+responsive, e bastava aprirla da un cellulare per vederlo. Le nove voci di
+navigazione, messe in un `flex-wrap`, occupavano due righe piene di testo da
+14px più una terza con «Esci» spinto a filo del bordo destro dal suo `ml-auto`;
+il pannello filtri, sempre aperto, ne prendeva altri 310; la barra di
+FullCalendar collassava su sé stessa, con «Oggi» uscito dal proprio gruppo e il
+titolo a capo addosso ai pulsanti di vista.
+
+Il risultato è che **della pagina calendario il calendario non si vedeva**: la
+prima riga di griglia arrivava oltre il bordo inferiore dello schermo.
+
+Sotto `md:` la navigazione principale scende in una barra fissa in basso con
+quattro voci — Calendario, Conflitti, Avvisi, Nuova data, che è il ciclo
+quotidiano di §1 — e tutto il resto passa dietro un pannello laterale. Il
+calendario apre in `listMonth`, perché su colonne da 34px il titolo di una data
+non entra e non è un difetto che il CSS possa correggere. Sopra `md:` non
+cambia niente ([ADR-0042](docs/DECISIONS.md)).
+
+Le misure a 375px, prima e dopo:
+
+|                         | prima                           | dopo           |
+| ----------------------- | ------------------------------- | -------------- |
+| Barra di navigazione    | ~110px su 3 righe               | 61px           |
+| Filtri                  | ~310px sempre aperti            | 46px chiusi    |
+| Barra del calendario    | collassata, 2 righe sovrapposte | 44px, una riga |
+| **Prima data visibile** | **oltre il bordo (~760px)**     | **352px**      |
+| `<select>`              | 14px, iOS ingrandisce al fuoco  | 16px           |
+| Scorrimento orizzontale | —                               | nessuno        |
+
+Due cose emerse applicando, che il progetto su carta non aveva previsto.
+
+- **Nelle righe di elenco lo stato va scritto.** Nelle viste a griglia si legge
+  dal bordo tratteggiato, che è la scelta di non affidarlo al solo colore; ma
+  una voce di elenco è un `<tr>`, e un bordo tratteggiato attorno a una riga di
+  tabella non si disegna in modo affidabile. Siccome l'elenco è ciò che si vede
+  aprendo l'applicazione dal telefono, perdere lì la differenza fra una data
+  confermata e una opzionata significherebbe perderla e basta. Le etichette
+  usano le stesse parole di `ETICHETTE_STATO` e sono elementi veri, non
+  `::after`, così le legge anche chi ascolta la pagina.
+- **I 16px sui campi non sono tipografia.** Safari su iPhone ingrandisce la
+  pagina quando un campo con testo più piccolo riceve il fuoco, e non la
+  rimpicciolisce quando lo perde: su un modulo da trenta campi come quello degli
+  eventi la pagina resta storta fino in fondo.
+
+Provato con `npm run check`, `npm run lint`, i 527 test unitari e i **15 smoke
+test end-to-end**, che entrano davvero nell'applicazione e quindi dicono che la
+navigazione nuova non ha rotto nessun flusso critico. Gli scatti di controllo
+vengono da un giro Playwright a 393×852 e a 1280×900 sul database di sviluppo,
+che si è ripulito da solo.
+
 **Non provato, e va detto.**
 
 - L'accessibilità è stata corretta dove i difetti erano **misurabili** — voci
@@ -177,6 +228,12 @@ il workflow non manda niente a nessuno**, che è ciò che rende sicuro il pulsan
   minimo di 3:1, fuoco perso a ogni riga di lineup rimossa — ma **nessuno l'ha
   provata con uno screen reader vero**. È il genere di verifica che vale solo
   se la fa una persona che quello strumento lo usa davvero.
+- Il layout mobile è **misurato ma non vissuto**: le altezze, i bersagli da
+  44px e l'assenza di scorrimento orizzontale vengono da un browser headless a
+  393×852, e il giro l'ha fatto uno script, non un pollice. Quello che si
+  scopre solo usandola resta da scoprire — se le quattro voci in basso siano le
+  quattro giuste, se il pannello dei filtri si riapra quando serve, se qualcuno
+  cerchi «Nuova data» dove non c'è più.
 
 **Il criterio di fine della Fase 5 è verificato nell'applicazione in esecuzione
 per le due strade deterministiche, e sospeso per la terza** (24 agosto 2026).
@@ -861,6 +918,13 @@ va solo ciò che è uguale per tutti: i file della build, gli asset di `static/`
 e la pagina `/offline`. Se un giorno servisse far funzionare qualcosa senza
 rete, la risposta non è allargare questa lista.
 
+La PWA è anche l'unico contesto in cui il layout mobile non è un ripiego ma
+l'unica cosa che si vede: sta in `MobileHeader.svelte` e `MobileTabBar.svelte`,
+e la barra in basso riserva `env(safe-area-inset-bottom)` sotto di sé. Oggi
+quel valore è 0, perché il viewport non è `viewport-fit=cover`: è scritto per il
+giorno in cui lo diventasse, e nel frattempo non costa niente
+([ADR-0042](docs/DECISIONS.md)).
+
 ### Riprodurre in locale un difetto che si vede solo in produzione
 
 `npm run dev` gira su Node. Il Worker gira su **workerd**, che ha regole
@@ -1311,6 +1375,22 @@ Per controllare su cosa sta ascoltando, guarda l'indirizzo nelle righe
   hook**, mai in una `load`. In SvelteKit le form action girano prima delle
   `load`: un contesto costruito in una `load` non esiste ancora quando
   l'action lo legge, e ogni scrittura fallisce con "Sessione non valida".
+- Due regole di `src/app.css` stanno **fuori da ogni `@layer`**, ed è
+  deliberato: nella cascata degli strati ciò che non sta in nessuno vince su
+  ciò che sta dentro uno, utility di Tailwind comprese. Sono i bersagli da 44px
+  sotto `pointer: coarse` e i campi a 16px sotto 640px, e servono proprio a
+  battere un `h-8` o un `text-sm` scritti in pagina. Spostarle in `@layer base`
+  per ordine le renderebbe **inerti senza rompere niente di visibile**: è il
+  motivo per cui il commento accanto è lungo (ADR-0042).
+- L'elenco delle voci di navigazione è **uno solo**, in
+  `src/routes/(app)/+layout.svelte`, e le due barre ne prendono fette diverse:
+  intera in alto sopra `md:`, quattro voci in basso e il resto dietro il `☰`
+  sotto. Tenerne due significherebbe aggiungere una rotta e scoprire un mese
+  dopo che sul telefono non c'è.
+- Il pannello laterale del telefono è un `<details>`, non un `<dialog>`: si apre
+  **senza JavaScript**. È l'unica strada verso «Esci» e le anagrafiche, e la
+  barra da desktop sul telefono è `display:none` — un pannello che dipendesse
+  dall'idratazione, dopo un'idratazione fallita, chiuderebbe fuori da tutto.
 - La configurazione SvelteKit sta in `vite.config.ts`, non in un
   `svelte.config.js`: è la convenzione dello scaffolding corrente. Alcuni
   strumenti di terze parti cercano ancora `svelte.config.js` — se serve, si
