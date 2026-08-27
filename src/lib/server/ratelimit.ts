@@ -25,7 +25,7 @@ import { lt, sql } from 'drizzle-orm';
 import type { Database } from '$lib/server/db/client';
 import { rateLimits } from '$lib/server/db/schema';
 
-export type Risorsa = 'geocode' | 'ics';
+export type Risorsa = 'geocode' | 'ics' | 'inviti';
 
 /**
  * I limiti, per finestra di un'ora.
@@ -39,10 +39,19 @@ export type Risorsa = 'geocode' | 'ics';
  * sullo stesso token — telefono, portatile, Google e Apple insieme — e a
  * qualche ricarica a mano mentre si prova il feed, e restano lontanissime da
  * un ciclo.
+ *
+ * `inviti` difende da una cosa diversa dalle altre due: non da un ciclo, ma
+ * dalla **casella personale del manutentore**. Ogni invito con un indirizzo fa
+ * partire un'email dalla sua Gmail, che ha un tetto giornaliero e una
+ * reputazione da non bruciare, e chi preme il pulsante e' un amministratore
+ * di circolo, non il manutentore. Dieci all'ora sono molti piu' di quanti se
+ * ne mandino davvero in un pomeriggio di ingressi, e molti meno di quanti ne
+ * servano per fare danno (ADR-0045).
  */
 export const LIMITI: Record<Risorsa, number> = {
 	geocode: 60,
-	ics: 24
+	ics: 24,
+	inviti: 10
 };
 
 export const FINESTRA_MS = 60 * 60 * 1000;

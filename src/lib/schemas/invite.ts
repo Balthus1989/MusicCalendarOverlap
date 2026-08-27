@@ -47,6 +47,15 @@ export const inviteSchema = z.object({
 
 export type InviteInput = z.infer<typeof inviteSchema>;
 
+/**
+ * Che cosa ha fatto il tentativo di spedire l'invito (ADR-0045).
+ *
+ * Sta qui e non accanto a chi spedisce perché il pannello che lo racconta
+ * gira nel browser, e da lì `$lib/server` non si importa.
+ */
+export type EsitoInvio =
+	'inviato' | 'gia-iscritto' | 'senza-indirizzo' | 'non-configurato' | 'fallito';
+
 /** Accettazione: chi entra deve dire come si chiama. */
 export const acceptInviteSchema = z.object({
 	displayName: z.string().trim().min(2, 'Serve un nome con cui farti riconoscere.').max(120)

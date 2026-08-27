@@ -25,3 +25,38 @@ export function safeNext(raw: string | null | undefined): string {
 
 	return raw;
 }
+
+/**
+ * Dove atterra chi ha appena convertito un link di accesso in una sessione.
+ *
+ * Funzione pura: la decisione si prova caso per caso, l'I/O che la alimenta
+ * sta nel callback.
+ *
+ * Il `next` nell'URL **non è più la strada principale**, ed è il motivo per
+ * cui esiste questa funzione. Il parametro non sopravvive al template email:
+ * `{{ .RedirectTo }}` torna intero e il template gli appende il proprio `?`,
+ * quindi un indirizzo di ritorno con una query produce un link con due punti
+ * interrogativi e il `token_hash` finisce dentro il valore di `next`. Da qui
+ * la regola: l'indirizzo di ritorno si passa **nudo**, e la destinazione
+ * viaggia nel token, cioè in `user_metadata`.
+ *
+ * `haMembership` è ciò che rende la regola auto-limitante: il codice resta nei
+ * metadati anche dopo essere stato riscattato — un invito con più utilizzi
+ * resta valido — ma chi è già dentro un'organizzazione non ha più niente da
+ * accettare, e va al calendario come chiunque altro.
+ */
+export function destinazioneDopoAccesso(atterraggio: {
+	next: string | null | undefined;
+	codiceInvito: string | null | undefined;
+	haMembership: boolean;
+}): string {
+	const next = safeNext(atterraggio.next);
+	if (next !== DEFAULT_NEXT) return next;
+
+	const codice = atterraggio.codiceInvito?.trim();
+	if (codice && !atterraggio.haMembership) {
+		return `/invite/${encodeURIComponent(codice)}`;
+	}
+
+	return DEFAULT_NEXT;
+}

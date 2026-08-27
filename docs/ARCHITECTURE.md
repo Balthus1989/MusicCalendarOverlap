@@ -447,7 +447,7 @@ Precisazioni emerse implementandola (2026-08-21):
 
 ```
 /login                        magic link
-/invite/[code]                accettazione invito → join o creazione org
+/invite/[code]                accettazione invito → join o creazione org (ci si atterra dall'email, ADR-0045)
 /onboarding                   crea/completa organizzazione
 /(app)/                       redirect a /calendar
 /(app)/calendar               FullCalendar, filtri (genere, raggio, org, stato)
@@ -567,7 +567,7 @@ Accetta anche l'incolla di un file `.ics` o di un CSV: parsing deterministico, n
 | ------------------------------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------ |
 | Nuovo conflitto severity ≥ `medium`              | email immediata + in-app | entrambe le organizzazioni                                                                       |
 | Conflitto risolto                                | in-app                   | entrambe                                                                                         |
-| Invito ricevuto                                  | email                    | invitato                                                                                         |
+| Invito ricevuto                                  | email (SMTP di Supabase) | invitato ([ADR-0045](DECISIONS.md): è l'unico messaggio che non passa dal layer di notifica, perché il destinatario non ha ancora un profilo) |
 | Digest settimanale (lunedì mattina)              | email                    | tutti gli iscritti: nuove date della settimana, conflitti aperti, `hold` in scadenza di annuncio |
 | `hold` con `announce_at` passata e ancora `hold` | email di sollecito       | organizzazione proprietaria                                                                      |
 | Segnalata la data di un organizzatore non iscritto | in-app + consegna esterna | i platform admin, **per conoscenza**: quando l'avviso parte la data è già in calendario e visibile a tutti ([ADR-0044](DECISIONS.md)) |
@@ -594,7 +594,7 @@ I cron sono GitHub Actions che chiamano gli endpoint `/api/cron/*` con un header
 >
 > Le righe di §10 restano valide leggendo "email" come "consegna fuori dall'applicazione", con **due eccezioni**:
 >
-> - l'**invito** non ha più nessun canale del layer. Arriva a chi non ha ancora un profilo, quindi non ha una chat collegata, e non c'è modo di dargliene una prima che entri: il suo link si passa a mano, e il pannello che lo mostra apre un `mailto:` già scritto perché parta dalla casella di chi invita ([ADR-0039](DECISIONS.md));
+> - l'**invito** non ha nessun canale del layer di notifica. Arriva a chi non ha ancora un profilo, quindi non ha una chat collegata. Ha però un canale suo: **l'email**, mandata da Supabase con l'SMTP che spedisce già i magic link ([ADR-0045](DECISIONS.md)). Il link resta valido anche passato a mano, e il pannello che lo mostra apre un `mailto:` già scritto per i casi in cui l'invio non c'è stato;
 > - chi **non ha collegato la chat** non riceve niente fuori dall'applicazione. Non è un errore da riparare, è la condizione predefinita di chiunque, e il sink lo salta senza segnarlo fra i falliti — altrimenti la corsa notturna ritenterebbe per tre giorni una consegna impossibile.
 >
 > Il collegamento della chat non passa da un webhook ma da una lettura di `getUpdates` a richiesta, così funziona anche da `localhost` e si è potuto provare prima del deploy ([ADR-0040](DECISIONS.md)).

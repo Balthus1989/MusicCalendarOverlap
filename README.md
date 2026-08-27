@@ -107,7 +107,7 @@ schede.
 
 ### Il resto
 
-- **Accesso solo su invito**, con magic link via email. Niente password.
+- **Accesso solo su invito**: l'invito arriva per email e si entra con un magic link. Niente password.
 - Più organizzazioni per profilo, con ruoli (`owner`, `admin`, `member`).
 - **Registro delle modifiche** consultabile, e sopra il registro la metrica che
   dice se il prodotto sta funzionando: quante date passano da `opzionata` prima

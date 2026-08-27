@@ -7,10 +7,18 @@
  *
  * Tenerle entrambe evita che il login si rompa se il template email viene
  * cambiato dal pannello Supabase.
+ *
+ * **Dove si atterra non lo decide più l'URL.** Il `?next=` non sopravvive al
+ * template — vedi `destinazioneDopoAccesso()` — quindi la destinazione viaggia
+ * nei `user_metadata`: chi arriva da un invito ha lì il codice, e va alla
+ * pagina che deve accettare (ADR-0045).
  */
 import { redirect, type RequestHandler } from '@sveltejs/kit';
-import type { EmailOtpType } from '@supabase/supabase-js';
-import { safeNext } from '$lib/server/auth/redirect';
+import type { EmailOtpType, User } from '@supabase/supabase-js';
+import { destinazioneDopoAccesso } from '$lib/server/auth/redirect';
+import { getDb } from '$lib/server/db/client';
+import { memberships } from '$lib/server/db/schema';
+import { eq } from 'drizzle-orm';
 
 type ErroreSupabase = { status?: number; code?: string; message: string };
 
@@ -48,23 +56,65 @@ function registraFallimento(via: string, url: URL, errore: ErroreSupabase | null
 	);
 }
 
+/**
+ * Il codice di invito lasciato nei metadati da `invitaPerEmail()`.
+ *
+ * `user_metadata` è scritto dal ruolo di servizio al momento dell'invito e non
+ * è modificabile dall'utente senza una sessione: qui vale solo a scegliere una
+ * destinazione, e la validità dell'invito la ricontrolla `/invite/[code]` come
+ * per chiunque arrivi da un link passato a mano.
+ */
+function codiceInvitoDi(user: User | null | undefined): string | null {
+	const valore = user?.user_metadata?.codice_invito;
+	return typeof valore === 'string' && valore.trim() ? valore.trim() : null;
+}
+
 export const GET: RequestHandler = async ({ url, locals }) => {
-	const next = safeNext(url.searchParams.get('next'));
 	const code = url.searchParams.get('code');
 	const tokenHash = url.searchParams.get('token_hash');
 	const type = url.searchParams.get('type') as EmailOtpType | null;
 
+	let entrato = false;
+
 	if (code) {
 		const { error } = await locals.supabase.auth.exchangeCodeForSession(code);
-		if (!error) redirect(303, next);
-		registraFallimento('code', url, error);
+		if (error) registraFallimento('code', url, error);
+		else entrato = true;
 	} else if (tokenHash && type) {
 		const { error } = await locals.supabase.auth.verifyOtp({ token_hash: tokenHash, type });
-		if (!error) redirect(303, next);
-		registraFallimento('token_hash', url, error);
+		if (error) registraFallimento('token_hash', url, error);
+		else entrato = true;
 	} else {
 		registraFallimento('nessun parametro utilizzabile', url, null);
 	}
 
-	redirect(303, '/login?error=link-non-valido');
+	// `/login` non crea utenti (ADR-0004), quindi per un invitato è una porta
+	// che non si aprirà. Non c'è modo di riconoscerlo qui â l'indirizzo di
+	// ritorno è nudo per forza e senza sessione non ci sono metadati da
+	// leggere â quindi è la pagina di login a dire anche a lui che cosa fare.
+	if (!entrato) redirect(303, '/login?error=link-non-valido');
+
+	const { user } = await locals.safeGetSession();
+	const codiceInvito = codiceInvitoDi(user);
+
+	// La membership si guarda solo se c'è un invito da seguire: per tutti gli
+	// altri la destinazione è già decisa e non vale una query.
+	let haMembership = false;
+	if (codiceInvito && user) {
+		const righe = await getDb()
+			.select({ id: memberships.id })
+			.from(memberships)
+			.where(eq(memberships.profileId, user.id))
+			.limit(1);
+		haMembership = righe.length > 0;
+	}
+
+	redirect(
+		303,
+		destinazioneDopoAccesso({
+			next: url.searchParams.get('next'),
+			codiceInvito,
+			haMembership
+		})
+	);
 };

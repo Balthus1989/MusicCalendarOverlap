@@ -79,6 +79,8 @@ Storico delle decisioni architetturali del progetto. Ogni voce spiega **perché*
 
 **Decisione.** Codici di invito generati dai platform admin. Un invito può creare una nuova organizzazione o aggiungere un membro a una esistente.
 
+> **Modifica (2026-08-27, [ADR-0045](#adr-0045--linvito-parte-per-email-dalla-casella-che-manda-già-i-magic-link)).** «Un account nasce unicamente da `/invite/[code]`» non è più letteralmente vero: se l'invito ha un indirizzo, l'account nasce **quando l'invito viene generato**, perché è `inviteUserByEmail` a crearlo. L'invariante che contava regge intatta — un account esiste solo perché qualcuno autorizzato a invitare l'ha voluto, e prima che l'invito sia stato verificato non ha né profilo né membership — ma si è spostata di un passo, e chi legge quel commento nel codice deve trovarci scritto anche questo.
+
 **Motivazioni.** Con meno di 20 organizzazioni in un contesto di alta fiducia, l'invito risolve il problema di verifica a costo zero e non richiede moderazione continua. La verifica via dominio email non è praticabile: le associazioni usano in larga parte Gmail.
 
 **Da rivedere se.** Il calendario cresce oltre la cerchia di conoscenza diretta. A quel punto serve un flusso di richiesta con approvazione e, probabilmente, un ruolo di moderatore.
@@ -1114,6 +1116,8 @@ Sull'**invito**: era l'unico avviso senza alternativa in pagina, e non è un cas
 > Il campo ora dichiara che cosa fa **prima**: precompila l'indirizzo quando l'invitato aprirà il link, e ricorda a chi era destinato. E il pannello offre un `mailto:` già scritto, con il link dentro. Il canale dell'invito diventa così esplicitamente **la casella di chi invita**, che è l'unico modo di mandarlo per email senza un dominio verificato — e per chi lo riceve è anche il migliore, perché arriva da un indirizzo che conosce invece che da un mittente mai visto.
 >
 > Un'assenza deliberata va detta dove qualcuno potrebbe aspettarsi la presenza. Se una scelta si spiega solo dopo l'azione, per l'utente è un guasto.
+>
+> **Superata in giornata.** Guardando *perché* l'invito non avesse un canale è emerso che ne aveva uno da sempre, e che la motivazione con cui questo ADR lo aveva escluso rispondeva alla domanda sbagliata. Vedi [ADR-0045](#adr-0045--linvito-parte-per-email-dalla-casella-che-manda-già-i-magic-link): l'invito parte per email, il campo chiarito e il `mailto:` restano come ripiego.
 
 ---
 
@@ -1393,3 +1397,49 @@ Non ancora decise, elencate per non perderle di vista. Vanno chiuse **parlando c
 - **Lo schema forzato è la parte che non si può perdere.** È ciò che rende l'integrazione affidabile invece che quasi affidabile, e non è un'esclusiva di nessuno: `llama.cpp` ha le grammatiche, Ollama e vLLM hanno la decodifica guidata da JSON Schema, e quasi tutti espongono un endpoint compatibile OpenAI con `response_format`. La domanda da porsi prima di comprare hardware è se lo stack scelto ce l'ha, non se il modello è bravo.
 - **Il Worker non arriva in salotto.** L'applicazione gira su Cloudflare (ADR-0002) e non può raggiungere una macchina su una rete domestica: servirebbe esporla, con quello che comporta. Va detto però che l'architettura **regge già** un endpoint inaffidabile — `struttura()` non solleva mai e il fallimento non blocca l'inserimento manuale (principio 5) — quindi una connessione casalinga qui è una scelta legittima, come non lo sarebbe su qualcosa di portante.
 - **La riscrittura è contenuta e lo era per progetto.** Cambia `llm.ts` e basta: nessun altro file di `parse/` sa che esiste un modello. È il motivo per cui ADR-0034 ha scartato l'HTTP grezzo senza rimpianti.
+
+---
+
+## ADR-0045 — L'invito parte per email, dalla casella che manda già i magic link
+
+**Data:** 2026-08-27 · **Stato:** Accettata · **Modifica:** [ADR-0039](#adr-0039--il-canale-delle-notifiche-è-telegram-non-lemail), [ADR-0004](#adr-0004--registrazione-solo-su-invito)
+
+**Contesto.** Il primo bug segnalato dagli utenti dopo il rilascio è stato «gli inviti via email non partono mai». Non partivano perché [ADR-0039](#adr-0039--il-canale-delle-notifiche-è-telegram-non-lemail) aveva tolto l'email dal prodotto e per l'invito non l'aveva sostituita con niente, sulla premessa che chi riceve un invito non ha ancora un profilo e quindi non è raggiungibile su nessun canale.
+
+**La premessa era falsa mentre veniva scritta.** ADR-0039 aveva scartato la Gmail del manutentore con questa motivazione: «Gmail parla SMTP, e su Cloudflare Workers una connessione SMTP non si apre». È vero e non c'entra: **il Worker non deve parlare SMTP con Gmail.** A parlare SMTP con Gmail è Supabase, che ha quell'SMTP configurato nel pannello dalla Fase 0. Il Worker fa una chiamata HTTPS a Supabase, come per tutto il resto.
+
+La prova stava già nel prodotto: `/invite/[code]` chiama `signInWithOtp({ shouldCreateUser: true })`, cioè manda un'email a un indirizzo di qualcuno che un account non ce l'ha — dalla Gmail del manutentore. Il canale per chi non è ancora iscritto **esisteva**, era in uso, e il runbook ne descriveva perfino gli effetti («per un invito che arriva a un organizzatore che non ti conosce, un dominio del progetto fa un altro effetto»). Mancava solo di usarlo un passo prima: quando l'invito si genera, invece che quando l'invitato scopre da sé la pagina su cui chiederlo.
+
+**Decisione.**
+
+1. Generando un invito con un indirizzo, parte un'email vera, via `auth.admin.inviteUserByEmail()` e quindi via l'SMTP configurato su Supabase.
+2. Il codice dell'invito viaggia nei `user_metadata` dell'utente creato, **non nell'URL di ritorno**. L'indirizzo di ritorno si passa nudo.
+3. `/auth/callback` decide la destinazione con `destinazioneDopoAccesso()`, funzione pura: `next` se c'è, altrimenti l'invito nei metadati se la persona non ha ancora membership, altrimenti il calendario.
+4. La creazione di inviti con indirizzo ha un rate limit di dieci all'ora per profilo.
+5. Il `mailto:` resta, come strada per i casi in cui l'invio non c'è: nessun indirizzo, indirizzo già iscritto, chiave di servizio assente.
+
+**Motivazioni.**
+
+Sul **codice nei metadati invece che nell'URL**: non è un vezzo, è l'unica forma che funziona. `{{ .RedirectTo }}` torna intero nel template email e il template gli appende il proprio `?`; un indirizzo di ritorno con una query produce un link con due punti interrogativi, e tutto ciò che segue il primo diventa il valore del primo parametro — `token_hash` compreso, che al callback non arriva più. È esattamente il guasto di `7aaad91`, che allora era stato riparato in `/login` e **non** in `/invite/[code]`, dove è rimasto vivo insieme a un secondo errore: quella pagina usava `locals.supabase`, cioè il client SSR, che impone PKCE e produce token che `verifyOtp` non risolve in una chiamata sola. Le due cose insieme rendevano inutilizzabile ogni link mandato da lì. La strada manuale che ADR-0039 dava per buona — «il link si passa a mano» — portava dunque su una pagina il cui unico pulsante non funzionava.
+
+Sul **rate limit**, che difende una cosa diversa dagli altri due di [ADR-0037](#adr-0037--il-rate-limit-degli-altri-due-endpoint-sta-in-una-tabella-non-in-parse_jobs): non il database e non un fornitore, ma la casella personale del manutentore. A premere il pulsante è un amministratore di circolo; il tetto giornaliero di Gmail e la reputazione del mittente sono del manutentore.
+
+Sulla **membership come condizione** in `destinazioneDopoAccesso()`: un invito con più utilizzi resta valido dopo essere stato riscattato, quindi il codice nei metadati non si esaurisce da sé. Senza quella condizione, chi rientra verrebbe rimandato per sempre su una pagina che non ha più niente da fargli accettare. Guardare le membership invece che cancellare i metadati evita una scrittura con il ruolo di servizio su un percorso che non ne ha bisogno.
+
+Sull'**account che nasce prima**, che è il costo vero: modifica l'invariante di [ADR-0004](#adr-0004--registrazione-solo-su-invito). Resta però un account creato solo per volontà di chi ha il permesso di invitare, senza profilo e senza membership finché l'invito non viene davvero accettato — cioè inerte. `ensureProfile` è già pigro e idempotente, quindi lo specchio `profiles` non cambia di una riga.
+
+**Alternative scartate.**
+
+- _Rimettere l'email come sink delle notifiche._ Fuori questione senza un dominio: ADR-0039 resta valido su tutto il resto. Questa decisione apre un canale **per il solo invito**, che è l'unico messaggio con un destinatario che non ha ancora una chat.
+- _Il codice dell'invito in un segmento di path (`/auth/callback/<codice>`)._ Risolve lo stesso problema e in più darebbe il codice anche quando la verifica fallisce. Richiede però una voce con carattere jolly nella allow-list dei Redirect URL di Supabase, cioè una configurazione in più da azzeccare nel pannello, che se sbagliata fa atterrare l'invitato sulla home senza dire perché. Il costo di non averla: chi apre un invito scaduto finisce su `/login`, dove non può entrare — mitigato dicendoglielo lì, in una riga.
+- _Mandare un magic link invece di un invito a chi ha già un account._ Sarebbe un accesso non richiesto spedito da un terzo. Chi ha un account entra da sé: gli si manda il link dell'invito, non una porta aperta.
+- _Tenere solo il `mailto:`._ Funziona ed era il rimedio del commit precedente, ma lascia l'invito come l'unico atto del prodotto che chiede all'utente di finire il lavoro a mano.
+
+**Conseguenze.**
+
+- Serve la **`SUPABASE_SERVICE_ROLE_KEY`** perché l'invito parta. Dove non c'è — in locale, di norma — l'invito si genera lo stesso e la pagina dice che il link va passato a mano: principio 5 di `ARCHITECTURE.md` §2.
+- Va aggiunto in **Authentication → Emails → Invite user** un template con `{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite`, per la stessa ragione per cui è stato aggiunto quello del magic link. Con il template predefinito l'invito atterra su `/auth/v1/verify` e torna con un `?code=`, che il callback sa comunque gestire ma per una strada diversa da quella provata.
+- Il link di autenticazione **scade prima dell'invito**: l'uno segue `MAILER_OTP_EXP`, l'altro dura i giorni scelti nel form. Chi apre l'email tardi deve rifarsi mandare il link dalla pagina dell'invito, che ora funziona.
+- Un indirizzo sbagliato nel campo crea un account inerte per quell'indirizzo. Non dà accesso a niente e non compare in nessun elenco dell'applicazione, ma è una riga in `auth.users` che va tolta a mano se dà fastidio.
+
+**Da rivedere se.** Arriva il dominio. A quel punto l'invito può tornare a essere un'email scritta da noi, con il testo versionato nel repository invece che in un pannello, e questa strada diventa il ripiego invece della principale.

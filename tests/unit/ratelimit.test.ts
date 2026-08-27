@@ -94,4 +94,14 @@ describe('i limiti', () => {
 	it('sono più larghi sul geocoding, che parte mentre si scrive', () => {
 		expect(LIMITI.geocode).toBeGreaterThan(LIMITI.ics);
 	});
+
+	it('sono i più stretti sugli inviti, che consumano la casella di qualcun altro', () => {
+		// Gli altri due difendono da un ciclo impazzito e possono permettersi
+		// di essere larghi. Questo difende la Gmail da cui partono le email
+		// (ADR-0045): il tetto è giornaliero e la reputazione del mittente si
+		// brucia una volta sola.
+		expect(LIMITI.inviti).toBeLessThan(LIMITI.ics);
+		// E deve restare sopra un pomeriggio di ingressi vero.
+		expect(LIMITI.inviti).toBeGreaterThanOrEqual(5);
+	});
 });

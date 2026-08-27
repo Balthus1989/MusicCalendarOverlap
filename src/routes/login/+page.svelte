@@ -23,7 +23,9 @@
 
 	{#if data.linkError && !form}
 		<p class="text-destructive text-sm" role="alert">
-			Il link non è più valido: potrebbe essere scaduto o già usato. Richiedine uno nuovo.
+			Il link non è più valido: potrebbe essere scaduto o già usato. Richiedine uno nuovo. Se stavi
+			accettando un invito, riapri il link dell'invito e chiedi l'accesso da lì: qui si entra solo
+			con un account che esiste già.
 		</p>
 	{/if}
 

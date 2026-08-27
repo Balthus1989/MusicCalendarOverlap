@@ -6,6 +6,8 @@ import { registraAudit } from '$lib/server/audit';
 import { getDb } from '$lib/server/db/client';
 import { invites, memberships, organizations, profiles } from '$lib/server/db/schema';
 import { generateInviteCode } from '$lib/server/invites/code';
+import { invitaPerEmail } from '$lib/server/invites/invio';
+import { consumaRichiesta } from '$lib/server/ratelimit';
 import { inviteSchema } from '$lib/schemas/invite';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -84,7 +86,7 @@ export const load: PageServerLoad = async ({ parent, url }) => {
 
 export const actions: Actions = {
 	/** Genera un invito per la propria organizzazione. */
-	creaInvito: async ({ request, locals }) => {
+	creaInvito: async ({ request, locals, url }) => {
 		const viewer = locals.viewer;
 		if (!viewer) return fail(401, { error: 'Sessione non valida.' });
 
@@ -108,6 +110,17 @@ export const actions: Actions = {
 			return fail(403, { error: 'Non hai i permessi per invitare in questa organizzazione.' });
 		}
 
+		// Ogni invito con un indirizzo fa partire un'email dalla casella del
+		// manutentore: il limite difende quella, non il database (ADR-0045).
+		if (emailHint) {
+			const limite = await consumaRichiesta(getDb(), 'inviti', viewer.profileId);
+			if (!limite.consentito) {
+				return fail(429, {
+					error: `Hai generato ${limite.limite} inviti in un'ora. Aspetta un momento: il limite serve a non far sospendere la casella da cui partono le email.`
+				});
+			}
+		}
+
 		const scadenza = new Date();
 		scadenza.setUTCDate(scadenza.getUTCDate() + expiresInDays);
 
@@ -124,7 +137,13 @@ export const actions: Actions = {
 			})
 			.returning({ code: invites.code });
 
-		return { invitoCreato: creato[0].code, invitoEmail: emailHint };
+		const invio = await invitaPerEmail({
+			email: emailHint,
+			codice: creato[0].code,
+			origin: url.origin
+		});
+
+		return { invitoCreato: creato[0].code, invitoEmail: emailHint, invio: invio.esito };
 	},
 
 	/** Revoca un invito azzerandone gli utilizzi disponibili. */

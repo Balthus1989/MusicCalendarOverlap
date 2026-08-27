@@ -487,7 +487,11 @@ Nel pannello Supabase, sezione _Authentication_:
 
 La registrazione è **solo su invito** (ADR-0004): il form di login usa
 `shouldCreateUser: false`, quindi un indirizzo sconosciuto non crea un account.
-Un account nasce unicamente accettando un invito valido, da `/invite/[code]`.
+Un account nasce solo da un invito valido — accettandolo da `/invite/[code]`,
+oppure nel momento in cui l'invito viene generato con un indirizzo, perché è
+`inviteUserByEmail` a crearlo per poterglielo spedire ([ADR-0045](DECISIONS.md)).
+Finché l'invito non viene accettato quell'account è inerte: nessun profilo,
+nessuna membership, nessun accesso.
 
 #### Il template email non è facoltativo
 
@@ -500,6 +504,21 @@ sostituito con questo:
 	<a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=magiclink">Accedi</a>
 </p>
 <p>Se non hai chiesto tu questo accesso, ignora questa email.</p>
+```
+
+In **Authentication → Emails → Invite user** va messo lo stesso schema, con
+`type=invite` al posto di `type=magiclink`:
+
+```html
+<h2>Sei stato invitato al Calendario Eventi Condiviso</h2>
+<p>
+	Un organizzatore ti ha invitato sul calendario condiviso delle date, dove ci si
+	coordina sulle serate prima di annunciarle.
+</p>
+<p>
+	<a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite">Entra</a>
+</p>
+<p>Se non ti aspettavi questo invito, ignora questa email.</p>
 ```
 
 **Con il template predefinito il login non funziona**, e vale la pena sapere
@@ -745,13 +764,16 @@ niente» — e i rimedi stanno in due posti che non si assomigliano.
 | ------------------------------------------- | --------------- | -------------------------------------------------------------- | ----------------------------- |
 | **Magic link** di accesso                   | Supabase Auth   | pannello Supabase → _Project Settings → Authentication → SMTP_ | far **entrare** la gente      |
 | **Notifiche**: conflitti, digest, solleciti | un bot Telegram | `TELEGRAM_BOT_TOKEN` (secret del Worker)                       | avvisare chi è **già dentro** |
+| **Invito** a entrare                        | Supabase Auth   | lo stesso SMTP del magic link, più il template _Invite user_    | far entrare **la prima volta** |
 
 Configurare l'SMTP su Supabase non fa arrivare nessuna notifica, e configurare
 il bot non fa arrivare nessun magic link.
 
-**L'invito non è in questa tabella**, e non è una dimenticanza: si rivolge a chi
-nel calendario non esiste ancora, quindi non ha né una sessione né una chat
-collegata. Il suo link si passa a mano, e la pagina che lo genera lo dice.
+L'invito sta **sulla prima strada, non sulla seconda**: si rivolge a chi nel
+calendario non esiste ancora, quindi non ha una chat collegata, ma un indirizzo
+email sì — ed è lo stesso SMTP del magic link a portarcelo ([ADR-0045](DECISIONS.md)).
+Se manca la `SUPABASE_SERVICE_ROLE_KEY` l'invito si genera lo stesso e il link si
+passa a mano: la pagina che lo mostra dice quale dei due casi è capitato.
 
 #### L'SMTP del magic link
 
@@ -786,9 +808,15 @@ Cloudflare Email Service solo a indirizzi verificati uno per uno.
 Un bot Telegram non chiede domini né record DNS, e gli organizzatori quel canale
 ce l'hanno già aperto. Da qui la scelta ([ADR-0039](DECISIONS.md)).
 
-Se un domani il dominio arriva, l'email torna possibile e ha senso **accanto** a
-Telegram, non al suo posto: è l'unico canale che raggiunge chi non è ancora
-iscritto, e rimetterebbe in piedi l'invito. Costa un file, `sinks/`.
+Vale per le **notifiche**. Per l'**invito** la conclusione è diversa e sta in
+[ADR-0045](DECISIONS.md): lì il destinatario è uno solo, l'ha scelto chi invita,
+e a spedire è Supabase con l'SMTP che manda già i magic link — nessun dominio da
+verificare, perché il mittente è la casella del manutentore e non un indirizzo
+del progetto.
+
+Se un domani il dominio arriva, l'email torna possibile **anche per le
+notifiche**, e ha senso accanto a Telegram e non al suo posto. Costa un file,
+`sinks/`.
 
 ### Notifiche
 

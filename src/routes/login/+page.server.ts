@@ -1,51 +1,12 @@
-import { env as publicEnv } from '$env/dynamic/public';
-import { createClient } from '@supabase/supabase-js';
 import { fail } from '@sveltejs/kit';
 import { z } from 'zod';
 import { safeNext } from '$lib/server/auth/redirect';
+import { clientPerInvio } from '$lib/server/auth/supabase';
 import type { Actions, PageServerLoad } from './$types';
 
 const loginSchema = z.object({
 	email: z.email('Indirizzo email non valido.')
 });
-
-/**
- * Client dedicato al solo invio del magic link, **senza PKCE**.
- *
- * `createServerClient` di `@supabase/ssr` impone `flowType: 'pkce'`
- * sovrascrivendo l'opzione passata: non è configurabile. Con PKCE attivo
- * Supabase emette token `pkce_…`, e un token così non si verifica con una
- * chiamata sola — `verifyOtp` deve completare uno scambio che pretende il
- * verificatore custodito nel browser che ha *richiesto* il link. Per un link
- * dentro un'email quel presupposto non regge: si apre dal telefono, dalla
- * webmail, dal browser predefinito invece che da quello in uso.
- *
- * Qui PKCE non protegge niente. Non c'è nessun client pubblico: la richiesta
- * parte dal server, il token torna al server, la sessione la scrive il server
- * nei cookie. Quindi l'invio passa da un client normale in flusso implicito,
- * che fa emettere a Supabase un hash semplice.
- *
- * La **verifica** resta a `locals.supabase`, cioè al client SSR: è quello che
- * sa scrivere i cookie di sessione. Un hash semplice `verifyOtp` lo risolve in
- * una chiamata, senza aver bisogno di niente che stia nel browser.
- *
- * `persistSession: false`: questo client non deve conservare nessuna sessione,
- * manda solo un'email.
- */
-function clientPerInvio() {
-	const url = publicEnv.PUBLIC_SUPABASE_URL;
-	const anonKey = publicEnv.PUBLIC_SUPABASE_ANON_KEY;
-
-	if (!url || !anonKey) {
-		throw new Error(
-			'PUBLIC_SUPABASE_URL / PUBLIC_SUPABASE_ANON_KEY mancanti. Copia .env.example in .env.'
-		);
-	}
-
-	return createClient(url, anonKey, {
-		auth: { flowType: 'implicit', persistSession: false, autoRefreshToken: false }
-	});
-}
 
 export const load: PageServerLoad = async ({ url }) => {
 	return {

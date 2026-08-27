@@ -42,7 +42,7 @@
 {/if}
 
 {#if form?.invitoCreato}
-	<InvitoCreato code={form.invitoCreato} email={form.invitoEmail} />
+	<InvitoCreato code={form.invitoCreato} email={form.invitoEmail} esito={form.invio} />
 {/if}
 
 <form method="POST" action="?/crea" use:enhance class="mb-10 grid max-w-2xl gap-4 sm:grid-cols-3">

@@ -115,7 +115,7 @@
 			<h2 class="mb-3 text-base font-semibold">Inviti</h2>
 
 			{#if form?.invitoCreato}
-				<InvitoCreato code={form.invitoCreato} email={form.invitoEmail} />
+				<InvitoCreato code={form.invitoCreato} email={form.invitoEmail} esito={form.invio} />
 			{/if}
 
 			<form method="POST" action="?/creaInvito" use:enhance class="mb-6 grid gap-4 sm:grid-cols-4">

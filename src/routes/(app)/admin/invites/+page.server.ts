@@ -11,6 +11,8 @@ import { canCreateOrgInvite } from '$lib/server/auth/permissions';
 import { getDb } from '$lib/server/db/client';
 import { invites, organizations, profiles } from '$lib/server/db/schema';
 import { generateInviteCode } from '$lib/server/invites/code';
+import { invitaPerEmail } from '$lib/server/invites/invio';
+import { consumaRichiesta } from '$lib/server/ratelimit';
 import { inviteSchema } from '$lib/schemas/invite';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -56,7 +58,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 };
 
 export const actions: Actions = {
-	crea: async ({ request, locals }) => {
+	crea: async ({ request, locals, url }) => {
 		const viewer = locals.viewer;
 		if (!viewer) return fail(401, { error: 'Sessione non valida.', invitoCreato: null });
 		if (!canCreateOrgInvite(viewer)) {
@@ -83,6 +85,20 @@ export const actions: Actions = {
 		}
 
 		const { emailHint, maxUses, expiresInDays } = parsed.data;
+
+		// Vedi l'azione gemella in /org: il limite difende la casella da cui
+		// partono le email, non il database (ADR-0045).
+		if (emailHint) {
+			const limite = await consumaRichiesta(getDb(), 'inviti', viewer.profileId);
+			if (!limite.consentito) {
+				return fail(429, {
+					error: `Hai generato ${limite.limite} inviti in un'ora. Aspetta un momento: il limite serve a non far sospendere la casella da cui partono le email.`,
+					invitoCreato: null,
+					invitoEmail: null
+				});
+			}
+		}
+
 		const scadenza = new Date();
 		scadenza.setUTCDate(scadenza.getUTCDate() + expiresInDays);
 
@@ -101,7 +117,18 @@ export const actions: Actions = {
 			})
 			.returning({ code: invites.code });
 
-		return { invitoCreato: creato[0].code, invitoEmail: emailHint, error: null };
+		const invio = await invitaPerEmail({
+			email: emailHint,
+			codice: creato[0].code,
+			origin: url.origin
+		});
+
+		return {
+			invitoCreato: creato[0].code,
+			invitoEmail: emailHint,
+			invio: invio.esito,
+			error: null
+		};
 	},
 
 	revoca: async ({ request, locals }) => {

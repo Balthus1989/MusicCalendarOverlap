@@ -1,22 +1,27 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import type { EsitoInvio } from '$lib/schemas/invite';
 
 	type Props = {
 		/** Codice dell'invito appena generato. */
 		code: string;
 		/** Indirizzo a cui era destinato, se chi l'ha creato l'aveva indicato. */
 		email?: string | null;
+		/** Che cosa ha fatto l'invio. Assente = non ci si è nemmeno provato. */
+		esito?: EsitoInvio | null;
 	};
 
-	let { code, email = null }: Props = $props();
+	let { code, email = null, esito = null }: Props = $props();
 
 	const link = $derived(`${page.url.origin}/invite/${code}`);
 
-	// Il canale dell'invito e' la casella di chi lo manda, non il server: chi
-	// riceve non ha ancora un profilo, quindi non ha nessun canale collegato
-	// (ADR-0039). Un `mailto:` e' l'unico modo di mandarlo per email senza un
-	// dominio verificato, e fa partire il messaggio dall'indirizzo che
-	// l'invitato riconosce.
+	/**
+	 * Il `mailto:` resta anche quando l'email è partita da sé.
+	 *
+	 * Non è ridondanza: è la strada per i tre casi in cui l'invio non c'è stato
+	 * — nessun indirizzo, indirizzo già iscritto, chiave di servizio assente in
+	 * locale — e resta comodo per chi vuole aggiungere due righe sue.
+	 */
 	const mailto = $derived(
 		`mailto:${encodeURIComponent(email ?? '')}` +
 			`?subject=${encodeURIComponent('Invito al Calendario Eventi Condiviso')}` +
@@ -27,17 +32,54 @@
 					'\n\nA presto.\n'
 			)}`
 	);
+
+	const spiegazione = $derived.by(() => {
+		switch (esito) {
+			case 'inviato':
+				return {
+					titolo: 'Invito mandato.',
+					testo: `L'email è partita${email ? ` a ${email}` : ''} dalla casella configurata su Supabase. Il link qui sotto vale lo stesso, se preferisci passarlo a mano.`
+				};
+			case 'gia-iscritto':
+				return {
+					titolo: 'Invito creato — email non mandata.',
+					testo: `${email ?? "Quell'indirizzo"} ha già un account: non gli si manda un invito a iscriversi, gli si manda il link. Da lì entra con il suo accesso di sempre.`
+				};
+			case 'senza-indirizzo':
+				return {
+					titolo: 'Invito creato.',
+					testo:
+						'Non hai indicato nessun indirizzo, quindi non è partita nessuna email: il link va passato a mano. È un uso legittimo, non un passaggio saltato.'
+				};
+			case 'non-configurato':
+				return {
+					titolo: 'Invito creato — email non mandata.',
+					testo:
+						'Manca la chiave di servizio di Supabase, quindi da qui non parte posta. In locale è la norma: il link si passa a mano.'
+				};
+			case 'fallito':
+				return {
+					titolo: 'Invito creato — email non partita.',
+					testo:
+						'Il servizio di posta non ha accettato il messaggio. L’invito è valido lo stesso: passa il link a mano, e controlla il registro del server per sapere perché.'
+				};
+			default:
+				return {
+					titolo: 'Invito creato.',
+					testo: 'Il link va mandato a mano: vale finché non scade o non finisce gli utilizzi.'
+				};
+		}
+	});
 </script>
 
 <div class="border-border bg-card mb-4 rounded-lg border p-4">
-	<p class="text-sm font-medium">Invito creato.</p>
-	<p class="text-muted-foreground mt-1 text-sm">
-		Il link va mandato a mano: l'applicazione non spedisce nessuna email, perché chi lo riceve non
-		ha ancora un profilo e quindi nessun canale su cui essere raggiunto. Vale finché non scade o non
-		finisce gli utilizzi.
-	</p>
+	<p class="text-sm font-medium">{spiegazione.titolo}</p>
+	<p class="text-muted-foreground mt-1 text-sm">{spiegazione.testo}</p>
 	<code class="mt-2 block overflow-x-auto text-xs">{link}</code>
+	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- `mailto:` apre il client di posta, non una rotta dell'applicazione. -->
 	<a href={mailto} class="mt-3 inline-block text-sm underline" data-testid="invito-mailto">
-		Apri l'email già scritta{email ? ` per ${email}` : ''}
+		{esito === 'inviato' ? 'Scrivigli anche tu' : "Apri l'email già scritta"}{email
+			? ` (${email})`
+			: ''}
 	</a>
 </div>
