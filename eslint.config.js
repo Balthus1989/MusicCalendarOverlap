@@ -12,7 +12,15 @@ export default ts.config(
 	...svelte.configs.prettier,
 	{
 		languageOptions: {
-			globals: { ...globals.browser, ...globals.node }
+			globals: {
+				...globals.browser,
+				...globals.node,
+				// Iniettata da `define` in `vite.config.ts` (ADR-0046). Nei file
+				// TypeScript basta la dichiarazione in `src/app.d.ts`; nei
+				// componenti Svelte no, perché lì `no-undef` guarda l'elenco dei
+				// globali e non i tipi.
+				__VERSIONE__: 'readonly'
+			}
 		}
 	},
 	{

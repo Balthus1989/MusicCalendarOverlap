@@ -1443,3 +1443,53 @@ Sull'**account che nasce prima**, che è il costo vero: modifica l'invariante di
 - Un indirizzo sbagliato nel campo crea un account inerte per quell'indirizzo. Non dà accesso a niente e non compare in nessun elenco dell'applicazione, ma è una riga in `auth.users` che va tolta a mano se dà fastidio.
 
 **Da rivedere se.** Arriva il dominio. A quel punto l'invito può tornare a essere un'email scritta da noi, con il testo versionato nel repository invece che in un pannello, e questa strada diventa il ripiego invece della principale.
+
+---
+
+## ADR-0046 — Il rilascio ha un numero, e il numero sta dentro l'artefatto
+
+**Data:** 2026-08-27 · **Stato:** Accettata · **Modifica:** [ADR-0038](#adr-0038--gli-smoke-test-girano-contro-il-database-vero-si-puliscono-da-soli-e-restano-fuori-dalla-ci)
+
+**Contesto.** Quarantacinque decisioni, sette fasi, l'applicazione online dal 26 agosto — e `package.json` fermo a `0.0.1` dallo scaffolding, nessun tag in tutto il repository. Gli avanzamenti erano già raccontati in tre posti (la tabella *Stato* del runbook per fase, questo registro per decisione, i messaggi di commit), ma nessuno dei tre risponde alla domanda che conta quando qualcosa si rompe: **guardando l'applicazione in produzione, quale codice c'è dentro?**
+
+Non è una domanda astratta. Il primo difetto segnalato dagli organizzatori dopo il rilascio ([ADR-0045](#adr-0045--linvito-parte-per-email-dalla-casella-che-manda-già-i-magic-link)) è arrivato come «gli inviti non partono», contro una produzione di cui non si sapeva quale commit contenesse: se in mezzo ci fosse stato un deploy dimenticato, o uno mai andato a buon fine, non ci sarebbe stato modo di accorgersene.
+
+**Decisione.**
+
+1. La numerazione è `0.<fase>.<patch>`: la **minor è la fase** di `ARCHITECTURE.md` §12, la patch conta le rifiniture al suo interno. Si parte da `0.6.0`, che è ciò che è **già** in produzione — le fasi da 0 a 6 — e la fase 7 esce come `v0.7.0` al primo rilascio. Il passaggio a `1.0.0` sarà una decisione di prodotto, non un automatismo.
+2. La fonte di verità è il **tag annotato** `v<x.y.z>`, creato da `npm version`. **Niente `CHANGELOG.md`**: le note di un rilascio sono `git log <tag precedente>..<tag> --oneline`.
+3. La versione entra nell'artefatto **in fase di build** (`define` in `vite.config.ts`, da `scripts/versione.mjs`) come `0.7.0+<sha>`, e riemerge in due punti soli: il piè di pagina delle pagine autenticate e `GET /api/version`, che è pubblico.
+4. Il rilascio è **un comando**, `npm run rilascia [patch|minor|major]`, che nell'ordine: rifiuta un albero sporco o un ramo diverso da `main`, esegue lint, typecheck, test unitari e smoke E2E, alza il numero, costruisce e fa il deploy. **Non fa il push**: lo stampa.
+5. **Una migrazione deve restare compatibile con il rilascio precedente.** Tornare indietro sul Worker non annulla una migrazione applicata.
+
+**Motivazioni.**
+
+Sul **numero più lo sha**: il solo numero di `package.json` dice a che punto è il rilascio, non se ciò che gira è davvero quello. Lo sha lo dice, e il suffisso `-modificato` dice l'altra cosa che serve sapere — che quell'artefatto non corrisponde a nessun commit.
+
+Sulla **fase come minor**: il progetto ragiona per fasi da prima di avere una riga di codice, e le nominano tutti e tre i documenti. Una numerazione parallela sarebbe stato un quarto sistema di coordinate su cui tradurre a mente. Ha già prodotto un effetto collaterale utile: costringe a notare che **la fase 7 esiste nei commit e non in `ARCHITECTURE.md` §12**, dove il piano si ferma alla 6.
+
+Sul **niente `CHANGELOG.md`**: sarebbe un quarto posto dove riscrivere gli stessi fatti, e il primo a divergere. I commit di questo repository sono già scritti in italiano e per esteso; fra due tag sono esattamente le note di rilascio, gratis e senza una copia da tenere allineata.
+
+Sugli **smoke test dentro il percorso**: [ADR-0038](#adr-0038--gli-smoke-test-girano-contro-il-database-vero-si-puliscono-da-soli-e-restano-fuori-dalla-ci) li tiene fuori dalla CI per una ragione che regge — servirebbe la chiave di servizio fra i secret del repository — e concludeva «si lanciano prima di un rilascio». Quella frase viveva però solo in un documento: l'unica cosa che li faceva davvero girare era la memoria di chi rilasciava. Ora sono nel percorso, e un rilascio che li salta non è una svista, è un comando diverso.
+
+Sul **push lasciato a mano**: un tag spinto su GitHub è pubblico e non si ritira con eleganza, mentre un tag locale si cancella. Se `wrangler deploy` fallisce dopo il bump — e fallisce, vedi l'EPERM del runbook — restano un commit e un tag che non descrivono niente di online, e si annullano in due comandi senza che nessuno li abbia visti.
+
+Sul **punto 5**, che è la parte non ovvia: Cloudflare conserva le versioni del Worker e `wrangler rollback` ci torna sopra in pochi secondi. Il database no. Un rilascio che rinomina una colonna e un rollback che riporta il codice di ieri producono un'applicazione che interroga uno schema che non esiste più — cioè un guasto peggiore di quello da cui si stava scappando. Le migrazioni erano già versionate e immodificabili ([ADR-0015](#adr-0015--lo-schema-auth-di-supabase-è-dichiarato-in-drizzle-ma-la-sua-creazione-è-saltata-in-migrazione)); questa è la regola in più che rende il rollback una via d'uscita vera: si aggiunge, e si toglie un rilascio dopo.
+
+**Alternative scartate.**
+
+- _`CHANGELOG.md` generato (release-please, conventional-changelog)._ Funziona e su un progetto con utenti che leggono le release notes sarebbe la scelta giusta. Qui produrrebbe un quarto racconto degli stessi fatti per un pubblico di una persona.
+- _Leggere la versione a runtime da git._ Non esiste niente da leggere: il Worker è un bundle, senza repository e senza filesystem. È il motivo per cui l'iniezione avviene alla build.
+- _Il binding "version metadata" di Cloudflare._ Darebbe l'identificativo del deploy senza toccare il codice, ma dice quale deploy è, non da quale commit viene, e lega l'etichetta alla piattaforma proprio dove `ARCHITECTURE.md` §3 tiene aperta la via di fuga verso `adapter-vercel`.
+- _Alzare il numero a ogni commit._ Toglierebbe al numero l'unico significato che ha: un rilascio è ciò che è andato online, non ciò che è stato committato. Per i commit c'è `git log`.
+- _Il tag senza il numero in `package.json`._ Metà del beneficio: il tag non arriva dentro l'artefatto, e il piè di pagina resterebbe muto.
+
+**Conseguenze.**
+
+- Una segnalazione si lega a un commit. `git describe` dice a che punto si è, e `/api/version` dice che cosa risponde il dominio pubblico senza bisogno di un account.
+- Il piè di pagina mostra la versione a chi ha una sessione. Non è un dato di dominio e non ha niente a che vedere con la matrice di §5: non passa da nessun serializzatore perché non descrive nessuno.
+- **Rilasciare richiede ora un database vero e la chiave di servizio**, perché gli E2E ne hanno bisogno. È voluto — è la conseguenza di ADR-0038 presa sul serio — ma significa che da una macchina senza quelle credenziali non si rilascia.
+- `npm run deploy` da solo continua a esistere e a funzionare, per le prove. Manda online un artefatto senza tag, e l'etichetta lo dichiara con `-modificato` se l'albero era sporco.
+- La numerazione lega i rilasci alle fasi, e le fasi prima o poi finiscono. Quando succede, la minor smette di essere una fase e torna a essere una minor: nessuna decisione da prendere, solo una convenzione che scade da sé.
+
+**Da rivedere se.** Il manutentore non è più solo, o il prodotto esce dal contesto di alta fiducia. A quel punto delle note di rilascio leggibili da chi non ha il repository sotto mano smettono di essere un doppione e diventano il canale: è lì che un `CHANGELOG.md` — o le release di GitHub, che sono lo stesso file scritto altrove — comincia a pagare.

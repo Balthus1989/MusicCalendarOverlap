@@ -26,6 +26,7 @@ npm run test # vitest
 npm run test:e2e # smoke Playwright: database vero, si pulisce da solo
 npm run db:generate # genera migrazione da schema.ts
 npm run db:migrate # applica (usa DIRECT_DATABASE_URL, porta 5432)
+npm run rilascia # rilascio completo: controlli, tag, deploy
 
 ## Vincoli non negoziabili
 
@@ -46,7 +47,15 @@ npm run db:migrate # applica (usa DIRECT_DATABASE_URL, porta 5432)
   nessuna riga di lineup all'anagrafica: `status` e `isAnnounced` non
   esistono proprio in `bersaglioParse`. Vedi ADR-0031.
 - Le migrazioni Drizzle sono versionate: mai modificare una migrazione
-  già committata.
+  già committata. E ogni migrazione resta **compatibile con il rilascio
+  precedente**: `wrangler rollback` riporta indietro il Worker in pochi
+  secondi e non annulla niente sul database. Si aggiunge in un rilascio, si
+  toglie in quello dopo. Vedi ADR-0046.
+- Un **rilascio** passa da `npm run rilascia`, non da `npm run deploy` a mano:
+  alza il numero prima della build — la versione è murata nell'artefatto e si
+  legge dal piè di pagina o da `/api/version` — esegue gli smoke test e non fa
+  il push. Le note di rilascio sono `git log` fra due tag: non esiste un
+  `CHANGELOG.md` ed è deliberato. Vedi ADR-0046.
 - Le **notifiche** nascono già redatte, per un destinatario solo: il testo
   si costruisce da un evento o da un conflitto **già serializzato**, e se il
   serializzatore restituisce `null` non nasce nessuna riga. Niente avviso

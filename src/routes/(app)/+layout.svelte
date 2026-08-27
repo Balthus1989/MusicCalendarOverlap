@@ -180,6 +180,14 @@
 		class="text-muted-foreground mx-auto w-full max-w-6xl px-4 pb-[calc(3.5rem+env(safe-area-inset-bottom)+1rem)] text-xs sm:px-6 md:pb-8"
 	>
 		<a href={resolve('/privacy')} class="underline underline-offset-4">Informativa privacy</a>
+		<!--
+			La versione sta qui e non in una pagina "informazioni": chi segnala un
+			difetto la sta già guardando, e la prima domanda a cui rispondere è
+			sempre quale codice avesse davanti (ADR-0046).
+		-->
+		<span class="ml-3" title="Versione in esecuzione, con il commit da cui è stata costruita">
+			{__VERSIONE__}
+		</span>
 	</footer>
 
 	<MobileTabBar voci={principali} />

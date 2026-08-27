@@ -32,6 +32,13 @@ declare global {
 			env?: Record<string, string>;
 		}
 	}
+
+	/**
+	 * Numero di rilascio più commit di provenienza (`0.7.0+5250817`), murato
+	 * nell'artefatto da `define` in `vite.config.ts` (ADR-0046). Non esiste a
+	 * runtime: dopo la build è una stringa letterale.
+	 */
+	const __VERSIONE__: string;
 }
 
 export {};

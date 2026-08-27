@@ -614,6 +614,7 @@ npm run dev
 | `npm run db:seed`     | tassonomia generi (idempotente)                 |
 | `npm run db:studio`   | drizzle studio                                  |
 | `npm run build`       | build di produzione (adapter-cloudflare)        |
+| `npm run rilascia`    | il rilascio completo: controlli, tag, deploy    |
 
 ## Deploy
 
@@ -668,7 +669,83 @@ Via di fuga documentata: se emergono limiti di CPU per richiesta su Cloudflare,
 si passa ad `adapter-vercel` senza toccare il codice applicativo
 (ARCHITECTURE.md §3).
 
+I due comandi qui sopra restano la strada per **provare**: mandano online un
+artefatto che non corrisponde a nessun tag. Un rilascio vero passa da
+`npm run rilascia`, descritto sotto in [Rilasci](#rilasci).
+
 ## Runbook
+
+### Rilasci
+
+```bash
+npm run rilascia            # 0.7.0 → 0.7.1
+npm run rilascia -- minor   # 0.7.0 → 0.8.0
+```
+
+La numerazione è `0.<fase>.<patch>`: la minor è la fase di `ARCHITECTURE.md`
+§12, la patch conta le rifiniture al suo interno (ADR-0046). Il numero in
+`package.json` parte da `0.6.0` perché è quello che descrive la produzione di
+oggi: **il primo rilascio è un `minor`**, e porta online la fase 7 come
+`v0.7.0`. Prima di quello non esiste nessun tag, ed è normale. La versione in
+esecuzione si legge dal piè di pagina, o senza account da `/api/version`:
+
+```bash
+curl https://calendario-eventi-condiviso.rendar55.workers.dev/api/version
+# {"versione":"0.7.0+5250817"}
+```
+
+Un `+<sha>` che non corrisponde all'ultimo commit di `main` significa che
+l'ultimo deploy non è quello che credi. Un suffisso `-modificato` significa che
+quell'artefatto è stato costruito su un albero sporco, cioè che **non esiste un
+commit che lo descriva**: succede solo passando da `npm run deploy` a mano,
+perché `npm run rilascia` si rifiuta di partire.
+
+Che cosa fa il comando, nell'ordine, fermandosi al primo passo che fallisce:
+
+1. controlla di essere su `main`, con l'albero pulito e non da un percorso
+   localizzato;
+2. lint, typecheck, test unitari;
+3. **smoke test end-to-end**, che girano contro il database vero e sono l'unica
+   cosa che non passa dalla CI (ADR-0038). Servono
+   `SUPABASE_SERVICE_ROLE_KEY` e un database raggiungibile: senza, il rilascio
+   si ferma qui;
+4. `npm version`, che alza `package.json`, committa e crea il tag annotato.
+   **Prima** della build, perché è la build a murare il numero nell'artefatto;
+5. `npm run deploy`.
+
+Il push **non** lo fa: alla fine stampa `git push --follow-tags`. Finché non lo
+dai, commit e tag sono solo tuoi.
+
+**Se il deploy fallisce dopo il passo 4** — l'EPERM di Windows è il candidato
+naturale — restano un commit di versione e un tag che non descrivono niente di
+online. Si annullano, purché non siano stati spinti:
+
+```bash
+git tag -d v0.7.1
+git reset --hard HEAD~1
+```
+
+**Le note di un rilascio non stanno in un file**, stanno fra due tag. Non
+esiste un `CHANGELOG.md` ed è deliberato (ADR-0046):
+
+```bash
+git log v0.7.0..v0.7.1 --oneline
+```
+
+#### Tornare indietro
+
+Cloudflare conserva le versioni del Worker:
+
+```bash
+npx wrangler deployments list
+npx wrangler rollback [id]
+```
+
+**Il rollback non annulla una migrazione applicata.** È il motivo per cui una
+migrazione deve restare compatibile con il rilascio precedente: si aggiunge una
+colonna in un rilascio e si toglie la vecchia in quello dopo, mai le due cose
+insieme. Un codice di ieri che interroga lo schema di oggi è un guasto peggiore
+di quello da cui si stava scappando.
 
 ### Backup
 

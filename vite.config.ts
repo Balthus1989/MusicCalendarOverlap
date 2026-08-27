@@ -1,5 +1,6 @@
 import { realpathSync } from 'node:fs';
 import { controllaCartella } from './scripts/controlla-cartella.mjs';
+import { versioneCorrente } from './scripts/versione.mjs';
 import adapter from '@sveltejs/adapter-cloudflare';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
@@ -49,6 +50,21 @@ export default defineConfig({
 			adapter: adapter()
 		})
 	],
+	/**
+	 * La versione viene murata nell'artefatto al momento della build.
+	 *
+	 * È l'unico modo perché l'applicazione in esecuzione sappia da quale commit
+	 * proviene: a runtime non c'è nessun repository da interrogare, il Worker è
+	 * un bundle. Da qui esce in due posti — il piè di pagina e `/api/version` —
+	 * e serve a legare una segnalazione a un punto preciso della storia
+	 * (ADR-0046).
+	 *
+	 * `define` è una sostituzione testuale, quindi il nome deve essere
+	 * impossibile da incontrare per caso: di qui le due sottolineature.
+	 */
+	define: {
+		__VERSIONE__: JSON.stringify(versioneCorrente())
+	},
 	server: {
 		fs: { allow: cartelleConsentite },
 		// Su questa macchina `localhost` risolve in `::1`, e Vite di default si
