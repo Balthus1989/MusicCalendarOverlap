@@ -46,6 +46,28 @@
 		href: resolve('/admin/invites')
 	} as const;
 
+	/**
+	 * Segnalare la data di un organizzatore non iscritto (ADR-0044).
+	 *
+	 * Sta fuori da `links` perché non è una destinazione ma un'azione, come
+	 * "Nuova data": sopra `md:` la si raggiunge dall'intestazione del
+	 * calendario, accanto al suo pulsante, e metterla anche nella barra in alto
+	 * sarebbero due porte per la stessa stanza.
+	 *
+	 * Sotto `md:` non diventa il quinto pulsante della barra in basso. Quelle
+	 * quattro sono il ciclo quotidiano — guardo, vedo una sovrapposizione, alzo
+	 * il telefono — e ADR-0042 mette «le voci principali diventano più di
+	 * quattro» fra i motivi per cui quella barra andrebbe ripensata, non fra le
+	 * cose da farci stare. Segnalare la data di un altro capita molto meno
+	 * spesso che inserire la propria: sta nel pannello, e in cima, perché è
+	 * l'unica voce lì dentro che si fa in piedi e non da seduti.
+	 */
+	const linkSegnala = {
+		path: '/events/segnala',
+		label: 'Segnala una data',
+		href: resolve('/events/segnala')
+	} as const;
+
 	const linksDesktop = $derived(data.profile.isPlatformAdmin ? [...links, linkInviti] : links);
 
 	/** Le quattro della barra in basso: tre destinazioni e un'azione. */
@@ -58,7 +80,9 @@
 
 	/** Tutto il resto, dietro il `☰`. */
 	const secondarie = $derived(
-		data.profile.isPlatformAdmin ? [...links.slice(3), linkInviti] : [...links.slice(3)]
+		data.profile.isPlatformAdmin
+			? [linkSegnala, ...links.slice(3), linkInviti]
+			: [linkSegnala, ...links.slice(3)]
 	);
 
 	const isActive = (path: string) =>
