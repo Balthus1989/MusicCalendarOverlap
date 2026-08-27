@@ -95,10 +95,20 @@ const versione = git('describe', '--tags', '--abbrev=0');
  * Il tag precedente esiste da questo rilascio in poi, ma al primo no: senza il
  * ramo di riserva il primo rilascio finirebbe con un errore **dopo** essere
  * andato online, che è il momento peggiore per darne uno.
+ *
+ * `stderr` va zittito qui e non altrove: quando il tag precedente non c'è,
+ * `git describe` scrive un `fatal:` prima di uscire con errore, e quella riga
+ * comparirebbe fra il deploy riuscito e la riga che lo annuncia — cioè farebbe
+ * sembrare rotto un rilascio andato a buon fine. Negli altri comandi lo stderr
+ * resta visibile, perché lì un errore è un errore.
  */
 let intervallo = versione;
 try {
-	intervallo = `${git('describe', '--tags', '--abbrev=0', `${versione}^`)}..${versione}`;
+	const precedente = execFileSync('git', ['describe', '--tags', '--abbrev=0', `${versione}^`], {
+		encoding: 'utf8',
+		stdio: ['ignore', 'pipe', 'ignore']
+	}).trim();
+	intervallo = `${precedente}..${versione}`;
 } catch {
 	/* primo rilascio: le note sono tutta la storia */
 }
