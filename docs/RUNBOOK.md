@@ -1401,6 +1401,14 @@ Su Linux e macOS lo stesso comando passa, quindi in CI non si vede: è un
 inciampo solo locale, ma capita esattamente nel momento peggiore, cioè quando
 si prova a fare un deploy di fretta.
 
+**Da `npm run deploy` in poi non si vede più**, e quindi nemmeno da
+`npm run rilascia`: `scripts/prepara-uscita.mjs` rimuove quella cartella prima
+della build, riprovando per un secondo — `rmSync` di Node ha `maxRetries`
+apposta per questa condizione, e SvelteKit non lo passa. Se non ci riesce si
+ferma **prima** della build, che dentro un rilascio è la differenza fra perdere
+due secondi e perdere i controlli, gli smoke test e un tag già creato. Il caso
+resta possibile lanciando `npm run build` da sola.
+
 ### Ogni pagina che tocca il database resta appesa
 
 Sintomo insidioso: `/login` risponde, le pagine statiche rispondono, ma

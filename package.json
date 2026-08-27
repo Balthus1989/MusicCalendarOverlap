@@ -21,7 +21,7 @@
 		"db:seed:demo": "tsx db/seeds/demo.ts",
 		"test:e2e": "playwright test",
 		"test:e2e:ui": "playwright test --ui",
-		"deploy": "node scripts/controlla-cartella.mjs && npm run build && wrangler deploy",
+		"deploy": "node scripts/controlla-cartella.mjs && node scripts/prepara-uscita.mjs && npm run build && wrangler deploy",
 		"rilascia": "node scripts/rilascia.mjs"
 	},
 	"dependencies": {
