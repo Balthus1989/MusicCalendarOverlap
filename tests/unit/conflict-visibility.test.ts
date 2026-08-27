@@ -53,7 +53,8 @@ function organizzazione(id: string, name: string) {
 		emailContact: `info@${name.toLowerCase().replace(/\s+/g, '')}.example`,
 		website: null,
 		instagramUrl: null,
-		facebookUrl: null
+		facebookUrl: null,
+		esterna: false
 	};
 }
 
@@ -92,6 +93,7 @@ function evento(over: Partial<EventWithRelations> = {}): EventWithRelations {
 		announceAt: null,
 		internalNotes: 'cachet 800',
 		updatedAt: daLocaleAIstante('2026-09-01T10:00'),
+		segnalataDa: null,
 		organization: organizzazione(ORG_MIA, 'Associazione Mia'),
 		venue,
 		genres: [
@@ -147,6 +149,7 @@ function coppia(statoAltrui: EventWithRelations['status'] = 'confirmed') {
 			organizationId: ORG_ALTRA,
 			status: statoAltrui,
 			title: 'Serata segreta',
+			segnalataDa: null,
 			organization: organizzazione(ORG_ALTRA, 'Associazione Altra'),
 			internalNotes: 'accordo riservato'
 		})

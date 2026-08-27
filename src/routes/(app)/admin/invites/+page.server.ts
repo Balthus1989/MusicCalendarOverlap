@@ -39,9 +39,17 @@ export const load: PageServerLoad = async ({ parent }) => {
 		.orderBy(desc(invites.createdAt))
 		.limit(30);
 
+	// Le organizzazioni esterne restano fuori: sono schede nate da una
+	// segnalazione, non posti in cui si entra (ADR-0044). Farle comparire qui
+	// significherebbe poter invitare qualcuno dentro una scheda, e ottenere
+	// un'organizzazione con membri che il motore continua a trattare come di
+	// nessuno. Il passaggio a organizzazione vera esiste — la riga c'è già e
+	// nessuna foreign key si sposta — ma è un'operazione deliberata, non un
+	// invito distratto: aggiunge la membership **e** spegne `esterna`.
 	const tutteLeOrg = await db
 		.select({ id: organizations.id, name: organizations.name, city: organizations.city })
 		.from(organizations)
+		.where(eq(organizations.esterna, false))
 		.orderBy(organizations.name);
 
 	return { inviti: apertiSenzaOrg, tutteLeOrg };

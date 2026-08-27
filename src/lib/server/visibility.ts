@@ -49,6 +49,12 @@ export type OrganizzazioneEvento = {
 	id: string;
 	name: string;
 	slug: string;
+	/**
+	 * Organizzatore non iscritto, nato da una segnalazione (ADR-0044). Non si
+	 * redige mai: chi legge deve poter distinguere una data caricata da chi la
+	 * organizza da una riferita da un terzo.
+	 */
+	esterna: boolean;
 	city: string | null;
 	province: string | null;
 	emailContact: string | null;
@@ -134,6 +140,8 @@ export type EventWithRelations = {
 	 */
 	updatedAt: Date;
 	organization: OrganizzazioneEvento;
+	/** L'organizzazione che ha segnalato la data, se è di un non iscritto. */
+	segnalataDa: OrganizzazioneEvento | null;
 	venue: VenueEvento | null;
 	genres: GenereEvento[];
 	lineup: VoceLineup[];
@@ -154,6 +162,18 @@ type Base = {
 	city: string;
 	province: string | null;
 	organizzazione: OrganizzazioneEvento;
+	/**
+	 * Chi ha **segnalato** la data, quando l'organizzatore non è iscritto
+	 * (ADR-0044). `null` per tutte le date normali.
+	 *
+	 * Sta in `Base` e non nella sola vista completa perché la provenienza non
+	 * si redige mai: una data riferita da un terzo va distinta da una caricata
+	 * da chi la organizza in ogni vista in cui compare, feed ICS ed export
+	 * inclusi. In pratica una data esterna non è mai `ridotta` — il `CHECK`
+	 * sullo schema le ammette solo `confirmed` e `cancelled` — ma la regola è
+	 * scritta dove non dipende da quell'invariante.
+	 */
+	segnalataDa: OrganizzazioneEvento | null;
 };
 
 /** Vista ridotta: è tutto ciò che un `hold` altrui lascia vedere. */
@@ -236,7 +256,8 @@ export function serializeEvent(
 		giorno: giornoCivile(event.startsAt),
 		city: event.city,
 		province: event.province,
-		organizzazione: event.organization
+		organizzazione: event.organization,
+		segnalataDa: event.segnalataDa
 	};
 
 	// Bozza altrui: non esiste. Nemmeno come riga vuota nel calendario.

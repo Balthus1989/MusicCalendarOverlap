@@ -1284,6 +1284,64 @@ Sulla **cancellazione raccontata per esteso**, invece di rimandare all'art. 17. 
 
 ---
 
+## ADR-0044 — Le date di chi non è iscritto entrano per segnalazione, e appartengono a un'organizzazione senza membri
+
+**Data:** 2026-08-27 · **Stato:** Accettata
+
+**Contesto.** Il calendario vede solo ciò che caricano gli iscritti, ma le sovrapposizioni non si fermano al perimetro di [ADR-0004](#adr-0004--registrazione-solo-su-invito): la serata che riempie il locale a quindici chilometri è spesso di qualcuno che qui dentro non c'è. Un organizzatore che la conosce non ha modo di dirlo, e l'informazione che servirebbe a tutti resta in una chat privata.
+
+L'idea iniziale aveva due percorsi: uno pubblico, aperto a chiunque passasse dalla home, e uno interno. Il percorso pubblico si è rivelato molto più caro di quanto sembrasse, e per tre ragioni indipendenti:
+
+1. **Non esiste una superficie pubblica.** `+page.server.ts` manda a `/login` chi non ha sessione, e `ARCHITECTURE.md` §14 mette la vista pubblica fuori dalla v1 ([ADR-0014](#adr-0014--fuori-scope-dichiarato-per-la-v1)). Sarebbe stata la prima rotta pubblica **in scrittura**.
+2. **Avrebbe riaperto il canale.** «Mi arriva una mail» significa un sink email tolto in Fase 6 ([ADR-0039](#adr-0039--il-canale-delle-notifiche-è-telegram-non-lemail)), più una riga fornitore nell'informativa.
+3. **Avrebbe costretto a leggere l'IP.** `rate_limits` ha per chiave `risorsa:identità:finestra`, e le uniche identità esistenti sono il profilo e il token del feed. Un form anonimo non ha né l'una né l'altro. [ADR-0043](#adr-0043--il-titolare-del-trattamento-è-una-persona-fisica-e-linformativa-è-una-pagina-dellapplicazione) ha verificato e dichiarato che `getClientAddress()` non compare da nessuna parte, e `/privacy` lo scrive in tre punti.
+
+**Decisione.** La segnalazione è **solo interna**, e si compone di cinque parti.
+
+1. **Solo un iscritto segnala.** La rotta sta dentro `(app)`, l'identità per il rate limit è il profilo, e l'informativa non cambia di una riga.
+2. **La segnalazione entra in calendario subito.** Non c'è approvazione del manutentore. Una notifica gli arriva sul canale configurato, **per conoscenza**.
+3. **L'organizzatore esterno è una riga `organizations` con `esterna = true` e nessuna membership.** Non una terza anagrafica accanto ad artisti e venue.
+4. **Una data esterna può essere solo `confirmed` o `cancelled`.** Mai `draft`, mai `hold`.
+5. **Correggere una data esterna è curatela, non governo**: la può toccare chi ha `canModerateCatalog`, cioè i moderatori e i platform admin.
+
+**Motivazioni.**
+
+Sul **non far passare la segnalazione dal manutentore**, che è la scelta meno ovvia delle cinque. Il collo di bottiglia è precisamente ciò che [ADR-0016](#adr-0016--il-ruolo-moderator-esiste-dalla-v1-ed-è-trasversale-alle-organizzazioni) ha creato il ruolo `moderator` per evitare: «il costo non è un ruolo in più, è che ogni refuso diventa una richiesta via Telegram al manutentore». Una data segnalata di lunedì e pubblicata di giovedì, perché prima il manutentore non ha aperto Telegram, ha perso la finestra in cui qualcuno poteva ancora spostare la propria. Il valore di questa feature **è** la tempestività: un'approvazione la spende tutta. Il controllo giusto non è preventivo ed è molto più economico — vedi l'attribuzione, più sotto.
+
+Su **`organizations` invece di una terza anagrafica**. La tentazione era modellare l'organizzatore esterno come artisti e venue, che [ADR-0006](#adr-0006--artisti-e-venue-come-entità-globali-condivise) rende entità globali di nessuno. Ma `events.organization_id` è `NOT NULL` ed è, per commento nello schema, «l'asse su cui ruota tutta la matrice di visibilità»: una terza anagrafica avrebbe richiesto di renderlo nullable e di aggiungere un `external_organizer_id` accanto, cioè di mettere due colonne dove il modello ne ha una sola apposta. Una riga `organizations` senza membri invece **non tocca l'asse**: `ownsOrganization()` è falsa per tutti, e la data si serializza da sé come una `confirmed` altrui.
+
+C'è un secondo guadagno, che vale da solo: **il percorso di promozione non sposta niente.** Il giorno in cui quell'organizzatore entra davvero, la riga che lo rappresenta esiste già: gli si attacca una membership e si spegne `esterna`, e tutte le date segnalate su di lui diventano sue, correggibili da lui. Nessuna foreign key si muove. Con una tabella separata sarebbe stata una migrazione di `events`.
+
+Da dire per intero: **l'operazione di promozione non è costruita in questa fase.** Le organizzazioni esterne restano fuori dall'elenco di `/admin/invites`, perché un invito dentro una scheda produrrebbe uno stato incoerente — membri veri su un'organizzazione che il resto del sistema tratta come di nessuno. Finché non serve davvero, la promozione si fa da `db:studio`, ed è la stessa scelta che ADR-0016 ha fatto per lo strumento di merge: il modello c'è, l'operazione arriva quando qualcuno la chiede.
+
+Sui **due stati soli**. Una data esterna è per costruzione un'informazione già pubblica: chi la segnala l'ha letta da qualche parte. `draft` e `hold` esistono per proteggere ciò che il proprietario non ha ancora annunciato ([ADR-0005](#adr-0005--stato-hold-con-visibilità-ridotta)), e qui non c'è un proprietario che possa annunciare niente. Ammetterli avrebbe significato dare a un terzo il potere di mettere «in opzione» la data di un altro, che non vuol dire nulla. L'invariante è nello schema come `CHECK`, non solo nel form.
+
+Sulla **curatela invece del governo**. `canEditEvent` passa da `membroEffettivo()`, quindi senza questa decisione una data esterna non sarebbe modificabile da nessuno — platform admin compreso — e ogni refuso sarebbe finito in `db:studio`. Il permesso giusto esisteva già: una data che non appartiene a nessuno è un bene comune esattamente come una scheda artista, e ADR-0016 ha creato `moderator` per «le schede che non appartengono a nessuna organizzazione». Non intacca [ADR-0019](#adr-0019--il-platform-admin-non-vede-le-date-altrui): il potere vale solo dove `esterna` è vera, cioè dove non c'è nessuno a cui la data possa essere sottratta.
+
+Sull'**attribuzione come unico controllo**. `segnalata_da_organization_id` non è metadato: esce dal serializzatore in entrambe le viste, e finisce nel feed ICS e nell'export. Due ragioni. La prima è di onestà — chi si abbona a un calendario deve poter distinguere una data caricata da chi la organizza da una riferita da un terzo, e mescolarle in silenzio degrada la fiducia nell'intero cartellone, che è la posta di [ADR-0023](#adr-0023--la-fiducia-nello-stato-hold-è-assunta-non-verificata). La seconda è che l'abuso esiste: segnalare una data finta su uno slot è un modo di scoraggiare un concorrente. In una cerchia di venti realtà che si conoscono, **il nome di chi ha segnalato costa più di qualunque coda di moderazione**, e non richiede che qualcuno la smaltisca.
+
+Sull'**avviso a una persona invece che a un'organizzazione**. `destinatari.ts` enuncia la regola opposta — «si avvisa un'organizzazione, non una persona» — con una sola eccezione, l'invito. Questa è la seconda, e per una ragione simmetrica: il fatto che l'avviso racconta («qualcuno ha segnalato una data esterna») non è un fatto su una data di un'organizzazione, è un fatto sulla piattaforma. Non c'è un'organizzazione a cui appartenga, perché quella nominata nella segnalazione non ha membri. Le organizzazioni che la segnalazione riguarda sono già servite da ciò che esiste: se la data esterna produce un conflitto, `conflitto_nuovo` parte da sé.
+
+**Alternative scartate.**
+
+- _Il percorso pubblico, come previsto all'inizio._ Rinviato, non rifiutato: torna insieme alla vista pubblica di ADR-0014, quando la questione IP si affronta una volta per tutte e non per un form solo.
+- _La segnalazione appartiene all'organizzazione che segnala._ Un solo campo in meno, e una bugia in calendario: direbbe che il circolo X organizza una serata che non organizza. Le sue date, il suo `/audit` e i suoi conflitti si mescolerebbero con quelli di un altro.
+- _Una coda di segnalazioni da approvare._ È il collo di bottiglia di cui sopra, e in più è una tabella di stato in più da tenere allineata per ottenere ciò che l'attribuzione ottiene senza stato.
+- _`organization_id` nullable, con l'organizzatore esterno in una tabella a parte._ Concettualmente più pulita — l'organizzatore esterno somiglia davvero a un venue — ma paga rendendo nullable la colonna su cui ruota la matrice, e ogni consumatore diventerebbe un `left join` con un nome mancante da gestire. Si valuterà se e quando arriveranno organizzatori esterni **senza** date, che oggi non hanno motivo di esistere.
+- _Riconoscere `esterna` dall'assenza di membership, senza colonna._ Un invariante derivato che diventa falso ogni volta che l'ultimo membro di un'organizzazione vera esce.
+
+**Conseguenze.**
+
+- `organizations` ha `esterna`, e ogni query che elenca organizzazioni per **sceglierne una** deve escluderla: onboarding, inviti, selettore del form. Un'organizzazione esterna non è un posto in cui si entra.
+- Il `CHECK` sullo schema è il posto dove l'invariante dei due stati non si aggira per distrazione, come `filtriFeed` lo è per [ADR-0029](#adr-0029--il-feed-ics-non-contiene-le-bozze) e `bersaglioParse` per [ADR-0031](#adr-0031--limport-compila-il-form-e-le-tre-cose-che-non-decide).
+- Il motore le tratta come qualunque `confirmed` ([ADR-0025](#adr-0025--il-motore-ignora-le-bozze-le-date-annullate-e-quelle-senza-coordinate)), quindi R1, R3 e R4 funzionano subito. R2 quasi mai: la lineup di una segnalazione resta testo libero, perché ADR-0031 vieta di collegarla all'anagrafica per conto di chi non l'ha scritta.
+- Gli avvisi di conflitto partono **solo verso l'altro lato**: da questo non c'è nessun destinatario, e per [ADR-0035](#adr-0035--una-notifica-nasce-già-redatta-per-un-destinatario-solo) nessun destinatario significa nessuna riga. È già il comportamento corretto e non richiede codice.
+- **Resta un buco noto**: il registro delle modifiche di un'organizzazione esterna non è leggibile da nessuno, perché `/audit` mostra solo la propria. Le correzioni dei moderatori su una data segnalata lasciano una traccia che nessuno può aprire. Non è bloccante — la traccia c'è, e `db:studio` la legge — ma è il primo posto da guardare se un giorno una data esterna cambia e nessuno sa perché.
+
+**Da rivedere se.** Le segnalazioni diventano più di una piccola minoranza delle date in calendario. Vorrebbe dire che il perimetro di ADR-0004 è più stretto del gruppo reale di chi si sovrappone, e la risposta giusta a quel punto non è segnalare meglio: è invitare quelle organizzazioni.
+
+---
+
 ## Template per nuove voci
 
 ```markdown

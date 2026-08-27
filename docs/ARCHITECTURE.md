@@ -90,6 +90,7 @@ Tutti gli ID sono `uuid` con default `gen_random_uuid()`. Tutti i timestamp sono
 | `website`, `instagram_url`, `facebook_url`, `email_contact` | text                 |                                                                                 |
 | `default_conflict_radius_km`                                | integer DEFAULT 60   | preferenza dell'organizzazione                                                  |
 | `notes`                                                     | text                 |                                                                                 |
+| `esterna`                                                   | boolean DEFAULT false | organizzatore **non iscritto**, nato da una segnalazione ([ADR-0044](DECISIONS.md)): nessuna membership, e resta fuori da ogni elenco in cui si sceglie un'organizzazione |
 | `created_at`, `updated_at`                                  | timestamptz          |                                                                                 |
 
 **`memberships`**
@@ -209,10 +210,13 @@ I venue sono **condivisi** tra le organizzazioni: sono un bene comune del gruppo
 | `facebook_event_url`, `instagram_post_url`, `external_url` | text                         |                                                               |
 | `announce_at`                                              | timestamptz, nullable        | data prevista di annuncio pubblico (solo per `hold`)          |
 | `internal_notes`                                           | text                         | **mai** visibile ad altre organizzazioni                      |
+| `segnalata_da_organization_id`                             | uuid FK, nullable            | chi ha **segnalato** la data di un organizzatore non iscritto ([ADR-0044](DECISIONS.md)). Non è metadato: esce dal serializzatore, dal feed ICS e dall'export |
 | `created_by`, `updated_by`                                 | uuid FK → profiles           |                                                               |
 | `created_at`, `updated_at`                                 | timestamptz                  |                                                               |
 
-Indici: `(starts_at)`, `(status, starts_at)`, `(organization_id, starts_at)`, `(lat, lon)`.
+Indici: `(starts_at)`, `(status, starts_at)`, `(organization_id, starts_at)`, `(lat, lon)`, `(venue_id)`.
+
+Vincolo `events_segnalate_solo_pubbliche`: una data con `segnalata_da_organization_id` valorizzato può essere solo `confirmed` o `cancelled`. `draft` e `hold` proteggono un annuncio che il proprietario non ha ancora fatto, e una data esterna non ha un proprietario che possa farlo ([ADR-0044](DECISIONS.md)).
 
 **`event_genres`** — `event_id`, `genre_id`, `is_primary` boolean. PK composita. Il genere della serata è indipendente da quello delle singole band.
 
@@ -306,12 +310,15 @@ Il punto più delicato del prodotto: **nessun organizzatore carica una lineup no
 | Organizzazione + contatto | ✗       | ✓                  | ✓                       | ✓                       | ✓                        |
 | `internal_notes`          | ✗       | ✗                  | ✗                       | ✗                       | ✓                        |
 | `announce_at`             | ✗       | ✗                  | —                       | —                       | ✓                        |
+| Chi ha segnalato          | ✓       | ✓                  | ✓                       | ✓                       | ✓                        |
 
 Un evento in `hold` visto da un'altra organizzazione si presenta come: _"12 ottobre — Perugia (PG) — Metal — Associazione X — [contatta]"_. Abbastanza per far scattare la telefonata, non abbastanza per bruciare un annuncio.
 
 Gli eventi `cancelled` restano visibili: liberano uno slot ed è un'informazione utile.
 
 > **Correzione (2026-08-20, implementando `serializeEvent`).** La stesura originale segnava la lineup come pienamente visibile nella colonna `cancelled`. Sarebbe stato un varco: una data passata da `hold` a `cancelled` avrebbe rivelato in blocco la lineup che `hold` proteggeva. Fuori dall'organizzazione proprietaria si vedono solo le voci `is_announced`, in **ogni** stato. Vedi [ADR-0020](DECISIONS.md).
+
+> **Aggiunta (2026-08-27, [ADR-0044](DECISIONS.md)).** L'ultima riga è l'unica della matrice con una spunta in **tutte** le colonne, e non è una svista: la provenienza di una data segnalata non si redige mai, perché distinguere una data caricata da chi la organizza da una riferita da un terzo è ciò che tiene onesto il resto del cartellone. La riga è vuota per tutte le date normali. Una data segnalata, per il vincolo `events_segnalate_solo_pubbliche`, non può comunque trovarsi nelle colonne `draft` e `hold`.
 
 ### Implementazione
 
@@ -445,6 +452,7 @@ Precisazioni emerse implementandola (2026-08-21):
 /(app)/                       redirect a /calendar
 /(app)/calendar               FullCalendar, filtri (genere, raggio, org, stato)
 /(app)/events/new
+/(app)/events/segnala         data di un organizzatore non iscritto (ADR-0044)
 /(app)/events/[id]
 /(app)/events/[id]/edit
 /(app)/conflicts              dashboard conflitti aperti
@@ -562,6 +570,7 @@ Accetta anche l'incolla di un file `.ics` o di un CSV: parsing deterministico, n
 | Invito ricevuto                                  | email                    | invitato                                                                                         |
 | Digest settimanale (lunedì mattina)              | email                    | tutti gli iscritti: nuove date della settimana, conflitti aperti, `hold` in scadenza di annuncio |
 | `hold` con `announce_at` passata e ancora `hold` | email di sollecito       | organizzazione proprietaria                                                                      |
+| Segnalata la data di un organizzatore non iscritto | in-app + consegna esterna | i platform admin, **per conoscenza**: quando l'avviso parte la data è già in calendario e visibile a tutti ([ADR-0044](DECISIONS.md)) |
 
 Le email di conflitto rispettano la matrice di visibilità: mai includere dettagli di un evento in `hold` altrui.
 
@@ -576,6 +585,8 @@ I cron sono GitHub Actions che chiamano gli endpoint `/api/cron/*` con un header
 > - Il **digest non parte se non c'è niente da dire.** Un'email settimanale che arriva anche a settimana vuota insegna a non aprirla, e la settimana con dentro un conflitto grave finisce nello stesso scorrimento di pollice delle altre.
 > - L'**invito è l'unica notifica senza un profilo dietro**: arriva a un indirizzo di chi nel calendario non esiste ancora, non ha una riga in `notifications` né preferenze da consultare, e va diritto al sink email. Parte solo se l'invito ha un `email_hint`; senza, il link si passa a voce ed è un uso legittimo.
 > - L'in-app non è un sink e non è una dimenticanza — non esce da nessuna parte, è la riga stessa.
+
+> **Aggiunta (2026-08-27, [ADR-0044](DECISIONS.md)).** La segnalazione di una data esterna è la **seconda** eccezione alla regola «si avvisa un'organizzazione, non una persona», dopo l'invito. Va ai platform admin come persone, perché il fatto che racconta riguarda la piattaforma e non un cartellone: l'organizzazione nominata non ha membri. Le organizzazioni che quella data tocca non ricevono niente di nuovo — se ne nasce un conflitto, `conflitto_nuovo` parte da sé. Non ha un interruttore in `notification_prefs`: una preferenza in più che quasi tutti gli iscritti porterebbero senza usarla mai.
 
 > **Correzione (2026-08-25). La tabella qui sopra dice "email" e non è più vero: il canale è Telegram** ([ADR-0039](DECISIONS.md)).
 >

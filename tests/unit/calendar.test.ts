@@ -63,6 +63,7 @@ function evento(over: Partial<EventWithRelations> = {}): EventWithRelations {
 		// Il feed ICS ne ricava il `SEQUENCE` (ADR-0028): sta sulla riga grezza,
 		// non fra i campi che `serializeEvent` lascia uscire.
 		updatedAt: daLocaleAIstante('2026-09-01T10:00'),
+		segnalataDa: null,
 		organization: {
 			id: ORG_ALTRA,
 			name: 'Associazione X',
@@ -72,7 +73,8 @@ function evento(over: Partial<EventWithRelations> = {}): EventWithRelations {
 			emailContact: 'info@associazione-x.example',
 			website: null,
 			instagramUrl: null,
-			facebookUrl: null
+			facebookUrl: null,
+			esterna: false
 		},
 		venue: {
 			id: 'v1',

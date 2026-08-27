@@ -32,7 +32,8 @@ const organizzazione = {
 	emailContact: 'info@associazione-x.example',
 	website: 'https://associazione-x.example',
 	instagramUrl: null,
-	facebookUrl: null
+	facebookUrl: null,
+	esterna: false
 };
 
 const venue = {
@@ -90,6 +91,7 @@ function evento(over: Partial<EventWithRelations> = {}): EventWithRelations {
 		announceAt: daLocaleAIstante('2026-09-01T09:00'),
 		internalNotes: 'Cachet 800 €, pagamento in contanti.',
 		updatedAt: daLocaleAIstante('2026-09-01T10:00'),
+		segnalataDa: null,
 		organization: organizzazione,
 		venue,
 		genres: [metal, deathMetal],

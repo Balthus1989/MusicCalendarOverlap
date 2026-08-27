@@ -135,11 +135,63 @@ export function canCreateEvent(viewer: Viewer, organizationId: string): boolean 
 }
 
 /**
+ * Segnalare la data di un organizzatore **non iscritto** (ADR-0044).
+ *
+ * Basta appartenere a una qualunque organizzazione: chi è dentro il calendario
+ * può dire ciò che sa del cartellone attorno. Non serve un ruolo, perché la
+ * segnalazione non tocca le date di nessuno — ne aggiunge una che non è di
+ * nessuno.
+ */
+export function canReportExternalEvent(viewer: Viewer): boolean {
+	return Object.keys(viewer.roles).length > 0;
+}
+
+/**
+ * La data appartiene a un organizzatore non iscritto: non è di nessuno, e
+ * quindi si **cura** invece di governarla (ADR-0044).
+ *
+ * È lo stesso ragionamento di ADR-0016 sulle schede di artisti e venue. Senza
+ * questa eccezione una data segnalata non sarebbe modificabile da nessuno —
+ * `membroEffettivo` è `null` per tutti su un'organizzazione senza membri — e
+ * ogni refuso finirebbe in `db:studio`.
+ *
+ * Non intacca ADR-0019: vale solo dove `esterna` è vera, cioè dove non c'è
+ * nessuno a cui la data possa essere sottratta.
+ */
+export type EventoDaAutorizzare = {
+	organizationId: string;
+	/**
+	 * `organizations.esterna` dell'organizzazione proprietaria. **Obbligatorio
+	 * di proposito**: se fosse opzionale, chi carica un evento senza la
+	 * colonna otterrebbe `false` e una data segnalata diventerebbe
+	 * immodificabile da chiunque, senza che niente lo segnali. Così invece è
+	 * il compilatore a chiedere il campo a ogni punto di chiamata.
+	 */
+	organizzazioneEsterna: boolean;
+};
+
+/**
+ * Da una riga di evento letta con la sua organizzazione alla forma che i
+ * controlli si aspettano. Esiste per non ripetere lo stesso appiattimento in
+ * ogni rotta, e perché il campo che conta si chiami sempre allo stesso modo.
+ */
+export function autorizzabile(e: {
+	organizationId: string;
+	organization: { esterna: boolean };
+}): EventoDaAutorizzare {
+	return { organizationId: e.organizationId, organizzazioneEsterna: e.organization.esterna };
+}
+
+/**
  * Modificare una data, cambiarne lo stato, toccarne la lineup: chiunque sia
  * dentro l'organizzazione proprietaria. Chi inserisce le date, in un circolo,
  * spesso non è chi lo governa.
+ *
+ * Se l'organizzazione proprietaria è esterna non c'è nessun "dentro": decide
+ * la curatela.
  */
-export function canEditEvent(viewer: Viewer, event: { organizationId: string }): boolean {
+export function canEditEvent(viewer: Viewer, event: EventoDaAutorizzare): boolean {
+	if (event.organizzazioneEsterna) return canModerateCatalog(viewer);
 	return membroEffettivo(viewer, event.organizationId) !== null;
 }
 
@@ -149,8 +201,13 @@ export function canEditEvent(viewer: Viewer, event: { organizationId: string }):
  * Quasi sempre la cosa giusta è annullarla, non cancellarla: l'annullamento
  * lascia agli altri l'informazione che lo slot si è liberato. La cancellazione
  * serve solo per le date inserite per errore.
+ *
+ * Su una data segnalata la cancellazione è il rimedio ordinario e non
+ * l'eccezione — una segnalazione sbagliata non ha uno slot da liberare, non è
+ * mai esistita — quindi la può fare chi la può correggere (ADR-0044).
  */
-export function canDeleteEvent(viewer: Viewer, event: { organizationId: string }): boolean {
+export function canDeleteEvent(viewer: Viewer, event: EventoDaAutorizzare): boolean {
+	if (event.organizzazioneEsterna) return canModerateCatalog(viewer);
 	const ruolo = membroEffettivo(viewer, event.organizationId);
 	return ruolo === 'admin' || ruolo === 'owner';
 }

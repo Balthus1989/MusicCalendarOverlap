@@ -14,7 +14,8 @@ export const ETICHETTE_NOTIFICA: Record<NotificationKind, string> = {
 	conflitto_risolto: 'Conflitto risolto',
 	invito: 'Invito',
 	digest_settimanale: 'Riepilogo',
-	sollecito_annuncio: 'Promemoria'
+	sollecito_annuncio: 'Promemoria',
+	segnalazione_esterna: 'Segnalazione'
 };
 
 /**

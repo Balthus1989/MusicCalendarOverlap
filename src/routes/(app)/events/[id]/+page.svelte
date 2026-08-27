@@ -131,6 +131,16 @@
 			{#if e.proprio}
 				<span class="text-muted-foreground text-xs">La tua organizzazione</span>
 			{/if}
+			{#if e.segnalataDa}
+				<!--
+					La provenienza sta accanto allo stato, non in fondo alla pagina:
+					una data riferita da un terzo non è verificata da nessuno, e chi
+					la legge deve saperlo prima di decidere qualcosa (ADR-0044).
+				-->
+				<span class="border-border rounded border border-dashed px-2 py-0.5 text-xs">
+					Segnalata
+				</span>
+			{/if}
 		</div>
 
 		<h1 class="text-xl font-semibold tracking-tight">
@@ -380,6 +390,13 @@
 		<section class="border-border rounded-lg border p-4">
 			<h2 class="mb-2 text-sm font-medium">Organizza</h2>
 			<p class="text-sm">{e.organizzazione.name}</p>
+			{#if e.organizzazione.esterna}
+				<p class="text-muted-foreground mt-1 text-xs">
+					Non è iscritto al calendario: questa data l’ha riferita
+					{e.segnalataDa?.name ?? 'un altro iscritto'}, e non è stata confermata da chi la
+					organizza.
+				</p>
+			{/if}
 			{#if e.organizzazione.city}
 				<p class="text-muted-foreground text-sm">
 					{e.organizzazione.city}{e.organizzazione.province

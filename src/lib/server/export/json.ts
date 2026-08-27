@@ -37,8 +37,14 @@ export function aEventoEsportato(e: EventoSerializzato, baseUrl: string) {
 			nome: e.organizzazione.name,
 			slug: e.organizzazione.slug,
 			email: e.organizzazione.emailContact,
-			sito: e.organizzazione.website
-		}
+			sito: e.organizzazione.website,
+			/** Organizzatore non iscritto: la data è riferita, non caricata da lui. */
+			esterna: e.organizzazione.esterna
+		},
+		// `null` per tutte le date normali. Esce anche da qui perché un export
+		// che non distingue una data verificata da una riferita produce
+		// un'analisi che crede di guardare la stessa cosa (ADR-0044).
+		segnalataDa: e.segnalataDa?.name ?? null
 	};
 
 	// Il letterale e non `e.visibilita`: così `EventoEsportato` è un'unione

@@ -68,7 +68,8 @@ export const CONSEGNA_PREVISTA: Record<NotificationKind, boolean> = {
 	conflitto_risolto: false,
 	invito: true,
 	digest_settimanale: true,
-	sollecito_annuncio: true
+	sollecito_annuncio: true,
+	segnalazione_esterna: true
 };
 
 /** Gli interruttori di `notification_prefs`, uno per famiglia di avvisi. */
@@ -96,7 +97,12 @@ const INTERRUTTORE: Record<NotificationKind, keyof Preferenze | null> = {
 	conflitto_risolto: null,
 	invito: null,
 	digest_settimanale: 'avvisaDigest',
-	sollecito_annuncio: 'avvisaSolleciti'
+	sollecito_annuncio: 'avvisaSolleciti',
+	// Non disattivabile, e senza interruttore proprio: va ai soli platform
+	// admin (ADR-0044), che sono una manciata di persone e possono staccare il
+	// canale del tutto. Una preferenza in più in `notification_prefs` sarebbe
+	// una colonna che quasi tutti gli iscritti porterebbero senza usarla mai.
+	segnalazione_esterna: null
 };
 
 /** Se questo avviso, con queste preferenze, va consegnato fuori dall'applicazione. */

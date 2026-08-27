@@ -267,7 +267,16 @@
 		Due porte per la stessa stanza, a mezzo metro di distanza, si scambiano
 		per due stanze.
 	-->
-	<Button href={resolve('/events/new')} class="hidden md:inline-flex">Nuova data</Button>
+	<div class="hidden gap-2 md:flex">
+		<!--
+			La segnalazione sta accanto e non dentro "Nuova data": sono due gesti
+			diversi — una è la propria data, l'altra è quella di un estraneo — e
+			un interruttore dentro il form lungo li farebbe confondere proprio a
+			chi ha fretta (ADR-0044).
+		-->
+		<Button href={resolve('/events/segnala')} variant="outline">Segnala una data</Button>
+		<Button href={resolve('/events/new')}>Nuova data</Button>
+	</div>
 </header>
 
 <details bind:open={filtriAperti} class="border-border mb-4 rounded-lg border sm:mb-6">

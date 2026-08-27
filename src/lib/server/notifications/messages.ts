@@ -171,6 +171,50 @@ export function avvisoSollecito(evento: EventoCompleto, destinatario: Destinatar
 }
 
 /* ------------------------------------------------------------------ *
+ * Segnalazione di una data esterna
+ * ------------------------------------------------------------------ */
+
+/**
+ * Una data di un organizzatore non iscritto è entrata in calendario (ADR-0044).
+ *
+ * **È un avviso per conoscenza, e il testo lo dice.** Quando arriva, la data è
+ * già visibile a tutti: non c'è niente da approvare, e scriverlo in modo
+ * ambiguo trasformerebbe in un adempimento quotidiano ciò che ADR-0044 ha
+ * deciso di non rendere tale.
+ *
+ * L'evento entra **già serializzato**, come ovunque in questo file. Qui la
+ * redazione non toglie mai niente — una data esterna è `confirmed` o
+ * `cancelled` e non appartiene a nessuno, quindi è completa per chiunque — ma
+ * il tipo `EventoCompleto` è ciò che garantisce che sia passata di lì.
+ */
+export function avvisoSegnalazioneEsterna(
+	evento: EventoCompleto,
+	destinatario: Destinatario
+): Avviso {
+	const chiSegnala = evento.segnalataDa?.name ?? 'un iscritto';
+
+	const testo = [
+		`${evento.title} — ${giornoEsteso(evento.giorno)}, ${citta(evento)}.`,
+		'',
+		`Organizza ${evento.organizzazione.name}, che nel calendario non è iscritto.`,
+		`La segnalazione arriva da ${chiSegnala}.`,
+		'',
+		'La data è già in calendario e visibile a tutti: non c’è niente da approvare. Se è sbagliata, si corregge o si cancella da qui.'
+	].join('\n');
+
+	return {
+		kind: 'segnalazione_esterna',
+		destinatario,
+		titolo: 'Segnalata una data di un organizzatore esterno',
+		testo,
+		url: `/events/${evento.id}`,
+		// Una per data. Nasce da un fatto puntuale e non da una scansione, ma
+		// la chiave rende innocuo il doppio invio del form.
+		dedupeKey: `segnalazione:${evento.id}`
+	};
+}
+
+/* ------------------------------------------------------------------ *
  * Digest settimanale
  * ------------------------------------------------------------------ */
 

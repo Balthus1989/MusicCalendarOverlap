@@ -32,6 +32,7 @@ export const COLONNE = [
 	'ora_fine',
 	'titolo',
 	'organizzazione',
+	'segnalata_da',
 	'citta',
 	'provincia',
 	'locale',
@@ -74,6 +75,10 @@ function rigaDi(e: EventoSerializzato, baseUrl: string): string[] {
 		// una cella vuota dice il vero, "Senza titolo" no.
 		completo?.title ?? '',
 		e.organizzazione.name,
+		// Vuota per tutte le date normali; il nome di chi l'ha riferita per le
+		// altre (ADR-0044). Una colonna e non un flag: chi ha segnalato conta
+		// quanto il fatto che sia una segnalazione.
+		e.segnalataDa?.name ?? '',
 		e.city,
 		e.province ?? '',
 		completo?.venue?.name ?? '',

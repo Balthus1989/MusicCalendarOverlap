@@ -79,6 +79,7 @@ export function evento(over: Partial<EventWithRelations> = {}): EventWithRelatio
 		announceAt: null,
 		internalNotes: 'Cachet 800 €.',
 		updatedAt: AGGIORNATO,
+		segnalataDa: null,
 		organization: {
 			id: ORG_ALTRA,
 			name: 'Associazione X',
@@ -88,7 +89,8 @@ export function evento(over: Partial<EventWithRelations> = {}): EventWithRelatio
 			emailContact: 'info@associazione-x.example',
 			website: null,
 			instagramUrl: null,
-			facebookUrl: null
+			facebookUrl: null,
+			esterna: false
 		},
 		venue: {
 			id: 'v1',

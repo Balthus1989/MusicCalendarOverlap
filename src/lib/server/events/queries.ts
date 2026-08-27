@@ -34,20 +34,23 @@ import type { EventWithRelations, ViewerContext } from '$lib/server/visibility';
  * definizioni divergerebbero, e la seconda a divergere passerebbe al
  * serializzatore un evento senza generi.
  */
+const COLONNE_ORGANIZZAZIONE = {
+	id: true,
+	name: true,
+	slug: true,
+	city: true,
+	province: true,
+	emailContact: true,
+	website: true,
+	instagramUrl: true,
+	facebookUrl: true,
+	esterna: true
+} as const;
+
 export const CON_RELAZIONI = {
-	organization: {
-		columns: {
-			id: true,
-			name: true,
-			slug: true,
-			city: true,
-			province: true,
-			emailContact: true,
-			website: true,
-			instagramUrl: true,
-			facebookUrl: true
-		}
-	},
+	organization: { columns: COLONNE_ORGANIZZAZIONE },
+	/** Chi ha segnalato la data, se è di un organizzatore non iscritto (ADR-0044). */
+	segnalataDa: { columns: COLONNE_ORGANIZZAZIONE },
 	venue: {
 		columns: {
 			id: true,
@@ -127,6 +130,7 @@ export function mappaEvento(r: RigaGrezza): EventWithRelations {
 		announceAt: r.announceAt,
 		internalNotes: r.internalNotes,
 		updatedAt: r.updatedAt,
+		segnalataDa: r.segnalataDa,
 		organization: r.organization,
 		venue: r.venue,
 		genres: r.eventGenres
@@ -297,6 +301,11 @@ export async function caricaEventoPerModifica(db: Database, id: string) {
 	const riga = await db.query.events.findFirst({
 		where: eq(events.id, id),
 		with: {
+			// Serve solo `esterna`: i permessi di ADR-0044 dipendono da lì, e
+			// `canEditEvent` pretende il campo invece di lasciarlo opzionale
+			// proprio perché una data esterna non diventi silenziosamente
+			// immodificabile da chiunque.
+			organization: { columns: { esterna: true } },
 			eventGenres: { with: { genre: { columns: { slug: true } } } },
 			lineup: { with: { artist: { columns: { id: true, name: true } } } },
 			links: true

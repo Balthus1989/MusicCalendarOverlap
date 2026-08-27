@@ -1,5 +1,5 @@
 import { error, fail, redirect } from '@sveltejs/kit';
-import { canEditEvent } from '$lib/server/auth/permissions';
+import { autorizzabile, canEditEvent } from '$lib/server/auth/permissions';
 import { getDb } from '$lib/server/db/client';
 import { validaEvento, valoriDaEvento, valoriDaForm } from '$lib/server/events/form';
 import { caricaEventoPerModifica, opzioniForm } from '$lib/server/events/queries';
@@ -16,7 +16,7 @@ export const load: PageServerLoad = async ({ locals, params, parent }) => {
 	const evento = await caricaEventoPerModifica(db, params.id);
 	// Un evento che non si può modificare risponde 404 e non 403: dire "esiste
 	// ma non è tuo" su una bozza altrui sarebbe già dire troppo.
-	if (!evento || !canEditEvent(viewer, evento)) error(404, 'Data non trovata.');
+	if (!evento || !canEditEvent(viewer, autorizzabile(evento))) error(404, 'Data non trovata.');
 
 	const { organizations } = await parent();
 	const { locali, generi } = await opzioniForm(db);
@@ -39,7 +39,8 @@ export const actions: Actions = {
 
 		const db = getDb();
 		const precedente = await caricaEventoPerModifica(db, params.id);
-		if (!precedente || !canEditEvent(viewer, precedente)) error(404, 'Data non trovata.');
+		if (!precedente || !canEditEvent(viewer, autorizzabile(precedente)))
+			error(404, 'Data non trovata.');
 
 		const form = await request.formData();
 		const valori = valoriDaForm(form);

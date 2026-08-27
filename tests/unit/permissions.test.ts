@@ -10,6 +10,7 @@ import {
 	canManageMembers,
 	canMergeCatalogEntries,
 	canModerateCatalog,
+	canReportExternalEvent,
 	canVerifyCatalogEntry,
 	hasOrgRole,
 	isMemberOf,
@@ -133,8 +134,8 @@ describe('inviti', () => {
 });
 
 describe('eventi', () => {
-	const eventoA = { organizationId: ORG_A };
-	const eventoB = { organizationId: ORG_B };
+	const eventoA = { organizationId: ORG_A, organizzazioneEsterna: false };
+	const eventoB = { organizationId: ORG_B, organizzazioneEsterna: false };
 
 	it('qualunque membro inserisce e modifica le date della sua organizzazione', () => {
 		expect(canCreateEvent(member, ORG_A)).toBe(true);
@@ -164,5 +165,47 @@ describe('eventi', () => {
 		expect(canEditEvent(moderator, eventoA)).toBe(true);
 		expect(canEditEvent(moderator, eventoB)).toBe(false);
 		expect(canDeleteEvent(moderator, eventoA)).toBe(false);
+	});
+});
+
+/**
+ * Le date di un organizzatore non iscritto (ADR-0044).
+ *
+ * L'organizzazione proprietaria non ha membri, quindi `membroEffettivo` è
+ * `null` per chiunque: senza l'eccezione della curatela nessuno potrebbe
+ * correggere una segnalazione sbagliata, e il primo test qui sotto è quello
+ * che se ne accorgerebbe.
+ */
+describe('date segnalate, di organizzazioni esterne', () => {
+	const ORG_ESTERNA = 'eeeeeeee-0000-0000-0000-000000000000';
+	const esterno = { organizationId: ORG_ESTERNA, organizzazioneEsterna: true };
+	const interno = { organizationId: ORG_A, organizzazioneEsterna: false };
+
+	it('nessun membro le tocca: non c’è nessun “dentro” a cui appartenere', () => {
+		expect(canEditEvent(member, esterno)).toBe(false);
+		expect(canEditEvent(admin, esterno)).toBe(false);
+		expect(canEditEvent(owner, esterno)).toBe(false);
+	});
+
+	it('le corregge e le cancella chi cura le anagrafiche', () => {
+		expect(canEditEvent(moderator, esterno)).toBe(true);
+		expect(canDeleteEvent(moderator, esterno)).toBe(true);
+		expect(canEditEvent(platformAdmin, esterno)).toBe(true);
+		expect(canDeleteEvent(platformAdmin, esterno)).toBe(true);
+	});
+
+	it('l’eccezione non tracima: sulle date vere il platform admin resta un estraneo', () => {
+		// Il senso di ADR-0019 è tutto qui: il potere di ADR-0044 vale solo
+		// dove non c'è nessuno a cui la data possa essere sottratta.
+		expect(canEditEvent(platformAdmin, interno)).toBe(false);
+		expect(canDeleteEvent(platformAdmin, interno)).toBe(false);
+	});
+
+	it('segnalare richiede di appartenere a un’organizzazione, e nient’altro', () => {
+		expect(canReportExternalEvent(member)).toBe(true);
+		expect(canReportExternalEvent(moderator)).toBe(true);
+		// Un platform admin senza organizzazioni non ha una firma da mettere
+		// accanto alla segnalazione, che è l'unico controllo previsto.
+		expect(canReportExternalEvent(platformAdmin)).toBe(false);
 	});
 });

@@ -106,6 +106,23 @@ export const organizations = pgTable(
 		/** Preferenza dell'organizzazione, in km (ARCHITECTURE.md §6.2 R3). */
 		defaultConflictRadiusKm: integer('default_conflict_radius_km').notNull().default(60),
 		notes: text('notes'),
+		/**
+		 * Organizzatore **non iscritto**, nato da una segnalazione (ADR-0044).
+		 *
+		 * Non ha e non avrà membership finché non entra davvero: `hasOrgRole` e
+		 * `ownsOrganization` sono quindi falsi per chiunque, ed è esattamente
+		 * ciò che rende le sue date visibili a tutti come una `confirmed`
+		 * altrui senza toccare la matrice di §5.
+		 *
+		 * È una colonna e non l'assenza di membership perché un'organizzazione
+		 * vera rimasta senza membri non è diventata esterna: sarebbe un
+		 * invariante che si rompe da solo il giorno in cui qualcuno esce.
+		 *
+		 * Ogni elenco in cui si **sceglie** un'organizzazione — onboarding,
+		 * inviti, selettore del form — deve escluderla: non è un posto in cui
+		 * si entra.
+		 */
+		esterna: boolean('esterna').notNull().default(false),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 	},
@@ -379,6 +396,26 @@ export const events = pgTable(
 		announceAt: timestamp('announce_at', { withTimezone: true }),
 		/** **Mai** visibile ad altre organizzazioni, in nessuno stato. */
 		internalNotes: text('internal_notes'),
+		/**
+		 * L'organizzazione che ha **segnalato** questa data (ADR-0044).
+		 *
+		 * Si valorizza quando `organizationId` punta a un'organizzazione
+		 * `esterna`: è la provenienza di una data che riguarda qualcuno che
+		 * nel calendario non c'è. **La provenienza non è il permesso**: chi
+		 * può correggere una data esterna si decide da `organizations.esterna`,
+		 * che non cambia mai, e non da qui, che un `on delete set null`
+		 * potrebbe svuotare.
+		 *
+		 * **Non è metadato.** Esce da `serializeEvent` in tutte e due le viste
+		 * e finisce nel feed ICS e nell'export: chi legge un cartellone deve
+		 * poter distinguere una data caricata da chi la organizza da una
+		 * riferita da un terzo. È anche l'unico controllo contro la
+		 * segnalazione compiacente — costa il proprio nome accanto.
+		 */
+		segnalataDaOrganizationId: uuid('segnalata_da_organization_id').references(
+			() => organizations.id,
+			{ onDelete: 'set null' }
+		),
 		createdBy: uuid('created_by').references(() => profiles.id, { onDelete: 'set null' }),
 		updatedBy: uuid('updated_by').references(() => profiles.id, { onDelete: 'set null' }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -391,7 +428,22 @@ export const events = pgTable(
 		index('events_status_starts_at_idx').on(t.status, t.startsAt),
 		index('events_org_starts_at_idx').on(t.organizationId, t.startsAt),
 		index('events_coords_idx').on(t.lat, t.lon),
-		index('events_venue_idx').on(t.venueId)
+		index('events_venue_idx').on(t.venueId),
+		/**
+		 * Una data segnalata non può essere `draft` né `hold` (ADR-0044).
+		 *
+		 * `draft` e `hold` proteggono ciò che il proprietario non ha ancora
+		 * annunciato, e una data esterna non ha un proprietario che possa
+		 * annunciare: chi la segnala l'ha letta da qualche parte, quindi è
+		 * già pubblica. Sta qui e non solo nel form perché è il punto in cui
+		 * non si aggira per distrazione — la colonna di provenienza è vera
+		 * esattamente quando la data è esterna, e questo `CHECK` è l'unico
+		 * modo di esprimere l'invariante senza guardare `organizations`.
+		 */
+		check(
+			'events_segnalate_solo_pubbliche',
+			sql`${t.segnalataDaOrganizationId} is null or ${t.status} in ('confirmed', 'cancelled')`
+		)
 	]
 ).enableRLS();
 
@@ -727,7 +779,13 @@ export const notificationKind = pgEnum('notification_kind', [
 	'conflitto_risolto',
 	'invito',
 	'digest_settimanale',
-	'sollecito_annuncio'
+	'sollecito_annuncio',
+	/**
+	 * Una data di un organizzatore non iscritto è entrata in calendario
+	 * (ADR-0044). Va al manutentore **per conoscenza**, non per approvazione:
+	 * la data è già visibile a tutti quando l'avviso parte.
+	 */
+	'segnalazione_esterna'
 ]);
 
 /**
@@ -887,10 +945,22 @@ export const artistGenresRelations = relations(artistGenres, ({ one }) => ({
 	genre: one(genres, { fields: [artistGenres.genreId], references: [genres.id] })
 }));
 
+/**
+ * Le due relazioni verso `organizations` — chi organizza e chi ha segnalato
+ * (ADR-0044) — hanno un `relationName` esplicito perché senza non sarebbero
+ * distinguibili: due `one(organizations)` sulla stessa tabella fanno fallire
+ * l'API relazionale con un errore che non nomina il campo.
+ */
 export const eventsRelations = relations(events, ({ one, many }) => ({
 	organization: one(organizations, {
 		fields: [events.organizationId],
-		references: [organizations.id]
+		references: [organizations.id],
+		relationName: 'organizzatrice'
+	}),
+	segnalataDa: one(organizations, {
+		fields: [events.segnalataDaOrganizationId],
+		references: [organizations.id],
+		relationName: 'segnalatrice'
 	}),
 	venue: one(venues, { fields: [events.venueId], references: [venues.id] }),
 	eventGenres: many(eventGenres),

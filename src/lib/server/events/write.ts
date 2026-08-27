@@ -228,11 +228,20 @@ async function riconciliaEAvvisa(
 	await notifica(db, await avvisiConflittiNuovi(db, esito));
 }
 
-/** Crea un evento con lineup, generi e link. Restituisce l'id. */
+/**
+ * Crea un evento con lineup, generi e link. Restituisce l'id.
+ *
+ * `segnalataDaOrganizationId` è la provenienza di una data di un organizzatore
+ * non iscritto (ADR-0044). Passa da qui e non da un secondo punto di scrittura
+ * perché tutto ciò che vale per una data normale — coordinate, riconciliazione,
+ * registro — vale identico per una segnalata: duplicare `creaEvento` avrebbe
+ * significato tenere allineate due copie di quelle tre cose.
+ */
 export async function creaEvento(
 	db: Database,
 	profileId: string,
-	dati: EventInput
+	dati: EventInput,
+	segnalataDaOrganizationId: string | null = null
 ): Promise<string> {
 	const coordinate = await risolviCoordinate(db, dati);
 	const colonne = colonneEvento(dati, coordinate);
@@ -240,7 +249,7 @@ export async function creaEvento(
 	const id = await db.transaction(async (tx) => {
 		const inserito = await tx
 			.insert(events)
-			.values({ ...colonne, createdBy: profileId, updatedBy: profileId })
+			.values({ ...colonne, segnalataDaOrganizationId, createdBy: profileId, updatedBy: profileId })
 			.returning({ id: events.id });
 
 		const eventId = inserito[0].id;

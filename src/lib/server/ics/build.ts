@@ -196,6 +196,13 @@ function descrizioneCompleta(e: EventoCompleto, baseUrl: string): string {
 
 	righe.push('');
 	righe.push(`Organizza: ${e.organizzazione.name}`);
+	// La provenienza segue la data anche fuori dall'applicazione (ADR-0044).
+	// Un feed sottoscritto è il posto in cui una data riferita da un terzo
+	// somiglia di più a una verificata: lì il contesto della pagina non c'è, e
+	// resta solo questa riga a distinguerle.
+	if (e.segnalataDa) {
+		righe.push(`Segnalata da ${e.segnalataDa.name}: non confermata da chi organizza.`);
+	}
 	righe.push(`${baseUrl}/events/${e.id}`);
 
 	return righe.join('\n').trim();

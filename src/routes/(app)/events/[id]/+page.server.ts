@@ -1,7 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { env as publicEnv } from '$env/dynamic/public';
 import { puoLeggereAudit, registroDellEvento } from '$lib/server/audit';
-import { canDeleteEvent, canEditEvent } from '$lib/server/auth/permissions';
+import { autorizzabile, canDeleteEvent, canEditEvent } from '$lib/server/auth/permissions';
 import { conflittiDellEvento } from '$lib/server/conflicts/queries';
 import { getDb } from '$lib/server/db/client';
 import { caricaEvento } from '$lib/server/events/queries';
@@ -31,7 +31,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 	const serializzato = serializeEvent(evento, viewer);
 	if (!serializzato) error(404, 'Data non trovata.');
 
-	const puoModificare = canEditEvent(viewer, evento);
+	const puoModificare = canEditEvent(viewer, autorizzabile(evento));
 	const baseUrl = (publicEnv.PUBLIC_APP_URL ?? url.origin).replace(/\/+$/, '');
 
 	return {
@@ -45,7 +45,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		// JSON-LD solo per le date annunciate: `aMusicEvent` restituisce `null`
 		// per tutto il resto, e il perché sta nell'intestazione di quel file.
 		jsonLd: aMusicEvent(serializzato, baseUrl),
-		puoEliminare: canDeleteEvent(viewer, evento),
+		puoEliminare: canDeleteEvent(viewer, autorizzabile(evento)),
 		transizioni: puoModificare ? transizioniAmmesse(evento.status) : [],
 		// ADR-0022 non mette nessun cancello davanti alla conferma, e in
 		// cambio pretende che l'avviso sia impossibile da non vedere proprio
@@ -70,7 +70,7 @@ export const actions: Actions = {
 
 		const db = getDb();
 		const evento = await caricaEvento(db, params.id);
-		if (!evento || !canEditEvent(viewer, evento)) error(404, 'Data non trovata.');
+		if (!evento || !canEditEvent(viewer, autorizzabile(evento))) error(404, 'Data non trovata.');
 
 		const form = await request.formData();
 		const richiesto = statoEvento.safeParse(form.get('nuovoStato'));
@@ -101,9 +101,9 @@ export const actions: Actions = {
 
 		const db = getDb();
 		const evento = await caricaEvento(db, params.id);
-		if (!evento || !canEditEvent(viewer, evento)) error(404, 'Data non trovata.');
+		if (!evento || !canEditEvent(viewer, autorizzabile(evento))) error(404, 'Data non trovata.');
 
-		if (!canDeleteEvent(viewer, evento)) {
+		if (!canDeleteEvent(viewer, autorizzabile(evento))) {
 			return fail(403, {
 				errore:
 					'Cancellare una data spetta a chi amministra l’organizzazione. Se la serata non si fa, annullala: agli altri serve sapere che lo slot si è liberato.'
