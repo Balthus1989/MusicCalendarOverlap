@@ -1163,13 +1163,15 @@ Il colpevole era `getDb()`, che teneva il pool di `postgres.js` in una variabile
 
 L'alternanza regolare è la firma del meccanismo: la prima richiesta apre la connessione e funziona; la seconda prova a riusarla e viene respinta; `postgres.js` la marca morta e ne apre una nuova; la terza funziona. E così via.
 
-**Decisione.** Una connessione **per richiesta**, aperta da un hook in testa alla catena e chiusa in `finally` quando la richiesta finisce. Il perimetro lo tiene un `AsyncLocalStorage`: `getDb()` non cambia firma e nessuno dei suoi trenta chiamanti sa che è successo qualcosa. Il `max` del pool scende da 10 a 5.
+**Decisione.** Una connessione **per richiesta**, chiusa in `finally` quando la richiesta finisce. Un hook in testa alla catena **delimita** il perimetro senza aprire niente: la connessione nasce alla prima `getDb()`, e una richiesta che il database non lo tocca non ne apre nessuna. Il perimetro lo tiene un `AsyncLocalStorage`: `getDb()` non cambia firma e nessuno dei suoi trenta chiamanti sa che è successo qualcosa. Il `max` del pool scende da 10 a 5.
 
 **Motivazioni.**
 
 Sull'`AsyncLocalStorage` invece di un parametro passato di mano in mano: `getDb()` è chiamata da una trentina di file, e nessuno di loro deve sapere quanto vive una connessione. Passare il database come argomento avrebbe voluto dire toccarli tutti per un dettaglio del runtime, e lasciare a chiunque scriva codice nuovo la possibilità di dimenticarsene. Su Workers `AsyncLocalStorage` c'è, sotto `nodejs_compat`, che il progetto usa già per `postgres.js`.
 
-Sull'hook **in testa** alla sequenza: `authGuard` interroga già il database per costruire il viewer. Mettendo l'apertura più in basso, il primo a chiedere una connessione la troverebbe fuori dal perimetro e se ne aprirebbe una che nessuno chiude.
+Sull'hook **in testa** alla sequenza: `authGuard` interroga già il database per costruire il viewer. Mettendo il perimetro più in basso, il primo a chiedere una connessione lo troverebbe chiuso e se ne aprirebbe una che nessuno chiude.
+
+Sulla **pigrizia**, che non è un'ottimizzazione. La prima stesura apriva la connessione nell'hook, subito, per tutti. Il costo si è visto dove non lo si aspettava: `npm run build` prerenderizza `/offline`, la prerenderizzazione attraversa la catena degli hook, e una pagina che una riga di SQL non la esegue ha cominciato a pretendere `DATABASE_URL`. La CI è diventata rossa sul solo passo `Build` — e ha ragione lei, perché quella variabile non ce l'ha e **non deve averla**: dare a ogni pull request la stringa del database è esattamente ciò che [ADR-0038](#adr-0038--gli-smoke-test-girano-contro-il-database-vero-si-puliscono-da-soli-e-restano-fuori-dalla-ci) evita per gli smoke test. Aprire alla prima `getDb()` invece che all'ingresso rimette il build fuori dalla portata del database.
 
 Sul `max` da 10 a 5: ADR-0026 aveva alzato quel numero perché con `max: 1` `postgres.js` accoda in pipeline le query concorrenti, e Supavisor in transaction mode non lo tollera. **Quella ragione resta valida** — SvelteKit esegue in parallelo la `load` del layout e quella della pagina — ma il numero non deve più coprire tutte le richieste insieme: solo le query concorrenti di una, che sono due o tre. Dieci per richiesta moltiplicherebbero le connessioni verso il pooler senza che nessuno le usi.
 
@@ -1183,7 +1185,7 @@ Sul `max` da 10 a 5: ADR-0026 aveva alzato quel numero perché con `max: 1` `pos
 **Conseguenze.**
 
 - **Una connessione TCP nuova per ogni richiesta che tocca il database.** È il costo vero di questa scelta: una manciata di millisecondi di handshake verso il pooler. A venti organizzazioni non si misura; è la prima cosa da guardare se un giorno la latenza diventasse un tema.
-- Le richieste che il database non lo toccano — un asset, la pagina di login — non pagano niente: il client di `postgres.js` è pigro e non apre nessun socket finché non arriva una query.
+- Le richieste che il database non lo toccano — un asset, la pagina di login, la prerenderizzazione di `/offline` — non pagano niente e **non pretendono nemmeno che `DATABASE_URL` esista**. Il perimetro nasce vuoto; la stringa di connessione viene letta alla prima `getDb()`, non all'ingresso.
 - **Il ramo "fuori da una richiesta" di `getDb()` non deve essere raggiunto dall'applicazione.** Esiste per i test e per gli script, che finiscono e si portano via tutto. Se ci finisse una rotta, vorrebbe dire che qualcosa gira fuori da `conDatabase` — e quella connessione non la chiuderebbe nessuno.
 - Sei fasi di sviluppo su Node non hanno mai potuto vedere questo difetto. Il modo per vederlo senza deployare c'era ed è `wrangler dev`, che gira il runtime vero in locale: è nel runbook.
 

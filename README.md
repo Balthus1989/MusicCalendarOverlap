@@ -33,7 +33,11 @@ sulla prima query della richiesta, sempre in una decina di millisecondi. Il
 pool di connessioni stava in una variabile di modulo — la cosa giusta su Node,
 un guasto su Cloudflare, dove un socket aperto nel contesto di una richiesta
 non è utilizzabile da un'altra. Ora la connessione vive quanto la richiesta
-([ADR-0041](docs/DECISIONS.md)).
+([ADR-0041](docs/DECISIONS.md)), e **nasce solo se qualcuno la chiede**: la
+prima stesura la apriva all'ingresso della catena degli hook, e così facendo
+metteva `npm run build` in mano al database — la prerenderizzazione di
+`/offline` attraversa gli hook e pretendeva `DATABASE_URL`, che la CI non ha e
+non deve avere. Rossa sul solo passo `Build`, e con ragione.
 
 Si riproduce in locale con `wrangler dev`, che gira lo stesso runtime: vedi il
 runbook, sotto [Riprodurre in locale un difetto che si vede solo in
@@ -144,13 +148,27 @@ JSON dei suoi passi. Uno vale più degli altri:
 prima della correzione: ora lavora in produzione, di notte, senza che nessuno
 guardi.
 
-Il **digest settimanale** non ha ancora completato una corsa da GitHub — una
-`startup_failure` senza causa apparente e poi una coda lunga, che è congestione
-della piattaforma e non del progetto. L'endpoint però è verificato chiamandolo
-direttamente, ed è tutto ciò che il workflow fa: risponde
-`{"settimana":"2026-W35","destinatari":1,"registrate":0,"ripetuti":1}`, cioè
-**deduplicato e silenzioso**, che è la risposta giusta per una settimana il cui
-digest è già stato consegnato.
+**Anche il digest settimanale gira da GitHub** (27 agosto 2026). Ci sono volute
+tre corse: una `startup_failure` senza causa apparente, poi una che è rimasta in
+coda diciannove ore — nessuna delle due per colpa del progetto, come si è visto
+il giorno dopo, quando la terza è finita in **undici secondi**:
+
+```json
+{
+	"settimana": "2026-W35",
+	"destinatari": 1,
+	"registrate": 0,
+	"ripetuti": 1,
+	"consegnate": 0,
+	"fallite": 0
+}
+```
+
+`ripetuti: 1` e `consegnate: 0` sono la risposta giusta, non una mancata: il
+digest di quella settimana era già stato consegnato, e la chiave di deduplica
+porta dentro l'etichetta ISO della settimana. È la prova che **rilanciare a mano
+il workflow non manda niente a nessuno**, che è ciò che rende sicuro il pulsante
+«Run workflow» — e non si poteva sapere senza premerlo due volte.
 
 **Non provato, e va detto.**
 
