@@ -77,7 +77,8 @@ export const actions: Actions = {
 		if (!parsed.success) {
 			return fail(400, {
 				error: parsed.error.issues[0]?.message ?? 'Dati non validi.',
-				invitoCreato: null
+				invitoCreato: null,
+				invitoEmail: null
 			});
 		}
 
@@ -100,7 +101,7 @@ export const actions: Actions = {
 			})
 			.returning({ code: invites.code });
 
-		return { invitoCreato: creato[0].code, error: null };
+		return { invitoCreato: creato[0].code, invitoEmail: emailHint, error: null };
 	},
 
 	revoca: async ({ request, locals }) => {

@@ -1109,6 +1109,12 @@ Sull'**invito**: era l'unico avviso senza alternativa in pagina, e non è un cas
 
 > **Verificata (2026-08-25).** Bot creato con @BotFather, chat collegata da `/settings/notifications`, e **primo avviso consegnato davvero**: il digest fermo in coda dal giorno prima. È la prima volta da quando il layer esiste che qualcosa esce dall'applicazione — con l'email non era mai successo, ed è il motivo per cui questa voce esiste.
 
+> **Smentita dagli utenti (2026-08-27).** «Gli inviti via email non partono mai»: primo bug segnalato dopo il rilascio, e non è un bug del codice — è questa decisione che arriva all'utente solo **dopo** che ha premuto il pulsante. Il form dell'invito chiedeva un'«email suggerita» senza dire a che cosa servisse, accanto a «Genera invito»: chi scrive un indirizzo in un campo di un form di invito dà per scontato che l'invito parta. La spiegazione c'era, in tutte e due le pagine, ma nel pannello che compare dopo l'invio.
+>
+> Il campo ora dichiara che cosa fa **prima**: precompila l'indirizzo quando l'invitato aprirà il link, e ricorda a chi era destinato. E il pannello offre un `mailto:` già scritto, con il link dentro. Il canale dell'invito diventa così esplicitamente **la casella di chi invita**, che è l'unico modo di mandarlo per email senza un dominio verificato — e per chi lo riceve è anche il migliore, perché arriva da un indirizzo che conosce invece che da un mittente mai visto.
+>
+> Un'assenza deliberata va detta dove qualcuno potrebbe aspettarsi la presenza. Se una scelta si spiega solo dopo l'azione, per l'utente è un guasto.
+
 ---
 
 ## ADR-0040 — La chat si collega leggendo i messaggi del bot, non con un webhook

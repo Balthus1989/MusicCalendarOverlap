@@ -594,7 +594,7 @@ I cron sono GitHub Actions che chiamano gli endpoint `/api/cron/*` con un header
 >
 > Le righe di §10 restano valide leggendo "email" come "consegna fuori dall'applicazione", con **due eccezioni**:
 >
-> - l'**invito** non ha più nessun canale. Arriva a chi non ha ancora un profilo, quindi non ha una chat collegata, e non c'è modo di dargliene una prima che entri: il suo link si passa a mano, come l'interfaccia già offriva;
+> - l'**invito** non ha più nessun canale del layer. Arriva a chi non ha ancora un profilo, quindi non ha una chat collegata, e non c'è modo di dargliene una prima che entri: il suo link si passa a mano, e il pannello che lo mostra apre un `mailto:` già scritto perché parta dalla casella di chi invita ([ADR-0039](DECISIONS.md));
 > - chi **non ha collegato la chat** non riceve niente fuori dall'applicazione. Non è un errore da riparare, è la condizione predefinita di chiunque, e il sink lo salta senza segnarlo fra i falliti — altrimenti la corsa notturna ritenterebbe per tre giorni una consegna impossibile.
 >
 > Il collegamento della chat non passa da un webhook ma da una lettura di `getUpdates` a richiesta, così funziona anche da `localhost` e si è potuto provare prima del deploy ([ADR-0040](DECISIONS.md)).

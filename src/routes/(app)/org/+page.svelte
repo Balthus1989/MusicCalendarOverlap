@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import Field from '$lib/components/Field.svelte';
+	import InvitoCreato from '$lib/components/InvitoCreato.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { INVITE_ROLES, ROLE_DESCRIPTION, ROLE_LABEL } from '$lib/schemas/invite';
 	import type { ActionData, PageData } from './$types';
@@ -10,8 +10,6 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	const ruoli = INVITE_ROLES.map((r) => ({ value: r, label: ROLE_LABEL[r] }));
-
-	const linkInvito = (code: string) => `${page.url.origin}/invite/${code}`;
 
 	function formattaData(d: Date | string | null) {
 		if (!d) return 'senza scadenza';
@@ -117,20 +115,18 @@
 			<h2 class="mb-3 text-base font-semibold">Inviti</h2>
 
 			{#if form?.invitoCreato}
-				<div class="border-border bg-card mb-4 rounded-lg border p-4">
-					<p class="text-sm font-medium">Invito creato.</p>
-					<p class="text-muted-foreground mt-1 text-sm">
-						Manda questo link a chi vuoi far entrare: non parte nessuna email, perché chi lo riceve
-						non ha ancora un profilo. Vale finché non scade o non finisce gli utilizzi.
-					</p>
-					<code class="mt-2 block overflow-x-auto text-xs">{linkInvito(form.invitoCreato)}</code>
-				</div>
+				<InvitoCreato code={form.invitoCreato} email={form.invitoEmail} />
 			{/if}
 
 			<form method="POST" action="?/creaInvito" use:enhance class="mb-6 grid gap-4 sm:grid-cols-4">
 				<input type="hidden" name="organizationId" value={data.org.id} />
 				<Field label="Ruolo" name="role" options={ruoli} value="member" required />
-				<Field label="Email suggerita" name="emailHint" type="email" />
+				<Field
+					label="Email dell’invitato"
+					name="emailHint"
+					type="email"
+					hint="Non fa partire nessuna email: precompila il campo quando aprirà il link, e ti ricorda a chi l’avevi destinato."
+				/>
 				<Field label="Utilizzi" name="maxUses" type="number" min={1} max={50} value={1} required />
 				<Field
 					label="Validità (giorni)"

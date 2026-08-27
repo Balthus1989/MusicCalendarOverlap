@@ -48,8 +48,13 @@ export const POST: RequestHandler = async ({ url }) => {
 	 *
 	 * Su Cloudflare ogni `fetch` è una subrequest e il bilancio è finito: una
 	 * corsa che ricalcola trecento date e spedisce man mano rischierebbe di
-	 * esaurirlo proprio la notte in cui è successo qualcosa. In fondo, invece,
-	 * è una richiesta sola a Resend per ogni centinaio di messaggi.
+	 * esaurirlo proprio la notte in cui è successo qualcosa. In fondo il conto si
+	 * fa una volta sola, e una corsa che sfora si ferma sulle consegne e non a
+	 * metà del ricalcolo: ciò che non parte resta in coda e si ritenta.
+	 *
+	 * Il testo diceva «una richiesta sola a Resend per ogni centinaio di
+	 * messaggi»: era il `batch` di Resend, e con Telegram non vale più —
+	 * `sendMessage` è una richiesta per destinatario (ADR-0039).
 	 */
 	const avvisi: Avviso[] = [];
 

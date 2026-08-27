@@ -124,7 +124,7 @@ export const actions: Actions = {
 			})
 			.returning({ code: invites.code });
 
-		return { invitoCreato: creato[0].code };
+		return { invitoCreato: creato[0].code, invitoEmail: emailHint };
 	},
 
 	/** Revoca un invito azzerandone gli utilizzi disponibili. */
