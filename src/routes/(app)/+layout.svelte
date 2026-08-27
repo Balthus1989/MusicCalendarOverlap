@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
+	import MobileHeader from '$lib/components/MobileHeader.svelte';
+	import MobileTabBar from '$lib/components/MobileTabBar.svelte';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
@@ -17,19 +19,47 @@
 	 *
 	 * Vale identico per Avvisi, aggiunta in Fase 6: il conteggio delle non
 	 * lette esiste (`contaNonLette`) e sarebbe una query in più per richiesta.
-	 * Chi deve accorgersi di un conflitto grave riceve un'email — è il motivo
-	 * per cui il layer di notifica esiste — e non un numerino in una barra.
+	 * Chi deve accorgersi di un conflitto grave riceve una notifica sul canale
+	 * di consegna — è il motivo per cui il layer di notifica esiste — e non un
+	 * numerino in una barra.
+	 *
+	 * L'elenco è **uno solo** e le due navigazioni ne prendono fette diverse.
+	 * Sopra `md:` si vede intero nella barra in alto, com'è sempre stato; sotto,
+	 * le quattro voci del ciclo quotidiano stanno nella barra in basso e il
+	 * resto dietro il `☰`. Tenerli in due elenchi separati significherebbe
+	 * aggiungere una rotta e scoprire un mese dopo che sul telefono non c'è.
 	 */
 	const links = [
-		{ path: '/calendar', label: 'Calendario' },
-		{ path: '/conflicts', label: 'Conflitti' },
-		{ path: '/notifications', label: 'Avvisi' },
-		{ path: '/artists', label: 'Artisti' },
-		{ path: '/venues', label: 'Locali' },
-		{ path: '/org', label: 'Organizzazione' },
-		{ path: '/audit', label: 'Registro' },
-		{ path: '/settings/feeds', label: 'Feed ed export' }
+		{ path: '/calendar', label: 'Calendario', href: resolve('/calendar') },
+		{ path: '/conflicts', label: 'Conflitti', href: resolve('/conflicts') },
+		{ path: '/notifications', label: 'Avvisi', href: resolve('/notifications') },
+		{ path: '/artists', label: 'Artisti', href: resolve('/artists') },
+		{ path: '/venues', label: 'Locali', href: resolve('/venues') },
+		{ path: '/org', label: 'Organizzazione', href: resolve('/org') },
+		{ path: '/audit', label: 'Registro', href: resolve('/audit') },
+		{ path: '/settings/feeds', label: 'Feed ed export', href: resolve('/settings/feeds') }
 	] as const;
+
+	const linkInviti = {
+		path: '/admin/invites',
+		label: 'Inviti',
+		href: resolve('/admin/invites')
+	} as const;
+
+	const linksDesktop = $derived(data.profile.isPlatformAdmin ? [...links, linkInviti] : links);
+
+	/** Le quattro della barra in basso: tre destinazioni e un'azione. */
+	const principali = [
+		{ ...links[0], icona: 'calendario' as const },
+		{ ...links[1], icona: 'conflitti' as const },
+		{ ...links[2], icona: 'avvisi' as const },
+		{ path: '/events/new', label: 'Nuova', href: resolve('/events/new'), icona: 'nuova' as const }
+	];
+
+	/** Tutto il resto, dietro il `☰`. */
+	const secondarie = $derived(
+		data.profile.isPlatformAdmin ? [...links.slice(3), linkInviti] : [...links.slice(3)]
+	);
 
 	const isActive = (path: string) =>
 		page.url.pathname === path || page.url.pathname.startsWith(`${path}/`);
@@ -48,16 +78,30 @@
 		Salta al contenuto
 	</a>
 
-	<header class="border-border border-b">
+	<MobileHeader
+		voci={secondarie}
+		nomeUtente={data.profile.displayName}
+		puoModerare={data.puoModerare}
+	/>
+
+	<header class="border-border hidden border-b md:block">
 		<div class="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-6 py-3">
 			<a href={resolve('/calendar')} class="text-sm font-semibold tracking-tight">
 				Calendario Eventi
 			</a>
 
 			<nav aria-label="Navigazione principale" class="flex flex-wrap gap-x-4 gap-y-1">
-				{#each links as link (link.path)}
+				{#each linksDesktop as link (link.path)}
+					<!--
+						`resolve()` è tipizzato su una rotta alla volta e non accetta un'unione
+						di path, quindi la risoluzione avviene qui sopra, dove ogni letterale è
+						noto e controllato uno per uno. All'ancora l'indirizzo arriva già
+						risolto, e a dirlo è il tipo: `ResolvedPathname` lo produce solo
+						`resolve()`. La regola resta accesa ovunque tranne su questa ancora.
+					-->
+					<!-- eslint-disable svelte/no-navigation-without-resolve -->
 					<a
-						href={resolve(link.path)}
+						href={link.href}
 						aria-current={isActive(link.path) ? 'page' : undefined}
 						class={isActive(link.path)
 							? 'text-foreground text-sm font-medium'
@@ -65,19 +109,8 @@
 					>
 						{link.label}
 					</a>
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				{/each}
-
-				{#if data.profile.isPlatformAdmin}
-					<a
-						href={resolve('/admin/invites')}
-						aria-current={isActive('/admin/invites') ? 'page' : undefined}
-						class={isActive('/admin/invites')
-							? 'text-foreground text-sm font-medium'
-							: 'text-muted-foreground hover:text-foreground text-sm'}
-					>
-						Inviti
-					</a>
-				{/if}
 			</nav>
 
 			<form method="POST" action={resolve('/auth/logout')} class="ml-auto flex items-center gap-3">
@@ -101,8 +134,18 @@
 		`tabindex="-1"` sul contenuto: senza, il salto sposta lo scorrimento ma
 		non il fuoco, e il tasto successivo riporta chi legge in cima alla
 		navigazione — cioè esattamente dove non voleva tornare.
+
+		Il margine in basso è l'altezza della barra fissa: senza, l'ultima riga
+		di ogni pagina finisce sotto la navigazione, e su una pagina che scorre
+		è l'unica riga che non si riesce a leggere in nessun modo.
 	-->
-	<main id="contenuto" tabindex="-1" class="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
+	<main
+		id="contenuto"
+		tabindex="-1"
+		class="mx-auto w-full max-w-6xl flex-1 px-4 py-6 pb-[calc(3.5rem+env(safe-area-inset-bottom)+1.5rem)] sm:px-6 md:py-8 md:pb-8"
+	>
 		{@render children()}
 	</main>
+
+	<MobileTabBar voci={principali} />
 </div>

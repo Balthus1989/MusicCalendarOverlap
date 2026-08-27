@@ -37,6 +37,45 @@
 
 	const STATI = ['hold', 'confirmed', 'cancelled', 'draft'] as const;
 
+	/**
+	 * Sotto `md:` il calendario cambia forma, e non per stile.
+	 *
+	 * La griglia del mese su un telefono dà colonne da circa 34px: ci sta il
+	 * numero del giorno e nient'altro, e il titolo di una data non ci entra in
+	 * nessun modo. Non è una vista poco leggibile da migliorare col CSS, è una
+	 * vista che su quella larghezza non può funzionare. `listMonth` mostra le
+	 * stesse date per esteso — giorno, titolo, città, organizzazione — e nasce
+	 * già in colonna.
+	 */
+	const STRETTO = '(max-width: 767px)';
+	let compatto = $state(false);
+	let vista = $state<string>('dayGridMonth');
+
+	const VISTE = [
+		{ id: 'dayGridMonth', label: 'Mese' },
+		{ id: 'timeGridWeek', label: 'Settimana' },
+		{ id: 'listMonth', label: 'Elenco' }
+	] as const;
+
+	/**
+	 * Due barre diverse, perché quella da desktop sul telefono collassava.
+	 *
+	 * `left: 'prev,next oggi'` sono **due gruppi** nello stesso angolo: sotto i
+	 * 400px il secondo usciva dal primo e si sovrapponeva al suo bordo, e il
+	 * titolo andava a capo addosso ai pulsanti di vista. Su mobile l'angolo
+	 * sinistro tiene una cosa sola, e la scelta della vista esce del tutto dalla
+	 * barra di FullCalendar per diventare un controllo nostro a tutta larghezza:
+	 * tre pulsanti larghi invece di tre francobolli attaccati.
+	 */
+	const barra = (stretto: boolean) =>
+		stretto
+			? { left: 'prev,next', center: 'title', right: 'oggi' }
+			: {
+					left: 'prev,next oggi',
+					center: 'title',
+					right: 'dayGridMonth,timeGridWeek,listMonth'
+				};
+
 	function parametri(da: Date, a: Date): string {
 		const coppie: [string, string][] = [
 			['da', da.toISOString()],
@@ -71,18 +110,17 @@
 	}
 
 	$effect(() => {
+		const stretto = window.matchMedia(STRETTO).matches;
+		compatto = stretto;
+
 		calendario = new Calendar(contenitore, {
 			plugins: [dayGridPlugin, timeGridPlugin, listPlugin],
 			locale: itLocale,
 			// Il fuso è quello del prodotto, non quello del browser: un
 			// organizzatore in viaggio deve vedere gli stessi orari di sempre.
 			timeZone: 'Europe/Rome',
-			initialView: 'dayGridMonth',
-			headerToolbar: {
-				left: 'prev,next oggi',
-				center: 'title',
-				right: 'dayGridMonth,timeGridWeek,listMonth'
-			},
+			initialView: stretto ? 'listMonth' : 'dayGridMonth',
+			headerToolbar: barra(stretto),
 			customButtons: {
 				oggi: { text: 'Oggi', click: () => calendario?.today() }
 			},
@@ -92,6 +130,11 @@
 			nowIndicator: true,
 			events: (info, successo, fallimento) => {
 				caricaEventi(info).then(successo).catch(fallimento);
+			},
+			// Tiene allineato il selettore di vista qui sotto con quella davvero
+			// in pagina, anche quando a cambiarla è FullCalendar da solo.
+			datesSet: (info) => {
+				vista = info.view.type;
 			},
 			eventClick: (info) => {
 				info.jsEvent.preventDefault();
@@ -117,12 +160,76 @@
 				 * contenuto, non lo affianca.
 				 */
 				info.el.setAttribute('aria-label', `${info.event.title} — ${descrizione}`);
+
+				/**
+				 * Nella vista elenco lo stato si **scrive**.
+				 *
+				 * Nelle viste a griglia si legge dal tratteggio del bordo, ma una
+				 * voce di elenco è una riga di tabella: un bordo tratteggiato
+				 * attorno a un `<tr>` non si disegna in modo affidabile, e sotto
+				 * `md:` l'elenco è la vista predefinita — cioè quella dove chi
+				 * apre l'applicazione dal telefono passa tutto il tempo. Perdere
+				 * lì la differenza fra una data confermata e una opzionata
+				 * significherebbe perderla e basta.
+				 *
+				 * È un elemento vero e non uno `::after`: così lo legge anche chi
+				 * ascolta la pagina, e usa le stesse parole di `ETICHETTE_STATO`.
+				 */
+				if (info.view.type.startsWith('list') && p.status !== 'confirmed') {
+					const titolo = info.el.querySelector('.fc-list-event-title');
+					if (titolo) {
+						const etichetta = document.createElement('span');
+						etichetta.className = 'stato-elenco';
+						etichetta.textContent = p.statusEtichetta;
+						titolo.append(' ', etichetta);
+					}
+				}
 			}
 		});
 
 		calendario.render();
 		return () => calendario?.destroy();
 	});
+
+	/**
+	 * Attraversare il breakpoint, senza ricostruire il calendario.
+	 *
+	 * Sul telefono succede ruotandolo; su un desktop, restringendo la finestra.
+	 * La barra segue sempre la larghezza. La **vista** invece si forza solo
+	 * scendendo: chi arriva a schermo largo tiene quello che stava guardando,
+	 * mentre a schermo stretto nessuna delle due viste a griglia sta in
+	 * larghezza, quindi non c'è niente da rispettare.
+	 */
+	$effect(() => {
+		const mq = window.matchMedia(STRETTO);
+		const cambia = (e: MediaQueryListEvent) => {
+			compatto = e.matches;
+			const cal = untrack(() => calendario);
+			if (!cal) return;
+			cal.setOption('headerToolbar', barra(e.matches));
+			if (e.matches && cal.view.type !== 'listMonth') cal.changeView('listMonth');
+		};
+		mq.addEventListener('change', cambia);
+		return () => mq.removeEventListener('change', cambia);
+	});
+
+	/**
+	 * I filtri partono chiusi solo dove rubano lo schermo.
+	 *
+	 * Aperti occupano circa 310px: sul telefono erano tutto ciò che si vedeva
+	 * aprendo il calendario, e del calendario restava una riga di griglia
+	 * tagliata in fondo. Sopra `md:` non danno fastidio a nessuno e restano
+	 * aperti, come sono sempre stati.
+	 */
+	let filtriAperti = $derived(!compatto);
+
+	/** Quanti filtri restringono davvero l'elenco, per dirlo a pannello chiuso. */
+	const filtriAttivi = $derived(
+		(statiScelti.length !== STATI.length ? 1 : 0) +
+			(genereScelto ? 1 : 0) +
+			(orgScelta ? 1 : 0) +
+			(raggio ? 1 : 0)
+	);
 
 	/** Cambiare filtro non ricarica la pagina: ricarica solo le date. */
 	function applicaFiltri() {
@@ -139,91 +246,157 @@
 
 <svelte:head><title>Calendario · Calendario Eventi Condiviso</title></svelte:head>
 
-<header class="mb-6 flex flex-wrap items-start justify-between gap-4">
+<header class="mb-4 flex flex-wrap items-start justify-between gap-4 sm:mb-6">
 	<div>
-		<h1 class="text-xl font-semibold tracking-tight">Calendario</h1>
-		<p class="text-muted-foreground mt-1 text-sm">
+		<h1 class="text-lg font-semibold tracking-tight sm:text-xl">Calendario</h1>
+		<!--
+			Nascosta sotto `sm:`, e non è un taglio di contenuto: la nota in fondo
+			alla pagina dice la stessa cosa — che delle date opzionate altrui si
+			vede il giorno, la città e il genere — ed è lì che serve, accanto alle
+			date tratteggiate che descrive. Tenerle tutte e due su un telefono
+			significa spendere tre righe di schermo per ripetersi prima ancora di
+			mostrare qualcosa.
+		-->
+		<p class="text-muted-foreground mt-1 hidden max-w-2xl text-sm sm:block">
 			Le date opzionate delle altre organizzazioni si vedono come giorno, città e genere: è quanto
 			basta per accorgersi di una sovrapposizione e alzare il telefono.
 		</p>
 	</div>
-	<Button href={resolve('/events/new')}>Nuova data</Button>
+	<!--
+		Sotto `md:` la stessa azione sta nella barra in basso, sotto il pollice.
+		Due porte per la stessa stanza, a mezzo metro di distanza, si scambiano
+		per due stanze.
+	-->
+	<Button href={resolve('/events/new')} class="hidden md:inline-flex">Nuova data</Button>
 </header>
 
-<section aria-label="Filtri" class="border-border mb-6 space-y-4 rounded-lg border p-4">
-	<fieldset>
-		<legend class="mb-2 text-sm font-medium">Stato</legend>
-		<div class="flex flex-wrap gap-3">
-			{#each STATI as stato (stato)}
-				<label class="flex items-center gap-2 text-sm">
-					<input
-						type="checkbox"
-						checked={statiScelti.includes(stato)}
-						onchange={() => alternaStato(stato)}
-						class="border-input rounded"
-					/>
-					{ETICHETTE_STATO[stato]}
-					{#if stato === 'draft'}
-						<span class="text-muted-foreground text-xs">(solo le tue)</span>
-					{/if}
-				</label>
-			{/each}
-		</div>
-	</fieldset>
+<details bind:open={filtriAperti} class="border-border mb-4 rounded-lg border sm:mb-6">
+	<summary
+		class="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium select-none md:hidden [&::-webkit-details-marker]:hidden"
+	>
+		<svg
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1.75"
+			stroke-linecap="round"
+			class="size-4 shrink-0"
+			style={filtriAperti ? 'transform: rotate(90deg)' : ''}
+			aria-hidden="true"
+		>
+			<path d="M9 6l6 6-6 6" />
+		</svg>
+		Filtri
+		{#if filtriAttivi > 0}
+			<span class="bg-secondary text-secondary-foreground rounded-full px-2 py-0.5 text-xs">
+				{filtriAttivi} attiv{filtriAttivi === 1 ? 'o' : 'i'}
+			</span>
+		{/if}
+	</summary>
 
-	<div class="grid gap-4 sm:grid-cols-3">
-		<label class="space-y-1.5 text-sm">
-			<span class="font-medium">Genere</span>
-			<select
-				bind:value={genereScelto}
-				onchange={applicaFiltri}
-				class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
-			>
-				<option value="">Tutti</option>
-				{#each data.generi as g (g.slug)}
-					<option value={g.slug}>{g.name}</option>
+	<fieldset class="space-y-4 px-4 pt-1 pb-4 md:pt-4">
+		<legend class="sr-only">Filtri del calendario</legend>
+
+		<fieldset>
+			<legend class="mb-1 text-sm font-medium sm:mb-2">Stato</legend>
+			<div class="flex flex-wrap gap-x-4 gap-y-1">
+				{#each STATI as stato (stato)}
+					<label class="flex items-center gap-2 text-sm">
+						<input
+							type="checkbox"
+							checked={statiScelti.includes(stato)}
+							onchange={() => alternaStato(stato)}
+							class="border-input rounded"
+						/>
+						{ETICHETTE_STATO[stato]}
+						{#if stato === 'draft'}
+							<span class="text-muted-foreground text-xs">(solo le tue)</span>
+						{/if}
+					</label>
 				{/each}
-			</select>
-			<span class="text-muted-foreground block text-xs">Include i sottogeneri.</span>
-		</label>
+			</div>
+		</fieldset>
 
-		<label class="space-y-1.5 text-sm">
-			<span class="font-medium">Organizzazione</span>
-			<select
-				bind:value={orgScelta}
-				onchange={applicaFiltri}
-				class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
-			>
-				<option value="">Tutte</option>
-				{#each data.organizzazioni as o (o.id)}
-					<option value={o.id}>{o.name}</option>
-				{/each}
-			</select>
-		</label>
-
-		{#if data.centro}
+		<div class="grid gap-4 sm:grid-cols-3">
 			<label class="space-y-1.5 text-sm">
-				<span class="font-medium">Distanza da {data.centro.etichetta}</span>
+				<span class="font-medium">Genere</span>
 				<select
-					bind:value={raggio}
+					bind:value={genereScelto}
 					onchange={applicaFiltri}
 					class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
 				>
-					<option value="">Ovunque</option>
-					<option value={30}>Entro 30 km</option>
-					<option value={data.centro.raggioPredefinito}>
-						Entro {data.centro.raggioPredefinito} km
-					</option>
-					<option value={150}>Entro 150 km</option>
+					<option value="">Tutti</option>
+					{#each data.generi as g (g.slug)}
+						<option value={g.slug}>{g.name}</option>
+					{/each}
+				</select>
+				<span class="text-muted-foreground block text-xs">Include i sottogeneri.</span>
+			</label>
+
+			<label class="space-y-1.5 text-sm">
+				<span class="font-medium">Organizzazione</span>
+				<select
+					bind:value={orgScelta}
+					onchange={applicaFiltri}
+					class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+				>
+					<option value="">Tutte</option>
+					{#each data.organizzazioni as o (o.id)}
+						<option value={o.id}>{o.name}</option>
+					{/each}
 				</select>
 			</label>
-		{/if}
-	</div>
-</section>
+
+			{#if data.centro}
+				<label class="space-y-1.5 text-sm">
+					<span class="font-medium">Distanza da {data.centro.etichetta}</span>
+					<select
+						bind:value={raggio}
+						onchange={applicaFiltri}
+						class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+					>
+						<option value="">Ovunque</option>
+						<option value={30}>Entro 30 km</option>
+						<option value={data.centro.raggioPredefinito}>
+							Entro {data.centro.raggioPredefinito} km
+						</option>
+						<option value={150}>Entro 150 km</option>
+					</select>
+				</label>
+			{/if}
+		</div>
+	</fieldset>
+</details>
 
 {#if errore}
 	<p class="text-destructive mb-4 text-sm" role="alert">{errore}</p>
 {/if}
+
+<!--
+	Il selettore di vista, solo sotto `md:`: sopra resta quello di FullCalendar
+	nell'angolo destro della barra, dov'è sempre stato.
+	`aria-pressed` e non `aria-current`: non sono destinazioni, sono tre
+	interruttori di cui uno solo è premuto.
+-->
+<div role="group" aria-label="Vista del calendario" class="mb-3 md:hidden">
+	<div class="border-border grid grid-cols-3 gap-1 rounded-lg border p-1">
+		{#each VISTE as v (v.id)}
+			<button
+				type="button"
+				aria-pressed={vista === v.id}
+				onclick={() => calendario?.changeView(v.id)}
+				class={[
+					'rounded-md px-2 py-2 text-sm',
+					vista === v.id
+						? 'bg-secondary text-secondary-foreground font-medium'
+						: 'text-muted-foreground'
+				]}
+			>
+				{v.label}
+			</button>
+		{/each}
+	</div>
+</div>
 
 <div bind:this={contenitore} class="calendario"></div>
 
@@ -234,9 +407,16 @@
 	</p>
 </noscript>
 
+<!--
+	La legenda nomina tutte e due le forme, perché sotto `md:` la vista
+	predefinita è l'elenco e lì il tratteggio non c'è: dire solo "in grigio
+	tratteggiato" significherebbe descrivere una schermata che chi legge dal
+	telefono non ha davanti.
+-->
 <p class="text-muted-foreground mt-4 text-xs">
-	Le date in grigio tratteggiato sono opzionate da altre organizzazioni: se ne conosce il giorno, la
-	città e il genere, non l'orario né il locale.
+	Delle date opzionate da altre organizzazioni si conosce il giorno, la città e il genere: non
+	l'orario, non il locale. Nell'elenco si riconoscono dall'etichetta accanto al titolo, nella
+	griglia dal bordo tratteggiato.
 </p>
 
 <style>
@@ -342,5 +522,71 @@
 
 	.calendario :global(.evento--proprio) {
 		font-weight: 600;
+	}
+
+	/* Nella vista elenco le quattro regole qui sopra colpiscono una riga di
+	   tabella: il bordo tratteggiato non si disegna in modo affidabile su un
+	   `<tr>`, e il `line-through` di una data annullata cancellerebbe anche
+	   l'ora nella sua colonna. Lì lo stato lo dice l'etichetta che
+	   `eventDidMount` aggiunge al titolo. */
+	.calendario :global(.fc-list-event) {
+		border: 0;
+	}
+
+	.calendario :global(.fc-list-event.evento--cancelled) {
+		text-decoration: none;
+	}
+
+	.calendario :global(.fc-list-event.evento--cancelled) :global(.fc-list-event-title) {
+		text-decoration: line-through;
+	}
+
+	.calendario :global(.stato-elenco) {
+		/* `inline-block` non è cosmetico: `text-decoration` si propaga ai
+		   discendenti e **non si annulla dall'interno**, quindi su una data
+		   annullata la riga barrata attraversava anche questa etichetta. Un
+		   riquadro inline-block apre un contesto nuovo e la barratura si ferma
+		   al titolo, che è la cosa annullata. */
+		display: inline-block;
+		border: 1px solid var(--border);
+		border-radius: 0.25rem;
+		padding: 0 0.3rem;
+		font-size: 0.6875rem;
+		font-style: normal;
+		font-weight: 400;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		text-decoration: none;
+		color: var(--muted-foreground);
+		white-space: nowrap;
+	}
+
+	/* La barra, sotto `md:`.
+
+	   Il titolo predefinito è `1.75em`: con "agosto 2026" andava a capo su due
+	   righe e la seconda finiva addosso ai pulsanti dell'angolo destro. Il
+	   margine sotto è `1.5em`, quasi 40px su uno schermo dove lo spazio
+	   verticale è la risorsa scarsa.
+
+	   `!important` perché i selettori di FullCalendar sono più specifici di
+	   quanto possa esserlo una regola scoped di Svelte: `.fc .fc-toolbar.fc-header-toolbar`
+	   sta a tre classi, e non c'è modo di pareggiarlo dall'esterno senza
+	   inseguirlo. */
+	@media (max-width: 767px) {
+		.calendario :global(.fc-toolbar-title) {
+			font-size: 1.05rem !important;
+		}
+
+		.calendario :global(.fc-header-toolbar) {
+			margin-bottom: 0.75rem !important;
+			flex-wrap: wrap;
+			gap: 0.5rem;
+		}
+
+		/* L'elenco è la vista predefinita sul telefono: le sue righe portano il
+		   testo che nelle celle non entrava, e vanno lette comode. */
+		.calendario :global(.fc-list-event-title) {
+			line-height: 1.4;
+		}
 	}
 </style>

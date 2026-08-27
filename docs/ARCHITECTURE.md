@@ -634,6 +634,10 @@ _Criterio di fine:_ incollando il testo di un evento reale, il form risulta comp
 **Fase 6 — Rifinitura**
 Notifiche email e digest. Audit log consultabile. PWA (manifest, offline shell). Accessibilità (navigazione da tastiera nel calendario, focus management nel form lungo, contrasti). Smoke test Playwright sui flussi critici. README e runbook operativo.
 
+> **Aggiunta (2026-08-27). Il telefono.** La fase elencava la PWA installabile e non diceva niente su come l'applicazione si presenta una volta installata, e la risposta era: male. Il layout era stato scritto per intero su uno schermo largo — nove voci di navigazione in un `flex-wrap` che ne occupava due righe, filtri sempre aperti alti 310px, la barra di FullCalendar che collassava su sé stessa — al punto che della pagina `/calendar` **il calendario restava sotto il bordo dello schermo**.
+>
+> Sotto `md:` la navigazione principale scende in una barra fissa in basso con quattro voci e il resto passa dietro un pannello laterale; il calendario apre in `listMonth`, perché su colonne da 34px il titolo di una data non entra e nessun foglio di stile lo fa entrare; i bersagli tattili arrivano a 44px e i campi a 16px, che è la soglia sotto cui Safari ingrandisce la pagina da solo. Sopra `md:` non cambia niente. Vedi [ADR-0042](DECISIONS.md).
+
 ---
 
 ## 13. Struttura del repository

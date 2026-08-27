@@ -151,3 +151,63 @@
 		}
 	}
 }
+
+/**
+ * Regole per il tocco. **Fuori da ogni `@layer` di proposito.**
+ *
+ * Nella cascata degli strati, ciò che non sta in nessuno strato vince su tutto
+ * ciò che sta dentro uno — comprese le utility di Tailwind. Scritte dentro
+ * `@layer base` perderebbero contro un `text-sm` o un `h-8` messi in pagina,
+ * che è esattamente ciò che devono correggere. Non è una scorciatoia: è l'unico
+ * punto dell'applicazione dove serve battere una classe di utilità, e la
+ * scelta è fra questo e duecento `sm:` sparsi che nessuno terrà allineati.
+ */
+
+/**
+ * Bersagli da 44px dove si tocca con un dito, e solo lì.
+ *
+ * `pointer: coarse` e non una larghezza: un desktop stretto continua a usare il
+ * mouse e non ha nessun motivo di diventare meno denso. Il `min-height` batte
+ * l'`height` fissa dei pulsanti (`h-8`) senza toccare le varianti del
+ * componente, quindi vale anche per i pulsanti che l'applicazione non scrive —
+ * quelli della barra di FullCalendar, che arrivano da una libreria.
+ */
+@media (pointer: coarse) {
+	button,
+	summary,
+	select,
+	[role='button'],
+	a[data-slot='button'] {
+		min-height: 44px;
+	}
+
+	/* Le caselle di spunta restano piccole, ma la riga che le contiene no:
+	   è l'etichetta che si tocca, non il quadratino da 13px. */
+	label:has(> input[type='checkbox']),
+	label:has(> input[type='radio']) {
+		min-height: 44px;
+	}
+
+	input[type='checkbox'],
+	input[type='radio'] {
+		width: 1.15rem;
+		height: 1.15rem;
+	}
+}
+
+/**
+ * Sedici pixel sui campi, sotto il primo breakpoint.
+ *
+ * Safari su iPhone **ingrandisce la pagina** quando un campo con testo più
+ * piccolo di 16px riceve il fuoco, e non la rimpicciolisce quando lo perde. Su
+ * un modulo da trenta campi come quello degli eventi significa che la pagina
+ * salta al primo tocco e resta storta fino a fine compilazione. Non è una
+ * preferenza tipografica, è la disattivazione di un comportamento del browser.
+ */
+@media (max-width: 639px) {
+	input:not([type='checkbox']):not([type='radio']),
+	select,
+	textarea {
+		font-size: 1rem;
+	}
+}

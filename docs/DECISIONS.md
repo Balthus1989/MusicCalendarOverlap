@@ -1193,6 +1193,56 @@ Sul `max` da 10 a 5: ADR-0026 aveva alzato quel numero perché con `max: 1` `pos
 
 ---
 
+## ADR-0042 — Sul telefono la navigazione sta in basso e il calendario è un elenco
+
+**Data:** 2026-08-27 · **Stato:** Accettata
+
+**Contesto.** L'applicazione è stata scritta per intero su uno schermo largo. Aperta da un telefono — 393px, tema scuro, PWA installata — la pagina `/calendar` si presentava così: le nove voci di navigazione, messe in un `flex-wrap`, occupavano **due righe piene** di testo da 14px, più una terza con nome utente e "Esci" spinto a filo del bordo destro dal suo `ml-auto`. Sotto, il titolo di pagina, tre righe di spiegazione e il pannello filtri sempre aperto, alto circa 310px. La barra di FullCalendar collassava: `left: 'prev,next oggi'` sono due gruppi nello stesso angolo, e sotto i 400px il secondo usciva dal primo sovrapponendosi al suo bordo, mentre "agosto 2026" andava a capo addosso ai pulsanti di vista.
+
+Il risultato è che **della pagina calendario non si vedeva il calendario**: la prima riga di griglia arrivava intorno ai 760px, cioè oltre il bordo inferiore dello schermo. E anche scorrendo fin lì, la griglia del mese su quella larghezza dà colonne da circa 34px: ci sta il numero del giorno e nient'altro.
+
+Su 28 file `.svelte` il layout applicativo non aveva **nessuna** utility responsive.
+
+**Decisione.** Tre cose, tutte confinate sotto `md:`, senza toccare nessuna logica di dominio.
+
+1. **La navigazione si sdoppia.** Una barra fissa in basso con quattro voci — Calendario, Conflitti, Avvisi, Nuova data — e tutto il resto dietro un `☰` che apre un pannello laterale. Sopra `md:` la barra in alto resta identica a prima.
+2. **Il calendario cambia vista, non solo dimensione.** Sotto `md:` la vista iniziale è `listMonth`; la barra di FullCalendar tiene una cosa sola per angolo e la scelta della vista esce dalla barra per diventare un controllo a tutta larghezza; i filtri stanno in un `<details>` che parte chiuso e dichiara quanti filtri sono attivi.
+3. **Due regole globali per il tocco**, scritte **fuori da ogni `@layer`** perché devono battere le utility di Tailwind: bersagli da 44px sotto `pointer: coarse`, e campi a 16px sotto `640px`.
+
+**Motivazioni.**
+
+Sulle **quattro voci in basso e non otto.** Il ciclo quotidiano di un organizzatore è uno solo: guardo il calendario, vedo una sovrapposizione, alzo il telefono (`ARCHITECTURE.md` §1). Anagrafiche, registro e feed sono manutenzione e si fanno da seduti. "Nuova data" è nelle quattro pur essendo un'azione e non una destinazione, perché è la cosa che si fa in piedi davanti a un locale — ed è il motivo per cui la pagina calendario nasconde il proprio pulsante sotto `md:`: due porte per la stessa stanza, a mezzo metro di distanza, si scambiano per due stanze.
+
+Sull'elenco come vista predefinita. Non è che `dayGridMonth` sia meno leggibile su un telefono e si possa migliorare col CSS: su 34px di colonna **il titolo di una data non entra**, e nessun foglio di stile lo fa entrare. `listMonth` porta le stesse date per esteso — giorno, titolo, città, organizzazione — e nasce già in colonna. Resta raggiungibile dal selettore: chi vuole guardare la forma del mese può, ma non è ciò che trova aprendo l'applicazione.
+
+Sulle **regole fuori dagli strati.** Nella cascata dei layer, ciò che non sta in nessuno vince su tutto ciò che sta dentro uno, utility comprese. Dentro `@layer base` perderebbero contro un `text-sm` o un `h-8` scritti in pagina, che sono precisamente i valori da correggere. L'alternativa era duecento `sm:` sparsi che nessuno terrà allineati. `pointer: coarse` e non una larghezza: un desktop stretto continua a usare il mouse e non ha motivo di diventare meno denso.
+
+Sui **16px nei campi**: non è tipografia. Safari su iPhone ingrandisce la pagina quando un campo con testo più piccolo riceve il fuoco, e non la rimpicciolisce quando lo perde. Su un modulo da trenta campi come quello degli eventi la pagina resta storta fino in fondo.
+
+Sul pannello come **`<details>` e non `<dialog>`**. Le voci secondarie sono l'unica strada per uscire dall'applicazione o raggiungere le anagrafiche, e la barra da desktop sul telefono è `display:none`. Un pannello che si apre solo con JavaScript, dopo un'idratazione fallita, chiuderebbe fuori da tutto. Con `<details>` si apre comunque; JavaScript aggiunge Esc e il blocco dello scorrimento, che senza mancano senza fare danni.
+
+Sull'**etichetta di stato nelle righe di elenco.** Nelle viste a griglia lo stato si legge dal tratteggio del bordo — è la scelta di non affidarlo al solo colore. Una riga di elenco però è un `<tr>`, e un bordo tratteggiato attorno a una riga di tabella non si disegna in modo affidabile. Siccome l'elenco è ciò che si vede aprendo l'applicazione dal telefono, lì lo stato si **scrive**, con le stesse parole di `ETICHETTE_STATO` e in un elemento vero, così lo legge anche chi ascolta la pagina.
+
+**Alternative scartate.**
+
+- _Solo l'hamburger, senza barra in basso._ Metà del lavoro e un header da 52px, ma ogni destinazione a due tocchi — Conflitti compreso, che è la ragione per cui il prodotto esiste.
+- _Rendere leggibile `dayGridMonth` sul telefono._ Non è un problema di stile: vedi sopra.
+- _Mettere i pulsanti di vista nel `footerToolbar` di FullCalendar._ Li avrebbe portati sotto il calendario, cioè lontano dal punto in cui si decide come guardarlo.
+- _Un breakpoint che forza la vista in entrambi i versi._ Scendendo sotto `md:` la vista si forza, perché nessuna delle due griglie sta in larghezza. Salendo no: chi arriva a schermo largo tiene quello che stava guardando.
+- _`!important` sparsi o `@layer base`._ Vedi sopra: il primo è ciò che si è evitato tranne dove FullCalendar non lascia scelta, il secondo non funziona.
+
+**Conseguenze.**
+
+- **L'elenco delle voci di navigazione resta uno solo**, e le due barre ne prendono fette diverse. Tenerne due significherebbe aggiungere una rotta e scoprire un mese dopo che sul telefono non c'è.
+- Il `<main>` porta un margine in basso pari all'altezza della barra fissa, più `env(safe-area-inset-bottom)`. Vale 0 finché il viewport non è `cover`, ed è scritto lo stesso perché l'app è installabile.
+- **`resolve()` è tipizzato su una rotta alla volta e non accetta un'unione di path.** La risoluzione avviene quindi nel layout, un letterale per volta, e alle due barre l'indirizzo arriva già risolto: lo dice il tipo, `ResolvedPathname`, che solo `resolve()` produce. Le tre ancore che lo ricevono hanno la regola `svelte/no-navigation-without-resolve` spenta con un commento che spiega perché; ovunque altro resta accesa.
+- **Due `nav` con lo stesso nome accessibile** convivono nel documento, ma solo una è visibile per volta: l'altra è `display:none`, quindi non è esposta.
+- Le misure a 375px dopo: barra in alto 61px invece di ~110, filtri 46px chiusi invece di 310 aperti, barra del calendario su una riga sola da 44px, **prima data a 352px** invece che oltre il bordo. Nessuno scorrimento orizzontale, `<select>` a 16px, pulsanti della barra di FullCalendar e del selettore di vista tutti a 44px.
+
+**Da rivedere se.** Le voci principali diventano più di quattro — a quel punto una barra in basso comincia a stringere invece che aiutare — oppure gli organizzatori dicono di usare l'applicazione soprattutto da telefono anche per le anagrafiche, che oggi stanno dietro il `☰` proprio perché si assume il contrario.
+
+---
+
 ## Template per nuove voci
 
 ```markdown
