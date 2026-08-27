@@ -142,10 +142,21 @@
 	<main
 		id="contenuto"
 		tabindex="-1"
-		class="mx-auto w-full max-w-6xl flex-1 px-4 py-6 pb-[calc(3.5rem+env(safe-area-inset-bottom)+1.5rem)] sm:px-6 md:py-8 md:pb-8"
+		class="mx-auto w-full max-w-6xl flex-1 px-4 pt-6 pb-4 sm:px-6 md:pt-8"
 	>
 		{@render children()}
 	</main>
+
+	<!--
+		Il margine in basso della barra fissa vive qui e non più sul `<main>`:
+		il piè di pagina è l'ultima cosa del flusso, ed è lui che deve stare
+		sopra la navigazione invece di finirci sotto.
+	-->
+	<footer
+		class="text-muted-foreground mx-auto w-full max-w-6xl px-4 pb-[calc(3.5rem+env(safe-area-inset-bottom)+1rem)] text-xs sm:px-6 md:pb-8"
+	>
+		<a href={resolve('/privacy')} class="underline underline-offset-4">Informativa privacy</a>
+	</footer>
 
 	<MobileTabBar voci={principali} />
 </div>

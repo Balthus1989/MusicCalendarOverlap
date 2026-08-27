@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button';
 	import type { ActionData, PageData } from './$types';
 
@@ -71,4 +72,13 @@
 			</Button>
 		</form>
 	{/if}
+
+	<!--
+		L'informativa sta qui e non in fondo a una pagina interna: il primo dato
+		personale che il servizio raccoglie è l'email digitata in questo campo, e
+		chi la digita deve poter leggere prima che cosa ne facciamo.
+	-->
+	<footer class="text-muted-foreground text-sm">
+		<a href={resolve('/privacy')} class="underline underline-offset-4">Informativa privacy</a>
+	</footer>
 </main>

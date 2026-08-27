@@ -632,7 +632,7 @@ Paste-to-parse con schema forzato, matching band, pre-compilazione form. Import 
 _Criterio di fine:_ incollando il testo di un evento reale, il form risulta compilato in modo utilizzabile.
 
 **Fase 6 — Rifinitura**
-Notifiche email e digest. Audit log consultabile. PWA (manifest, offline shell). Accessibilità (navigazione da tastiera nel calendario, focus management nel form lungo, contrasti). Smoke test Playwright sui flussi critici. README e runbook operativo.
+Notifiche email e digest. Audit log consultabile. PWA (manifest, offline shell). Accessibilità (navigazione da tastiera nel calendario, focus management nel form lungo, contrasti). Smoke test Playwright sui flussi critici. README e runbook operativo (`RUNBOOK.md`).
 
 > **Aggiunta (2026-08-27). Il telefono.** La fase elencava la PWA installabile e non diceva niente su come l'applicazione si presenta una volta installata, e la risposta era: male. Il layout era stato scritto per intero su uno schermo largo — nove voci di navigazione in un `flex-wrap` che ne occupava due righe, filtri sempre aperti alti 310px, la barra di FullCalendar che collassava su sé stessa — al punto che della pagina `/calendar` **il calendario restava sotto il bordo dello schermo**.
 >
@@ -726,6 +726,7 @@ PUBLIC_APP_URL
 
 - **Timezone.** Tutto `timestamptz`. Il "giorno civile" per la regola R3 si calcola con `date_trunc('day', starts_at AT TIME ZONE 'Europe/Rome')`. I test devono includere una data in DST e una fuori.
 - **GDPR.** Dati personali minimi (nome, email, telefono opzionale). Hosting EU. Privacy policy e informativa necessarie, con il titolare del trattamento identificato prima del lancio pubblico: va deciso chi è formalmente titolare (una delle associazioni, presumibilmente) e non lasciato implicito.
+  > **Chiuso (2026-08-27).** Il titolare è il manutentore, **persona fisica**, e non un'associazione: il codice, il database e le chiavi sono in mano sua, e la responsabilità deve stare dove sta il controllo effettivo. L'informativa è la rotta pubblica `/privacy`, fuori dal gruppo `(app)` perché va letta prima di digitare la propria email nel form di accesso. Le scadenze che dichiara sono le costanti del codice, non un testo parallelo: cambiarne una senza cambiare la pagina produce un'informativa falsa ([ADR-0043](DECISIONS.md)).
   > **Aggiunta (2026-08-24).** C'è una categoria di dati personali che il prodotto **non raccoglie ma riceve**: `parse_jobs.raw_text`, cioè il testo che qualcuno incolla. Un annuncio di concerto contiene con regolarità il numero di chi prende le prenotazioni o il nome di chi ospita il gruppo, e nessuna di quelle persone sa che ne stiamo tenendo copia. Ha una scadenza di novanta giorni, applicata da `/api/cron/purge` ([ADR-0032](DECISIONS.md)). L'informativa dovrà nominarla.
 - **Backup.** Il free tier di Supabase non garantisce backup adeguati: schedulare un `pg_dump` settimanale via GitHub Actions su artifact cifrato. Non opzionale.
 - **Attribuzione OSM** obbligatoria dove si mostrano dati di geocoding.
@@ -744,6 +745,8 @@ Con la chiusura del punto 5, **l'elenco è esaurito**: tutti e cinque i punti ch
 4. ~~Serve un ruolo di **moderatore**?~~ — chiuso: sì, [ADR-0016](DECISIONS.md).
 5. ~~Verificare, in Fase 5, lo stato attuale delle API Meta~~ — chiuso: verificato il 24 agosto 2026, la conclusione regge. Non è una deprecazione: leggere gli eventi di Utenti e Pagine è riservato ai Facebook Marketing Partner, e su Instagram non esiste un oggetto evento da leggere. [ADR-0030](DECISIONS.md).
 
-Restano aperte, fuori da questo elenco perché non hanno una scadenza di fase: il titolare del trattamento dei dati (§16, prima del lancio) e un LLM ospitato in locale (#7, quando il server esiste). Sono tracciate in `DECISIONS.md`.
+Resta aperta, fuori da questo elenco perché non ha una scadenza di fase, la sola questione di un LLM ospitato in locale (#7, quando il server esiste). È tracciata in `DECISIONS.md`.
+
+> **Aggiornamento (2026-08-27).** Il **titolare del trattamento** era l'altra questione senza scadenza di fase, ma con la scadenza più vincolante di tutte — «prima del lancio pubblico» — ed è chiusa: è il manutentore a titolo personale, e l'informativa esiste come pagina dell'applicazione ([ADR-0043](DECISIONS.md)).
 
 > **Aggiornamento (2026-08-25).** Il **canale Telegram** è stato deciso, ed è diventato l'unico: non un'aggiunta all'email ma il suo rimpiazzo, perché mandare email a destinatari arbitrari richiede un dominio verificato che non c'è ([ADR-0039](DECISIONS.md)). La decisione #6 si chiude quindi **fuori dal modo che il registro prescriveva** — «parlando con gli organizzatori, non a tavolino» — e va detto: l'ha chiusa un vincolo di budget. La domanda vera, se un avviso di conflitto su un canale che leggono tutti sia utile o invadente, resta da fare. Se la risposta fosse no, l'interfaccia `NotificationSink` regge il cambio: in Fase 6 è già servita una volta.

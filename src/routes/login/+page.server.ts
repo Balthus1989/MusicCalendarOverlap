@@ -100,7 +100,7 @@ export const actions: Actions = {
 		 * `?token_hash=…&type=magiclink`.
 		 *
 		 * **Va passato nudo, senza query string.** Qui c'era un `?next=…`, sulla
-		 * convinzione — scritta anche nel README — che Supabase scartasse la
+		 * convinzione — scritta anche nel runbook — che Supabase scartasse la
 		 * query e rendesse solo il percorso della allow-list. Non è così:
 		 * `redirect_to` torna **intero**, il template ci appende il suo `?`, e
 		 * il link che arriva nella posta ha due punti interrogativi:

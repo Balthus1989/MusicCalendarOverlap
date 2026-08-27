@@ -270,7 +270,7 @@ END $$;
 - _Nessuna foreign key verso `auth.users`_: l'integrità fra profilo e utente è esattamente ciò che rende `profiles` uno specchio affidabile. Rinunciarvi significherebbe accettare profili orfani.
 - _Migrazione scritta interamente a mano_: perde il vantaggio principale di Drizzle, cioè lo schema come unica fonte di verità.
 
-**Conseguenze.** Il blocco va **ricontrollato a ogni `npm run db:generate`**: drizzle-kit può riemettere la creazione non condizionata, e la migrazione si scoprirebbe rotta solo al deploy. È annotato nel file di migrazione e nel runbook del README. Vale solo per la prima migrazione: dallo snapshot in poi la tabella risulta già esistente.
+**Conseguenze.** Il blocco va **ricontrollato a ogni `npm run db:generate`**: drizzle-kit può riemettere la creazione non condizionata, e la migrazione si scoprirebbe rotta solo al deploy. È annotato nel file di migrazione e nel [runbook](RUNBOOK.md). Vale solo per la prima migrazione: dallo snapshot in poi la tabella risulta già esistente.
 
 **Da rivedere se.** Drizzle introduce un modo esplicito di marcare una tabella come "esterna, non gestita". A quel punto la nota va rimossa e la dichiarazione semplificata.
 
@@ -1053,7 +1053,7 @@ Sulla CI: farli girare lì significherebbe mettere `SUPABASE_SERVICE_ROLE_KEY` f
 **Conseguenze.**
 
 - Gli smoke test sono **lenti** (una quarantina di secondi) e girano **uno alla volta**: condividono un database, e due che inseriscono la stessa data la stessa sera si darebbero fastidio a vicenda.
-- Vanno lanciati **prima di un rilascio**, non a ogni commit. Il README lo dice nel runbook.
+- Vanno lanciati **prima di un rilascio**, non a ogni commit. Il [runbook](RUNBOOK.md) lo dice.
 - Il primo giro ha già trovato una cosa che nessun test unitario poteva vedere: riempire il form evento subito dopo il caricamento non funziona, perché l'idratazione di Svelte rimette a ogni campo il valore della sua prop. Il sintomo era un fallimento lontanissimo dalla causa, con davanti lo screenshot di un modulo vuoto.
 - Servono `SUPABASE_SERVICE_ROLE_KEY` e `DATABASE_URL` in `.env`: senza, i test si fermano dicendolo invece di fallire in modo oscuro.
 
@@ -1243,6 +1243,47 @@ Sull'**etichetta di stato nelle righe di elenco.** Nelle viste a griglia lo stat
 
 ---
 
+## ADR-0043 — Il titolare del trattamento è una persona fisica, e l'informativa è una pagina dell'applicazione
+
+**Data:** 2026-08-27 · **Stato:** Accettata · **Chiude:** il punto 5 di `ARCHITECTURE.md` §17 e la decisione aperta #5
+
+**Contesto.** `ARCHITECTURE.md` §16 chiedeva di decidere «chi è formalmente titolare del trattamento (una delle associazioni, presumibilmente) e non lasciarlo implicito», **prima del lancio pubblico**. Era l'ultimo punto aperto con una scadenza, e l'unico che non si poteva chiudere scrivendo codice: senza un titolare identificato non c'è informativa, e senza informativa il servizio non può essere aperto a organizzazioni esterne.
+
+Nel frattempo il prodotto ha accumulato una superficie di trattamento più larga di quella immaginata al punto 5: oltre ai dati degli iscritti c'è una categoria che [ADR-0032](#adr-0032--il-testo-incollato-ha-una-scadenza) aveva già isolato — i **dati personali di terzi che il servizio non raccoglie ma riceve**, cioè il testo che qualcuno incolla nell'import — e le persone nominate lì dentro non sanno che ne teniamo copia.
+
+**Decisione.** Il titolare del trattamento è **Alessandro Rizzuto**, persona fisica, che gestisce il servizio a titolo personale e non commerciale. Il recapito pubblicato è il suo indirizzo email; nessun indirizzo fisico, nessun responsabile della protezione dei dati.
+
+L'informativa è una **pagina dell'applicazione** — `/privacy`, fuori dal gruppo di rotte `(app)` e quindi leggibile senza accedere — linkata dal login e dal piè di pagina di ogni schermata autenticata.
+
+**Motivazioni.**
+
+Sulla **persona fisica invece di un'associazione**, che è ciò che §16 dava per probabile. Nominare titolare un'associazione significherebbe che quella associazione risponde di un servizio che non controlla: il codice, il database e le chiavi sono in mano al manutentore, e la responsabilità deve stare dove sta il controllo effettivo. Va detto per intero che questa è anche la scelta che espone di più la persona: è il costo di gestire da soli un servizio che tratta dati di altri, ed è consapevole.
+
+Sul **recapito**: art. 13 chiede «identità e dati di contatto» senza imporre la forma, e per una persona fisica che gestisce un servizio non commerciale nome, cognome ed email sono la prassi accettata. Pubblicare un indirizzo di casa è un costo permanente che l'obbligo non impone.
+
+Sull'informativa come **pagina e non file Markdown**. Un `INFORMATIVA.md` in `docs/` sarebbe stato più comodo da scrivere e inutile da leggere: chi digita la propria email nel form di accesso deve poterla leggere lì, in quel momento, senza sapere che esiste un repository. Da qui anche la posizione del link nel login — sotto il campo, prima del pulsante — perché **il primo dato personale che il servizio raccoglie è proprio quell'email**.
+
+Sull'informativa che **nomina i dati di terzi in una sezione propria**. Sarebbe stato più breve elencare i campi del profilo e fermarsi lì. Ma il testo incollato è l'unico posto in cui il servizio conserva dati di persone che non lo usano e non lo sanno, ed è esattamente il caso in cui un'informativa serve a qualcosa invece di essere un adempimento. La sezione dice anche a quelle persone come chiedere la rimozione.
+
+Sulla **cancellazione raccontata per esteso**, invece di rimandare all'art. 17. Cancellare il profilo non cancella le date: appartengono all'organizzazione, e le sovrapposizioni già segnalate riguardano anche le organizzazioni dall'altra parte. È un limite reale, previsto dal paragrafo 3, e scoprirlo dopo aver chiesto la cancellazione sarebbe il modo peggiore di scoprirlo.
+
+**Alternative scartate.**
+
+- _Nominare titolare una delle associazioni iscritte_, come §16 ipotizzava. Responsabilità senza controllo, e per giunta su un servizio da cui quell'associazione non ha nessun vantaggio rispetto alle altre.
+- _Contitolarità fra le organizzazioni iscritte_ (art. 26). Formalmente difendibile — ciascuna decide che cosa inserire — ma richiede un accordo scritto fra tutte, da rifare a ogni ingresso, per un gruppo di meno di venti realtà senza struttura legale comune. Sproporzionato.
+- _Rimandare ancora, tenendo il servizio chiuso al gruppo attuale._ È ciò che è stato fatto finora e non era sbagliato, ma il punto aveva una scadenza («prima del lancio pubblico») e rimandarla ancora significava non lanciare.
+
+**Conseguenze.**
+
+- **L'informativa è codice, e va tenuta vera come il codice.** Le scadenze che dichiara — novanta giorni per il testo incollato, centottanta per gli avvisi — sono le costanti `GIORNI_CONSERVAZIONE` e `GIORNI_CONSERVAZIONE_NOTIFICHE`. Cambiare una costante senza cambiare la pagina produce un'informativa falsa, che è peggio di nessuna informativa. Il commento in testa al file lo dice.
+- **Ogni fornitore nominato nella tabella corrisponde a una chiamata che esiste.** Aggiungere un fornitore che veda dati personali significa aggiungere una riga lì, e la riga va aggiunta **prima** di attivarlo. Vale in particolare per il modello linguistico dell'import da testo libero, oggi non configurato: l'informativa lo dichiara come non attivo, e la sua attivazione passa da questa pagina.
+- Un fatto che è emerso scrivendo e che vale la pena aver verificato: **l'applicazione non legge mai l'indirizzo IP**. `getClientAddress()` non compare da nessuna parte, e i contatori di [ADR-0037](#adr-0037--il-rate-limit-degli-altri-due-endpoint-sta-in-una-tabella-non-in-parse_jobs) usano l'identificativo del profilo o del token. Non era stato deciso a tavolino, ma è una proprietà vera del sistema ed è dichiarabile.
+- Resta un **atto formale fuori dal repository**: questa decisione identifica il titolare, non lo costituisce. Se il servizio dovesse crescere oltre il gruppo attuale, o raccogliere denaro, la forma giuridica va rivista con qualcuno che di questo si occupi per mestiere.
+
+**Da rivedere se.** Il servizio passa a un'organizzazione con una propria forma giuridica, oppure smette di essere non commerciale — allora il titolare cambia, e con lui il recapito e probabilmente la necessità di un registro dei trattamenti ai sensi dell'art. 30.
+
+---
+
 ## Template per nuove voci
 
 ```markdown
@@ -1269,13 +1310,15 @@ Sull'**etichetta di stato nelle righe di elenco.** Nelle viste a griglia lo stat
 
 Non ancora decise, elencate per non perderle di vista. Vanno chiuse **parlando con gli organizzatori**, non a tavolino.
 
+> **Aggiornamento (2026-08-27).** Con la chiusura del punto 5 resta aperto **solo il punto 7**, che non ha una scadenza. Tutti i punti con una scadenza di fase sono chiusi, e con essi quello che aveva la scadenza più vincolante di tutte: «prima del lancio».
+
 | #   | Questione                                                                                                                      | Entro            |
 | --- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
 | 1   | ~~Raggio di conflitto di default~~ **Chiusa: 60 km confermati, vedi ADR-0021.** | ~~Fase 3~~ chiusa |
 | 2   | ~~Finestra di ±14 giorni per la sovrapposizione artisti~~ **Chiusa: ±7 giorni civili con severity graduata, vedi ADR-0021.** | ~~Fase 3~~ chiusa |
 | 3   | ~~Serve un ruolo di moderatore con poteri di correzione e merge su anagrafiche artisti e venue?~~ **Chiusa: sì, vedi ADR-0016.** Resta da capire con gli organizzatori chi nominare, e se lo strumento di merge serva davvero. | ~~Fase 1~~ chiusa |
 | 4   | ~~La visibilità ridotta in `hold` è sufficiente a far fidare gli organizzatori?~~ **Chiusa per assunzione, non verificata: vedi ADR-0023.** Il segnale che la smentisce è misurabile da `audit_log`: la quota di date che passano da `hold` prima di `confirmed` | ~~Fase 2~~ assunta |
-| 5   | Chi è formalmente titolare del trattamento dei dati: una delle associazioni o il manutentore a titolo personale?               | Prima del lancio |
+| 5   | ~~Chi è formalmente titolare del trattamento dei dati~~ **Chiusa: il manutentore a titolo personale, e l'informativa è la pagina `/privacy` dell'applicazione. Vedi [ADR-0043](#adr-0043--il-titolare-del-trattamento-è-una-persona-fisica-e-linformativa-è-una-pagina-dellapplicazione).** | ~~Prima del lancio~~ chiusa |
 | 6   | ~~Canale Telegram come sink di notifica aggiuntivo?~~ **Chiusa: sì, ed è diventato l'unico canale, vedi [ADR-0039](#adr-0039--il-canale-delle-notifiche-è-telegram-non-lemail).** Chiusa da un vincolo di budget e non parlando con gli organizzatori, come il registro prescriveva: se dicessero di non volerlo, l'interfaccia regge un altro cambio. | ~~Fase 6~~ chiusa |
 | 7   | Un LLM ospitato in locale al posto della Claude API, su un server in casa del manutentore. Ribalterebbe [ADR-0034](#adr-0034--claude-haiku-con-schema-forzato-dallapi-musicbrainz-resta-fuori-dallincolla). Le tre domande vere sono sotto. | Quando il server esiste |
 
