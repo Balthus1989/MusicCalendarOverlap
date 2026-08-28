@@ -8,6 +8,7 @@
 	import { resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { Button } from '$lib/components/ui/button';
+	import { STRETTO } from '$lib/breakpoint';
 	import { ETICHETTE_STATO, type EventoCalendario } from '$lib/events';
 	import type { PageData } from './$types';
 
@@ -47,7 +48,6 @@
 	 * stesse date per esteso — giorno, titolo, città, organizzazione — e nasce
 	 * già in colonna.
 	 */
-	const STRETTO = '(max-width: 767px)';
 	let compatto = $state(false);
 	let vista = $state<string>('dayGridMonth');
 

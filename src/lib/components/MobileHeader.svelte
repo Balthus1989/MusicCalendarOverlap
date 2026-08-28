@@ -18,6 +18,7 @@
 	import { page } from '$app/state';
 	import { afterNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { STRETTO } from '$lib/breakpoint';
 	import type { ResolvedPathname } from '$app/types';
 
 	type Voce = { path: string; href: ResolvedPathname; label: string };
@@ -37,6 +38,30 @@
 	   documento, quindi il `<details>` resterebbe aperto sopra la pagina nuova. */
 	afterNavigate(() => {
 		aperto = false;
+	});
+
+	/**
+	 * Uscire da `md:` chiude il pannello.
+	 *
+	 * L'intestazione è `md:hidden`: riallargando la finestra sparisce per CSS,
+	 * ma `aperto` resterebbe vero, e con lui il blocco dello scorrimento qui
+	 * sotto — l'unica cosa del pannello che sopravvive a `display:none`, perché
+	 * è scritta su `body` e non dentro l'intestazione. Restava una pagina
+	 * desktop che non scorre e nessun pannello in vista da chiudere: per
+	 * sbloccarla bisognava restringere di nuovo la finestra.
+	 *
+	 * Si chiude, e non si toglie soltanto il blocco: il pannello va lasciato
+	 * nello stato in cui lo si ritroverebbe riscendendo sotto `md:`, che è
+	 * chiuso. Riaperto da solo sopra il calendario sarebbe un pannello che
+	 * nessuno ha riaperto.
+	 */
+	$effect(() => {
+		const mq = window.matchMedia(STRETTO);
+		const cambia = (e: MediaQueryListEvent) => {
+			if (!e.matches) aperto = false;
+		};
+		mq.addEventListener('change', cambia);
+		return () => mq.removeEventListener('change', cambia);
 	});
 
 	/* Lo sfondo non deve scorrere sotto il pannello: su un telefono lo
