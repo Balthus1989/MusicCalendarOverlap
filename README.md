@@ -1,6 +1,7 @@
 # Calendario Eventi Condiviso
 
 [![CI](https://github.com/Balthus1989/MusicCalendarOverlap/actions/workflows/ci.yml/badge.svg)](https://github.com/Balthus1989/MusicCalendarOverlap/actions/workflows/ci.yml)
+[![Dona con PayPal](https://img.shields.io/badge/PayPal-Dona-00457C?logo=paypal&logoColor=white)](https://paypal.me/balthus89)
 
 Un calendario condiviso fra organizzatori di concerti, che li avvisa quando due
 date stanno per pestarsi i piedi — **prima** che qualcuno annunci.
