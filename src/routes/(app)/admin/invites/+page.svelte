@@ -50,7 +50,7 @@
 		label="Email dell’invitato"
 		name="emailHint"
 		type="email"
-		hint="Non fa partire nessuna email: precompila il campo quando aprirà il link, e ti ricorda a chi l’avevi destinato."
+		hint="Se lo indichi, l’invito parte per email dalla casella del progetto e l’indirizzo precompila il campo quando aprirà il link. Lasciandolo vuoto l’invito vale lo stesso: il link si passa a mano."
 	/>
 	<Field label="Utilizzi" name="maxUses" type="number" min={1} max={50} value={1} required />
 	<Field
