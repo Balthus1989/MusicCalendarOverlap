@@ -51,6 +51,14 @@
 	let compatto = $state(false);
 	let vista = $state<string>('dayGridMonth');
 
+	/**
+	 * L'ultima vista guardata a schermo largo, per rimetterla quando si torna
+	 * larghi. Non è `$state`: la legge solo il gestore del breakpoint, e farne
+	 * uno stato la renderebbe una dipendenza dell'effetto qui sotto — che a
+	 * quel punto ricostruirebbe il calendario per ricordarsene.
+	 */
+	let vistaDaLarghi = 'dayGridMonth';
+
 	const VISTE = [
 		{ id: 'dayGridMonth', label: 'Mese' },
 		{ id: 'timeGridWeek', label: 'Settimana' },
@@ -135,6 +143,13 @@
 			// in pagina, anche quando a cambiarla è FullCalendar da solo.
 			datesSet: (info) => {
 				vista = info.view.type;
+				// A schermo largo la vista in pagina è anche quella scelta: si
+				// annota, perché è quella a cui tornare dopo un giro sotto il
+				// breakpoint. `untrack` per il motivo di `caricaEventi`: qui si è
+				// dentro `render()`, cioè dentro l'effetto che costruisce il
+				// calendario, e leggere `compatto` senza lo farebbe ricostruire
+				// tutto proprio mentre si attraversa il breakpoint.
+				if (!untrack(() => compatto)) vistaDaLarghi = info.view.type;
 			},
 			eventClick: (info) => {
 				info.jsEvent.preventDefault();
@@ -195,10 +210,16 @@
 	 * Attraversare il breakpoint, senza ricostruire il calendario.
 	 *
 	 * Sul telefono succede ruotandolo; su un desktop, restringendo la finestra.
-	 * La barra segue sempre la larghezza. La **vista** invece si forza solo
-	 * scendendo: chi arriva a schermo largo tiene quello che stava guardando,
-	 * mentre a schermo stretto nessuna delle due viste a griglia sta in
-	 * larghezza, quindi non c'è niente da rispettare.
+	 * La barra segue sempre la larghezza, e la **vista** anche: a schermo
+	 * stretto nessuna delle due viste a griglia sta in larghezza, quindi si
+	 * scende sempre all'elenco; risalendo si rimette quella di prima.
+	 *
+	 * Il ritorno guarda `vistaDaLarghi` e non la sola larghezza, perché
+	 * l'elenco non è per forza una vista imposta: chi lo sceglie a schermo
+	 * largo se lo ritrova, e chi tocca "Mese" da stretto se lo tiene tornando
+	 * largo, perché in quel caso la vista in pagina non è più l'elenco e non
+	 * c'è niente da annullare. Si annulla solo il passaggio che avevamo
+	 * forzato noi.
 	 */
 	$effect(() => {
 		const mq = window.matchMedia(STRETTO);
@@ -207,7 +228,11 @@
 			const cal = untrack(() => calendario);
 			if (!cal) return;
 			cal.setOption('headerToolbar', barra(e.matches));
-			if (e.matches && cal.view.type !== 'listMonth') cal.changeView('listMonth');
+			if (e.matches) {
+				if (cal.view.type !== 'listMonth') cal.changeView('listMonth');
+			} else if (cal.view.type === 'listMonth') {
+				cal.changeView(vistaDaLarghi);
+			}
 		};
 		mq.addEventListener('change', cambia);
 		return () => mq.removeEventListener('change', cambia);

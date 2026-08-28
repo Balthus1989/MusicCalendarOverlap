@@ -1238,8 +1238,10 @@ Sull'**etichetta di stato nelle righe di elenco.** Nelle viste a griglia lo stat
 - _Solo l'hamburger, senza barra in basso._ Metà del lavoro e un header da 52px, ma ogni destinazione a due tocchi — Conflitti compreso, che è la ragione per cui il prodotto esiste.
 - _Rendere leggibile `dayGridMonth` sul telefono._ Non è un problema di stile: vedi sopra.
 - _Mettere i pulsanti di vista nel `footerToolbar` di FullCalendar._ Li avrebbe portati sotto il calendario, cioè lontano dal punto in cui si decide come guardarlo.
-- _Un breakpoint che forza la vista in entrambi i versi._ Scendendo sotto `md:` la vista si forza, perché nessuna delle due griglie sta in larghezza. Salendo no: chi arriva a schermo largo tiene quello che stava guardando.
+- _Un breakpoint che forza la vista in entrambi i versi._ Scendendo sotto `md:` la vista si forza, perché nessuna delle due griglie sta in larghezza. Salendo no: chi arriva a schermo largo tiene quello che stava guardando. **Rivista il 2026-08-28: vedi la revisione qui sotto.**
 - _`!important` sparsi o `@layer base`._ Vedi sopra: il primo è ciò che si è evitato tranne dove FullCalendar non lascia scelta, il secondo non funziona.
+
+> **Revisione (2026-08-28).** Salendo, la vista **torna** a quella di prima. Non ripristinare niente sembrava la scelta rispettosa, e invece era il difetto: il modo normale di attraversare il breakpoint all'insù non è ruotare un telefono, è riallargare la finestra su un desktop — e lì l'elenco non era stato scelto da nessuno, ce lo aveva messo il breakpoint un momento prima. Restava una schermata da telefono su uno schermo largo, con i pulsanti di vista tornati nella barra a dire che le viste erano tre. Ciò che si ripristina non è genericamente "la vista precedente" ma **il passaggio che avevamo forzato noi**: si ricorda l'ultima vista guardata a schermo largo — `vistaDaLarghi`, che `datesSet` aggiorna solo quando non si è compatti — e la si rimette solo se a schermo largo si arriva ancora sull'elenco. Così chi l'elenco lo sceglie da largo se lo tiene, e chi tocca "Mese" da stretto se lo tiene tornando largo, perché in quel caso la vista in pagina non è più l'elenco e non c'è niente da annullare.
 
 **Conseguenze.**
 
