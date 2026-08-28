@@ -39,6 +39,16 @@
 
 	const base =
 		'border-input bg-background ring-ring/40 w-full rounded-md border px-3 py-2 text-sm focus:ring-2 focus:outline-none';
+
+	/**
+	 * Il valore di partenza, letto una volta sola. Svelte scrive `value` come
+	 * proprietà del nodo e non come attributo: senza `defaultValue` il campo
+	 * nasce senza valore predefinito, e il `reset()` che `use:enhance` fa da sé
+	 * dopo un invio riuscito lo svuota invece di riportarlo com'era. Resta una
+	 * fotografia dell'inizio: se seguisse `value`, il reset riporterebbe
+	 * l'ultima cosa digitata invece dell'originale.
+	 */
+	const valoreIniziale = String(value ?? '');
 </script>
 
 <div class="space-y-1.5">
@@ -76,6 +86,7 @@
 			{placeholder}
 			class={base}
 			value={value ?? ''}
+			defaultValue={valoreIniziale}
 			oninput={(e) => {
 				value = e.currentTarget.value;
 				onInput?.(e.currentTarget.value);
@@ -92,6 +103,7 @@
 			{min}
 			{max}
 			value={value ?? ''}
+			defaultValue={valoreIniziale}
 			oninput={(e) => {
 				value = e.currentTarget.value;
 				onInput?.(e.currentTarget.value);
