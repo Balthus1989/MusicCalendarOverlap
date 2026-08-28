@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
 	emailOpzionale,
+	interoOpzionale,
 	latitudine,
 	longitudine,
 	paese,
@@ -21,13 +22,11 @@ export const venueSchema = z.object({
 	// che è la ragione per cui il venue sta in anagrafica (ADR-0008).
 	lat: latitudine,
 	lon: longitudine,
-	capacity: z.coerce
-		.number()
-		.int()
-		.min(1, 'La capienza è almeno 1.')
-		.max(500000)
-		.nullable()
-		.default(null),
+	// `interoOpzionale` e non `z.coerce.number()`: da un form la capienza non
+	// compilata arriva come stringa vuota, che `coerce` trasformava in 0 —
+	// bocciato dal minimo, con il risultato che un campo facoltativo era
+	// obbligatorio. Chi non conosce la capienza del locale lascia vuoto.
+	capacity: interoOpzionale(1, 500000).nullable().default(null),
 	website: urlOpzionale,
 	instagramUrl: urlOpzionale,
 	facebookUrl: urlOpzionale,
