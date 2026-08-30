@@ -44,17 +44,32 @@ export function safeNext(raw: string | null | undefined): string {
  * metadati anche dopo essere stato riscattato — un invito con più utilizzi
  * resta valido — ma chi è già dentro un'organizzazione non ha più niente da
  * accettare, e va al calendario come chiunque altro.
+ *
+ * `invitoUtilizzabile` è la seconda condizione, ed è arrivata dopo, pagata da
+ * utenti veri. Il codice nei metadati **può essere vecchio**: Supabase lo
+ * scrive alla creazione dell'utente e non lo tocca ai reinviti, e chi genera
+ * un invito nuovo di norma revoca il precedente. Mandare qualcuno su un
+ * invito revocato subito dopo averlo fatto entrare è il peggiore dei
+ * fallimenti possibili — sembra che sia stato respinto proprio mentre veniva
+ * ammesso. `invitaPerEmail()` ora riallinea i metadati e questo non dovrebbe
+ * più accadere; qui si mette la rete sotto, per i profili creati prima della
+ * correzione e per il giorno in cui quella scrittura non riesce. Chi ha un
+ * codice che non porta da nessuna parte va al calendario, cioè —
+ * non avendo organizzazione — all'onboarding, che almeno gli dice di
+ * chiedere un invito nuovo.
  */
 export function destinazioneDopoAccesso(atterraggio: {
 	next: string | null | undefined;
 	codiceInvito: string | null | undefined;
 	haMembership: boolean;
+	/** L'invito indicato dai metadati esiste ed è ancora spendibile. */
+	invitoUtilizzabile: boolean;
 }): string {
 	const next = safeNext(atterraggio.next);
 	if (next !== DEFAULT_NEXT) return next;
 
 	const codice = atterraggio.codiceInvito?.trim();
-	if (codice && !atterraggio.haMembership) {
+	if (codice && !atterraggio.haMembership && atterraggio.invitoUtilizzabile) {
 		return `/invite/${encodeURIComponent(codice)}`;
 	}
 

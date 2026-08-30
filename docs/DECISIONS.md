@@ -1455,6 +1455,18 @@ Sull'**account che nasce prima**, che è il costo vero: modifica l'invariante di
 >
 > E una conseguenza che qui non era stata prevista: **gli smoke test non compilano più quel campo.** Un indirizzo di prova, a ogni rilascio, lascerebbe un account inerte che il teardown non ripulisce — rimuove Alfa e Beta, non gli invitati — manderebbe un messaggio a un dominio `.test` che rimbalza sulla casella personale del manutentore, e consumerebbe un'unità del limite che questa decisione ha introdotto proprio per difenderla. Il ramo dell'invio resta senza copertura E2E, ed è la scelta meno cara fra le due.
 
+> **Correzione (2026-08-30). Il punto 2 aveva un presupposto non scritto: che l'invito fosse il primo per quell'indirizzo.**
+>
+> Due invitati su tre non sono riusciti a entrare dal link ricevuto per email, e la strada che ha funzionato è stata passare l'URL a mano — cioè il ripiego che questa decisione doveva rendere superfluo. La segnalazione diceva «il link dice che l'invito è scaduto», e mandava a cercare nel posto sbagliato: il template, la scadenza del token, uno scanner di posta che consuma i link. Non era niente di tutto questo. **Il link funzionava.** Nei record di `auth.users` la conferma dell'email cade venticinque secondi dopo l'invio: `verifyOtp` andava a buon fine e la sessione nasceva. Quel che era sbagliato era la destinazione.
+>
+> `inviteUserByEmail` scrive il suo `data` nei `user_metadata` **solo quando crea l'utente**. Al secondo invito allo stesso indirizzo l'utente esiste già — inerte, non confermato — e Supabase rimanda l'email con un token nuovo e valido lasciando però i metadati come stavano. Il codice là dentro resta quello del primissimo invito, per sempre. E siccome generare un invito nuovo di norma si accompagna al revocare il vecchio, `/auth/callback` mandava l'invitato su un invito revocato: «Questo invito è stato revocato», letto un istante dopo essere stato fatto entrare. Il modo peggiore di accogliere qualcuno.
+>
+> Nessun test poteva vederlo, per la stessa ragione detta qui sopra: il ramo dell'invio non ha copertura E2E, e la suite entra sempre con `type=magiclink` su un utente che esiste già. Il caso si presenta **solo al secondo invito allo stesso indirizzo**, che è un gesto che in sviluppo non si fa e in produzione si fa continuamente.
+>
+> Il rimedio sta in due punti, e sono due cose diverse. In `invitaPerEmail()` i metadati si riallineano a ogni invio con `updateUserById`, perché revocare un invito e generarne un altro per lo stesso indirizzo è legittimo e va poter essere rifatto quante volte serve: se quella scrittura non riesce l'esito lo dice — `inviato-destinazione-vecchia` — invece di lasciar credere che sia tutto a posto, perché il rimedio (passare il link a mano) ce l'ha solo chi ha premuto il pulsante. In `destinazioneDopoAccesso()` si aggiunge `invitoUtilizzabile`, che è la rete sotto: un codice che non porta a un invito spendibile viene ignorato e la persona atterra sull'onboarding, che le dice di chiederne uno nuovo. Serve ai profili creati prima di oggi — i loro metadati restano vecchi finché non ricevono un invito nuovo, e chi si è già confermato non ne riceverà: per lui `inviteUserByEmail` risponde `email_exists` e non parte niente.
+>
+> La lezione generale è sull'alternativa scartata più sopra, quella del codice in un segmento di path. Era stata scartata perché costava «una configurazione in più da azzeccare nel pannello». I `user_metadata` ne costavano una che non era stata vista: sono scrivibili una volta sola, alla creazione, e questo non è scritto da nessuna parte nella firma di `inviteUserByEmail`.
+
 ---
 
 ## ADR-0046 — Il rilascio ha un numero, e il numero sta dentro l'artefatto

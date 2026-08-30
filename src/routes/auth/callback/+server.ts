@@ -17,6 +17,7 @@ import { redirect, type RequestHandler } from '@sveltejs/kit';
 import type { EmailOtpType, User } from '@supabase/supabase-js';
 import { destinazioneDopoAccesso } from '$lib/server/auth/redirect';
 import { getDb } from '$lib/server/db/client';
+import { lookupInvite } from '$lib/server/invites/service';
 import { memberships } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 
@@ -97,16 +98,25 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	const { user } = await locals.safeGetSession();
 	const codiceInvito = codiceInvitoDi(user);
 
-	// La membership si guarda solo se c'è un invito da seguire: per tutti gli
-	// altri la destinazione è già decisa e non vale una query.
+	// Le due query si fanno solo se c'è un invito da seguire: per tutti gli
+	// altri la destinazione è già decisa e non valgono un viaggio al database.
 	let haMembership = false;
+	let invitoUtilizzabile = false;
 	if (codiceInvito && user) {
-		const righe = await getDb()
+		const db = getDb();
+		const righe = await db
 			.select({ id: memberships.id })
 			.from(memberships)
 			.where(eq(memberships.profileId, user.id))
 			.limit(1);
 		haMembership = righe.length > 0;
+
+		// Il codice nei metadati può essere vecchio, e mandare qualcuno su un
+		// invito revocato un istante dopo averlo fatto entrare è il modo
+		// peggiore di accoglierlo. Vedi `destinazioneDopoAccesso()`.
+		if (!haMembership) {
+			invitoUtilizzabile = (await lookupInvite(db, codiceInvito)).ok;
+		}
 	}
 
 	redirect(
@@ -114,7 +124,8 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		destinazioneDopoAccesso({
 			next: url.searchParams.get('next'),
 			codiceInvito,
-			haMembership
+			haMembership,
+			invitoUtilizzabile
 		})
 	);
 };

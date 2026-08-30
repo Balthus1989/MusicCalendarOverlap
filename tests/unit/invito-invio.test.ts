@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { indirizzoGiaRegistrato } from '../../src/lib/server/invites/invio';
+import { indirizzoGiaRegistrato, metadatiDaRiallineare } from '../../src/lib/server/invites/invio';
 
 /**
  * Il riconoscimento passa da un messaggio di errore, che è la cosa che invecchia
@@ -29,5 +29,38 @@ describe('indirizzoGiaRegistrato', () => {
 		).toBe(false);
 		expect(indirizzoGiaRegistrato({ message: 'Error sending invite email' })).toBe(false);
 		expect(indirizzoGiaRegistrato({ message: 'Invalid email address' })).toBe(false);
+	});
+});
+
+/**
+ * La regola che sta sotto al bug del 30 agosto 2026: un invitato entrava con
+ * il link ricevuto per email e finiva su un invito revocato, perché
+ * `inviteUserByEmail` scrive `data` nei `user_metadata` solo quando l'utente
+ * lo crea, e al secondo invito allo stesso indirizzo l'utente esiste già.
+ */
+describe('metadatiDaRiallineare', () => {
+	it('non chiede nessuna scrittura se il codice è già quello giusto', () => {
+		expect(metadatiDaRiallineare({ codice_invito: 'abc123xyz0' }, 'abc123xyz0')).toBeNull();
+	});
+
+	it('riscrive il codice quando i metadati indicano un invito precedente', () => {
+		expect(metadatiDaRiallineare({ codice_invito: 'vecchio123' }, 'nuovo45678')).toEqual({
+			codice_invito: 'nuovo45678'
+		});
+	});
+
+	it('scrive il codice anche quando i metadati non ne hanno mai avuto uno', () => {
+		expect(metadatiDaRiallineare({}, 'nuovo45678')).toEqual({ codice_invito: 'nuovo45678' });
+		expect(metadatiDaRiallineare(null, 'nuovo45678')).toEqual({ codice_invito: 'nuovo45678' });
+		expect(metadatiDaRiallineare(undefined, 'nuovo45678')).toEqual({ codice_invito: 'nuovo45678' });
+	});
+
+	it('non butta via il resto dei metadati, che non sono roba nostra', () => {
+		expect(
+			metadatiDaRiallineare(
+				{ codice_invito: 'vecchio123', email_verified: true, provider: 'email' },
+				'nuovo45678'
+			)
+		).toEqual({ codice_invito: 'nuovo45678', email_verified: true, provider: 'email' });
 	});
 });

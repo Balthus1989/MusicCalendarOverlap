@@ -40,6 +40,11 @@
 					titolo: 'Invito mandato.',
 					testo: `L'email è partita${email ? ` a ${email}` : ''} dalla casella configurata su Supabase. Il link qui sotto vale lo stesso, se preferisci passarlo a mano.`
 				};
+			case 'inviato-destinazione-vecchia':
+				return {
+					titolo: 'Invito mandato — ma il link nell’email porta altrove.',
+					testo: `L'email è partita${email ? ` a ${email}` : ''}, e il suo link di accesso funziona. Non è stato però possibile aggiornare la destinazione su Supabase: chi lo apre entra e finisce sull'invito precedente, non su questo. Passagli il link qui sotto a mano.`
+				};
 			case 'gia-iscritto':
 				return {
 					titolo: 'Invito creato — email non mandata.',

@@ -54,7 +54,13 @@ export type InviteInput = z.infer<typeof inviteSchema>;
  * gira nel browser, e da lì `$lib/server` non si importa.
  */
 export type EsitoInvio =
-	'inviato' | 'gia-iscritto' | 'senza-indirizzo' | 'non-configurato' | 'fallito';
+	| 'inviato'
+	/** Email partita, ma i metadati puntano ancora all'invito precedente. */
+	| 'inviato-destinazione-vecchia'
+	| 'gia-iscritto'
+	| 'senza-indirizzo'
+	| 'non-configurato'
+	| 'fallito';
 
 /** Accettazione: chi entra deve dire come si chiama. */
 export const acceptInviteSchema = z.object({

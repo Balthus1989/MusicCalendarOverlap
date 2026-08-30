@@ -40,7 +40,12 @@ describe('safeNext', () => {
 });
 
 describe('destinazioneDopoAccesso', () => {
-	const base = { next: null, codiceInvito: null, haMembership: false };
+	const base = {
+		next: null,
+		codiceInvito: null,
+		haMembership: false,
+		invitoUtilizzabile: true
+	};
 
 	it('manda al calendario chi entra senza niente addosso', () => {
 		expect(destinazioneDopoAccesso(base)).toBe(DEFAULT_NEXT);
@@ -59,6 +64,33 @@ describe('destinazioneDopoAccesso', () => {
 		expect(
 			destinazioneDopoAccesso({ ...base, codiceInvito: 'abc123XYZ0', haMembership: true })
 		).toBe(DEFAULT_NEXT);
+	});
+
+	it('ignora un codice che non porta a un invito spendibile', () => {
+		// Il codice nei metadati lo scrive Supabase alla creazione dell'utente e
+		// non lo aggiorna ai reinviti: può indicare un invito revocato mentre ne
+		// esiste uno nuovo e valido. Mandarci l'invitato significa respingerlo
+		// nell'istante in cui è appena entrato.
+		expect(
+			destinazioneDopoAccesso({
+				...base,
+				codiceInvito: 'abc123XYZ0',
+				invitoUtilizzabile: false
+			})
+		).toBe(DEFAULT_NEXT);
+	});
+
+	it("un `next` esplicito vale anche quando l'invito nei metadati è morto", () => {
+		// Chi ha chiesto una destinazione precisa la ottiene: l'invito non
+		// c'entra, e `safeNext` ha già escluso che porti fuori sito.
+		expect(
+			destinazioneDopoAccesso({
+				...base,
+				next: '/events/1/edit',
+				codiceInvito: 'abc123XYZ0',
+				invitoUtilizzabile: false
+			})
+		).toBe('/events/1/edit');
 	});
 
 	it('preferisce un `next` esplicito al codice nei metadati', () => {

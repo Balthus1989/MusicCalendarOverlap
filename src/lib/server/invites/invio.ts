@@ -17,6 +17,9 @@
  * template email gli appende il proprio `?` e il `token_hash` finisce dentro
  * il valore del primo parametro: è il guasto di 7aaad91, che era stato
  * riparato in `/login` e non qui. Vedi `destinazioneDopoAccesso()`.
+ *
+ * **E i metadati vanno riscritti a ogni invito, non solo al primo.** È il
+ * secondo invito allo stesso indirizzo a rivelarlo, e sotto c'è il perché.
  */
 import { clientAmministrativo } from '$lib/server/auth/supabase';
 import type { EsitoInvio } from '$lib/schemas/invite';
@@ -42,6 +45,46 @@ export function indirizzoGiaRegistrato(errore: { code?: string; message: string 
 }
 
 /**
+ * I metadati da riscrivere perché puntino all'invito giusto, o `null` se già
+ * ci puntano.
+ *
+ * **Questa funzione esiste per un bug che ha bloccato utenti veri**, e la
+ * ragione va tenuta scritta accanto al codice.
+ *
+ * `inviteUserByEmail` accetta un `data`, ma quel `data` finisce nei
+ * `user_metadata` **solo quando crea l'utente**. Al secondo invito allo stesso
+ * indirizzo l'utente esiste già — inerte, non confermato — e allora Supabase
+ * rimanda l'email con un token nuovo e valido, ma **lascia i metadati come
+ * stavano**. Il codice là dentro resta quello del primissimo invito, per
+ * sempre.
+ *
+ * Il link nell'email funzionava dunque benissimo: `/auth/callback` convertiva
+ * il token in sessione e poi mandava l'invitato sull'invito **precedente**.
+ * Se nel frattempo quello era stato revocato — cioè esattamente ciò che si fa
+ * generandone uno nuovo — l'invitato leggeva «Questo invito è stato revocato»
+ * subito dopo essere entrato, e l'unica strada che restava era passargli
+ * l'URL a mano.
+ *
+ * Revocare un invito e generarne un altro per lo stesso indirizzo è un gesto
+ * legittimo e va rifatto quante volte serve: è il motivo per cui i metadati si
+ * riallineano a ogni invio, non solo al primo.
+ *
+ * Si passano i metadati e non l'utente per tenerla pura: la decisione si prova
+ * caso per caso, l'unica chiamata a Supabase sta in `invitaPerEmail()`.
+ */
+export function metadatiDaRiallineare(
+	attuali: Record<string, unknown> | null | undefined,
+	codice: string
+): Record<string, unknown> | null {
+	const metadati = attuali ?? {};
+	if (metadati.codice_invito === codice) return null;
+
+	// Si fondono invece di sostituire: `user_metadata` non è roba nostra, e
+	// quel che ci mette Supabase (o un domani noi) non va perso per strada.
+	return { ...metadati, codice_invito: codice };
+}
+
+/**
  * Manda l'invito all'indirizzo indicato, se ce n'è uno.
  *
  * **Non solleva mai.** Un invito generato è una riga già scritta e un link già
@@ -61,20 +104,43 @@ export async function invitaPerEmail(opzioni: {
 	if (!admin) return { esito: 'non-configurato' };
 
 	try {
-		const { error } = await admin.auth.admin.inviteUserByEmail(email, {
+		const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
 			// Nudo. Vedi l'intestazione del modulo.
 			redirectTo: `${opzioni.origin.replace(/\/+$/, '')}/auth/callback`,
 			data: { codice_invito: opzioni.codice }
 		});
 
-		if (!error) return { esito: 'inviato' };
-		if (indirizzoGiaRegistrato(error)) return { esito: 'gia-iscritto' };
+		if (error) {
+			if (indirizzoGiaRegistrato(error)) return { esito: 'gia-iscritto' };
 
-		console.error(
-			'Invito non spedito:',
-			JSON.stringify({ code: error.code, message: error.message })
-		);
-		return { esito: 'fallito', motivo: error.message };
+			console.error(
+				'Invito non spedito:',
+				JSON.stringify({ code: error.code, message: error.message })
+			);
+			return { esito: 'fallito', motivo: error.message };
+		}
+
+		// Vedi `metadatiDaRiallineare()`: al secondo invito allo stesso
+		// indirizzo il `data` qui sopra non ha avuto nessun effetto.
+		const metadati = metadatiDaRiallineare(data.user?.user_metadata, opzioni.codice);
+		if (!metadati || !data.user) return { esito: 'inviato' };
+
+		const { error: erroreMetadati } = await admin.auth.admin.updateUserById(data.user.id, {
+			user_metadata: metadati
+		});
+
+		if (erroreMetadati) {
+			// L'email è già partita e il suo link funziona: quel che non
+			// funzionerà è dove atterra. Va detto a chi ha premuto il pulsante,
+			// perché il rimedio — passare il link a mano — ce l'ha solo lui.
+			console.error(
+				'Metadati invito non riallineati:',
+				JSON.stringify({ code: erroreMetadati.code, message: erroreMetadati.message })
+			);
+			return { esito: 'inviato-destinazione-vecchia' };
+		}
+
+		return { esito: 'inviato' };
 	} catch (err) {
 		console.error('Invito non spedito:', err);
 		return { esito: 'fallito', motivo: err instanceof Error ? err.message : 'errore sconosciuto' };
