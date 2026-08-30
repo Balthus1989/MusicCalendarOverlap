@@ -118,6 +118,7 @@ export default defineConfig({
 				// altre, senza un errore da nessuna parte.
 				include: [
 					'@fullcalendar/core',
+					'@fullcalendar/core/internal',
 					'@fullcalendar/core/locales/it',
 					'@fullcalendar/daygrid',
 					'@fullcalendar/timegrid',

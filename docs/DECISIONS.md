@@ -1504,3 +1504,40 @@ Sul **punto 5**, che è la parte non ovvia: Cloudflare conserva le versioni del 
 - La numerazione lega i rilasci alle fasi, e le fasi prima o poi finiscono. Quando succede, la minor smette di essere una fase e torna a essere una minor: nessuna decisione da prendere, solo una convenzione che scade da sé.
 
 **Da rivedere se.** Il manutentore non è più solo, o il prodotto esce dal contesto di alta fiducia. A quel punto delle note di rilascio leggibili da chi non ha il repository sotto mano smettono di essere un doppione e diventano il canale: è lì che un `CHANGELOG.md` — o le release di GitHub, che sono lo stesso file scritto altrove — comincia a pagare.
+
+---
+
+## ADR-0047 — Il fuso dentro FullCalendar lo calcola `Intl`, con un plugin di dodici righe
+
+**Data:** 2026-08-30 · **Stato:** Accettata
+
+**Contesto.** Il secondo difetto segnalato da un organizzatore dopo il rilascio, il 30 agosto 2026: «sulla schermata di edit ho messo gli orari giusti poi sono shiftati di due ore indietro nella schermata di view». Nella schermata allegata, un concerto salvato per le 21:30 compariva in calendario alle 19:30, e la sua coda alle 02:11 diventava una seconda riga il giorno dopo, dalle 00:00 alle 00:11.
+
+Nel database l'istante era giusto. `time.ts` era giusto — `daLocaleAIstante()` e `oraCivile()` sono testati da Fase 2, cambio d'ora compreso. La pagina della singola data era giusta, perché formatta con `Intl.DateTimeFormat` e `timeZone: 'Europe/Rome'`. Sbagliava **solo** il calendario, e sbagliava di esattamente lo scarto del fuso: due ore in agosto, una in gennaio.
+
+La causa è un'opzione che sembra funzionare e non funziona. `new Calendar(el, { timeZone: 'Europe/Rome' })` è la riga che la documentazione di FullCalendar mostra, ma il core sa convertire da solo due soli valori, `'local'` e `'UTC'`. Per qualunque nome di fuso vero pretende un `namedTimeZonedImpl` fornito da un plugin — quello di `@fullcalendar/luxon3` — e se non lo trova **non solleva niente**: mette a falso un flag interno (`canComputeOffset`), e da lì ogni istante viene disegnato con i suoi campi UTC. Nessun errore in console, nessun avviso, un calendario che sembra funzionare e mente su ogni orario.
+
+**Decisione.** Il `namedTimeZonedImpl` lo scriviamo noi, in `src/lib/fuso-fullcalendar.ts`, sopra le stesse funzioni di `time.ts` che usa il resto dell'applicazione. Sono due metodi — da istante ai campi dell'orologio da parete, e da orario di parete allo scarto in minuti — e li servono `scartoDiFuso()` e `scartoDiFusoDiParete()`, estratte da `daLocaleAIstante()` senza cambiarne il comportamento. Il calendario dichiara `timeZone: FUSO_APP` e monta il plugin insieme agli altri tre.
+
+**Motivazioni.**
+
+Sul **non aggiungere Luxon**: sarebbe la strada ufficiale, e per un progetto che non avesse già risolto il problema sarebbe anche la scelta giusta. Qui la conversione fra istante e orario di parete esiste da Fase 2, è codice puro, è coperta dai test sul cambio d'ora, ed è la stessa su cui poggia il giorno civile della regola R3 ([ADR-0021](#adr-0021--r2-scende-a-7-giorni-civili-con-severity-graduata-e-il-raggio-di-default-resta-60-km)). Luxon accanto vorrebbe dire **due aritmetiche del fuso nello stesso bundle**, e il giorno in cui divergessero su un cambio d'ora il calendario mostrerebbe una data nella casella di un giorno in cui il conflitto non è stato cercato. Il costo di non averlo sono dodici righe di adattatore; il costo di averlo è una seconda fonte di verità su ciò che questo prodotto sbaglia più facilmente.
+
+Sull'**`Intl` come motore**: è la premessa che `time.ts` dichiara dalla prima riga e che regge da sette fasi. Conosce le regole di fuso, comprese quelle storiche, ed è già nel runtime — sia nel browser sia nel Worker.
+
+Sul **test che gira il `DateEnv` vero**: verificare i due metodi dell'adattatore non basta. Passerebbero anche il giorno in cui il core rinominasse l'opzione e nessuno montasse più il plugin — che è esattamente il guasto da cui si viene. Il test costruisce quindi il `DateEnv` del core in tutti e due i modi, con l'implementazione e senza, e **fissa anche il valore sbagliato**: `19:30` per una data salvata alle `21:30`. È l'unico modo di far fallire un test se quella riga torna a mancare.
+
+**Alternative scartate.**
+
+- _`@fullcalendar/luxon3` + `luxon`._ Vedi sopra: due aritmetiche del fuso, e la seconda proprio nel punto che disegna.
+- _Mandare al calendario l'orario di parete senza scarto (`2026-09-11T21:30:00`) e dichiarare `timeZone: 'UTC'`._ Funziona, costa zero righe, ed è stata la tentazione. Ma sposta il problema su `aEventoCalendario()`, che smetterebbe di emettere istanti per emettere stringhe senza fuso — un formato che è giusto solo finché chi lo legge sa che è italiano. E lascerebbe comunque sbagliati la finestra che il calendario chiede a `/api/events` (mezzanotti UTC invece che romane, cioè due ore di date perse ai bordi del mese) e l'indicatore di "oggi" fra le 00:00 e le 02:00.
+- _`timeZone: 'local'`, cioè il fuso del browser._ Giusto per il 99% degli organizzatori e sbagliato per chi guarda il calendario da un altro fuso, che è il caso che [`calendar.ts`](../src/lib/server/events/calendar.ts) dice a chiare lettere di voler evitare quando serializza `extendedProps.ora` già formattata.
+
+**Conseguenze.**
+
+- Gli orari in calendario sono quelli inseriti, in tutte e tre le viste, tutto l'anno.
+- Ne guadagnano due cose che non erano state segnalate ma erano rotte per lo stesso motivo: la finestra `da`/`a` inviata a `/api/events` ora ha per estremi mezzanotti italiane, e il giorno "oggi" cambia a mezzanotte italiana invece che alle 02:00.
+- `time.ts` esporta due funzioni in più. Restano codice puro senza I/O e restano testate; `daLocaleAIstante()` è ora scritta sopra una di loro e non ha una copia della logica del cambio d'ora.
+- Il plugin è client-side e va dichiarato in `optimizeDeps` di `vite.config.ts` come gli altri quattro moduli di FullCalendar, perché importa `@fullcalendar/core/internal`.
+
+**Da rivedere se.** Il prodotto smette di essere italiano. Se un giorno le organizzazioni avessero un fuso proprio, la decisione da prendere non sarebbe questa ma quella a monte — quale fuso è "il" fuso di una data — e riguarderebbe `ARCHITECTURE.md` §16 prima del calendario.

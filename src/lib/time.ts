@@ -61,7 +61,7 @@ function partiLocali(istante: Date, fuso: string): Parti {
 }
 
 /** Scarto fra il fuso e UTC, in millisecondi, valido *per quell'istante*. */
-function scartoMs(istante: Date, fuso: string): number {
+export function scartoDiFuso(istante: Date, fuso: string = FUSO_APP): number {
 	const l = partiLocali(istante, fuso);
 	const comeSeUtc = Date.UTC(l.anno, l.mese - 1, l.giorno, l.ora, l.minuto);
 	// I secondi si perdono nell'arrotondamento al minuto: nessun fuso ha mai
@@ -70,8 +70,9 @@ function scartoMs(istante: Date, fuso: string): number {
 }
 
 /**
- * Da orario di parete (`2026-10-12T22:00`, come lo scrive un `datetime-local`)
- * all'istante assoluto.
+ * Scarto fra il fuso e UTC, in millisecondi, valido *per quell'orario di
+ * parete* — passato come i millisecondi che quell'orario avrebbe se fosse UTC,
+ * cioè un `Date.UTC(anno, mese, giorno, ora, minuto)`.
  *
  * Il doppio passaggio serve al cambio d'ora: lo scarto va misurato sull'istante
  * giusto, ma per sapere qual è l'istante giusto serve già lo scarto. Si parte
@@ -82,18 +83,25 @@ function scartoMs(istante: Date, fuso: string): number {
  * ottobre si risolve sulla prima occorrenza, cioè quella legale. Sono le stesse
  * scelte che fa un calendario qualunque.
  */
+export function scartoDiFusoDiParete(pareteComeUtc: number, fuso: string = FUSO_APP): number {
+	const stima = scartoDiFuso(new Date(pareteComeUtc), fuso);
+	return scartoDiFuso(new Date(pareteComeUtc - stima), fuso);
+}
+
+/**
+ * Da orario di parete (`2026-10-12T22:00`, come lo scrive un `datetime-local`)
+ * all'istante assoluto.
+ *
+ * Il cambio d'ora, e le due ore ambigue dell'anno, li risolve
+ * `scartoDiFusoDiParete()`: qui si legge solo la stringa.
+ */
 export function daLocaleAIstante(locale: string, fuso: string = FUSO_APP): Date {
 	const [dataParte, oraParte = '00:00'] = locale.trim().split('T');
 	const [anno, mese, giorno] = dataParte.split('-').map(Number);
 	const [ora, minuto] = oraParte.split(':').map(Number);
 
-	const stima = Date.UTC(anno, mese - 1, giorno, ora || 0, minuto || 0);
-	const primoScarto = scartoMs(new Date(stima), fuso);
-	const candidato = new Date(stima - primoScarto);
-
-	const secondoScarto = scartoMs(candidato, fuso);
-	if (secondoScarto === primoScarto) return candidato;
-	return new Date(stima - secondoScarto);
+	const parete = Date.UTC(anno, mese - 1, giorno, ora || 0, minuto || 0);
+	return new Date(parete - scartoDiFusoDiParete(parete, fuso));
 }
 
 const dueCifre = (n: number) => String(n).padStart(2, '0');

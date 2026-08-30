@@ -5,11 +5,13 @@
 	import dayGridPlugin from '@fullcalendar/daygrid';
 	import listPlugin from '@fullcalendar/list';
 	import timeGridPlugin from '@fullcalendar/timegrid';
+	import { fusoPlugin } from '$lib/fuso-fullcalendar';
 	import { resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { Button } from '$lib/components/ui/button';
 	import { STRETTO } from '$lib/breakpoint';
 	import { ETICHETTE_STATO, type EventoCalendario } from '$lib/events';
+	import { FUSO_APP } from '$lib/time';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -122,11 +124,15 @@
 		compatto = stretto;
 
 		calendario = new Calendar(contenitore, {
-			plugins: [dayGridPlugin, timeGridPlugin, listPlugin],
+			plugins: [dayGridPlugin, timeGridPlugin, listPlugin, fusoPlugin],
 			locale: itLocale,
 			// Il fuso è quello del prodotto, non quello del browser: un
 			// organizzatore in viaggio deve vedere gli stessi orari di sempre.
-			timeZone: 'Europe/Rome',
+			//
+			// `fusoPlugin` non è un accessorio: senza, il core non sa convertire
+			// un nome di fuso e disegna ogni orario in UTC, cioè un'ora o due
+			// indietro. Vedi `$lib/fuso-fullcalendar`.
+			timeZone: FUSO_APP,
 			initialView: stretto ? 'listMonth' : 'dayGridMonth',
 			headerToolbar: barra(stretto),
 			customButtons: {
