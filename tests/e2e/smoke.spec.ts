@@ -308,3 +308,101 @@ test.describe('senza sessione', () => {
 		await expect(page.getByRole('heading', { name: 'Sei senza rete' })).toBeVisible();
 	});
 });
+
+/* ------------------------------------------------------------------ *
+ * Scheda operativa della band (Fase 7)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Il criterio di fine della Fase 7, contro un database vero.
+ *
+ * `scheda-visibility.test.ts` lo asserisce già sul serializzatore, che è dove
+ * la regola vive. Questi tre blocchi provano l'altra metà: che fra il form,
+ * la query e la pagina non si perda per strada — perché la soglia di ADR-0049
+ * protegge qualcosa solo se arriva fino allo schermo.
+ *
+ * L'ordine dei blocchi è il test: Alfa annota due proprie date e non vede
+ * comparire niente, Beta annota la sua e la fascia comune compare a tutti e
+ * due, e **nessuna delle due vede una riga che non sia sua**.
+ */
+test.describe('scheda della band · prima osservazione', () => {
+	test.use({ storageState: ALFA.statoFile });
+
+	test('Alfa annota due proprie date, e da sola non fa comparire nessuna fascia', async ({
+		page
+	}) => {
+		const { passataAlfa, passataAlfa2, bandComune } = leggiAmbiente();
+
+		await apri(page, `/events/${passataAlfa}`);
+		await expect(page.getByRole('heading', { name: "Com'è andata?" })).toBeVisible();
+
+		await page.getByLabel('Fascia di cachet').selectOption('600_1200');
+		await page.getByLabel('Comprendeva').selectOption('cachet_e_viaggio');
+		await page.getByLabel('Minuti suonati').fill('55');
+		await page.getByRole('button', { name: 'Salva' }).click();
+		await expect(page.getByText('Annotato sulla scheda della band')).toBeVisible();
+
+		await apri(page, `/events/${passataAlfa2}`);
+		await page.getByLabel('Fascia di cachet').selectOption('600_1200');
+		await page.getByLabel('Comprendeva').selectOption('cachet_e_viaggio');
+		await page.getByLabel('Minuti suonati').fill('55');
+		await page.getByRole('button', { name: 'Salva' }).click();
+		await expect(page.getByText('Annotato sulla scheda della band')).toBeVisible();
+
+		await apri(page, `/artists/${bandComune}`);
+		await expect(page.getByRole('heading', { name: 'Scheda operativa' })).toBeVisible();
+
+		// Due osservazioni, ma di una sola organizzazione: non superano niente.
+		// È il caso più insidioso, perché è anche quello in cui il dato
+		// "sembra" esserci.
+		await expect(page.getByText('Non abbastanza osservazioni.')).toBeVisible();
+		await expect(page.getByRole('button', { name: 'ritira' })).toHaveCount(2);
+
+		// I minuti invece si vedono subito: non sono un prezzo e non espongono
+		// nessuna trattativa, quindi non hanno soglia.
+		await expect(page.getByText('55 minuti in mediana')).toBeVisible();
+	});
+});
+
+test.describe('scheda della band · la soglia si apre', () => {
+	test.use({ storageState: BETA.statoFile });
+
+	test('Beta annota la sua, e l’intervallo compare senza dire di chi è', async ({ page }) => {
+		const { passataBeta, bandComune } = leggiAmbiente();
+
+		await apri(page, `/events/${passataBeta}`);
+		await page.getByLabel('Fascia di cachet').selectOption('1200_2500');
+		await page.getByLabel('Comprendeva').selectOption('solo_cachet');
+		await page.getByRole('button', { name: 'Salva' }).click();
+		await expect(page.getByText('Annotato sulla scheda della band')).toBeVisible();
+
+		await apri(page, `/artists/${bandComune}`);
+		await expect(page.getByText('3 osservazioni da 2 organizzazioni')).toBeVisible();
+
+		// La fascia comune è la mediana delle tre, cioè quella di Alfa: Beta la
+		// legge senza sapere di chi sia, e non ha modo di ricavare le due righe
+		// che non ha scritto.
+		await expect(page.getByText('600 – 1.200 €')).toBeVisible();
+		await expect(page.getByRole('button', { name: 'ritira' })).toHaveCount(1);
+	});
+});
+
+test.describe('scheda della band · dall’altro lato', () => {
+	test.use({ storageState: ALFA.statoFile });
+
+	test('Alfa vede lo stesso intervallo, e continua a vedere solo la propria riga', async ({
+		page
+	}) => {
+		const { bandComune } = leggiAmbiente();
+
+		await apri(page, `/artists/${bandComune}`);
+		await expect(page.getByText('3 osservazioni da 2 organizzazioni')).toBeVisible();
+		await expect(page.getByRole('button', { name: 'ritira' })).toHaveCount(2);
+
+		// La fascia comune è la stessa vista dai due lati e non ricostruisce
+		// nessuna riga: è esattamente il criterio di fine della fase.
+		await expect(page.getByText('Non abbastanza osservazioni.')).toHaveCount(0);
+		// Alfa non deve leggere da nessuna parte la fascia di Beta.
+		await expect(page.getByText('1.200 – 2.500 €')).toHaveCount(0);
+	});
+});

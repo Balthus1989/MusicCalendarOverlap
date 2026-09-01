@@ -214,6 +214,20 @@ export const genres = pgTable(
  * §4.3 Artisti e venue
  * ------------------------------------------------------------------ */
 
+/**
+ * Quanto spazio serve per scaricare. Tassonomia chiusa come quella dei generi
+ * (ADR-0007): una scala su cui si possono confrontare due band vale più di un
+ * campo di testo in cui ognuno scrive a modo suo.
+ */
+export const volumeAttrezzatura = pgEnum('volume_attrezzatura', [
+	'solo_voce',
+	'acustico',
+	'backline_leggera',
+	'furgone',
+	'furgone_grande',
+	'camion'
+]);
+
 /** Anagrafica condivisa: è un bene comune del gruppo (ADR-0006). */
 export const artists = pgTable(
 	'artists',
@@ -240,6 +254,30 @@ export const artists = pgTable(
 		/** Informazione preziosa tra organizzatori. */
 		bookingEmail: text('booking_email'),
 		bookingAgency: text('booking_agency'),
+
+		/*
+		 * Fatti dichiarati (Fase 7, ADR-0048). Descrivono la band a prescindere
+		 * da chi la ingaggia — si leggono da un rider — e per questo stanno qui
+		 * e non fra le osservazioni: sono uguali per tutti, li cura chiunque, li
+		 * corregge il moderatore.
+		 *
+		 * Tutti nullable, e il `NULL` vuol dire "non lo sappiamo": è
+		 * un'informazione diversa da "no", in particolare su `richiedeBackline`.
+		 */
+		volumeAttrezzatura: volumeAttrezzatura('volume_attrezzatura'),
+		/** Band più tecnici: è il numero che decide cena e posti letto. */
+		personeInViaggio: integer('persone_in_viaggio'),
+		richiedeBackline: boolean('richiede_backline'),
+		/** Minuti, come da rider. Il massimo che sanno suonare, non il tipico. */
+		durataSetMaxDichiarata: integer('durata_set_max_dichiarata'),
+		/**
+		 * Su richiesta della band la scheda operativa si spegne per tutti
+		 * (ADR-0051): è un'opposizione ex art. 21 fatta funzionare invece che
+		 * promessa. Il resto dell'anagrafica resta — serve al motore conflitti,
+		 * e non è ciò a cui si oppone chi si oppone.
+		 */
+		schedaSpenta: boolean('scheda_spenta').notNull().default(false),
+
 		/** Curato da un admin o da un moderatore. */
 		isVerified: boolean('is_verified').notNull().default(false),
 		createdBy: uuid('created_by').references(() => profiles.id, { onDelete: 'set null' }),
@@ -515,6 +553,134 @@ export const eventLinks = pgTable(
 		sortOrder: integer('sort_order').notNull().default(0)
 	},
 	(t) => [index('event_links_event_idx').on(t.eventId, t.sortOrder)]
+).enableRLS();
+
+/* ------------------------------------------------------------------ *
+ * §4.7 Scheda operativa della band (Fase 7)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Le sei fasce di cachet, in euro lordi (ADR-0049).
+ *
+ * **Non esiste un campo per l'importo esatto, e non è una dimenticanza**: una
+ * cifra precisa non viene nascosta in uscita, non entra proprio. Una fascia
+ * risponde alla domanda che ci si fa davvero — con che ordine di grandezza mi
+ * sto muovendo — e non risponde a quella che è meglio non poter fare.
+ *
+ * I confini sono un'ipotesi scritta a tavolino: è il punto aperto 9.
+ */
+export const cachetBand = pgEnum('cachet_band', [
+	'fino_a_300',
+	'300_600',
+	'600_1200',
+	'1200_2500',
+	'2500_5000',
+	'oltre_5000'
+]);
+
+/** Senza questo la fascia non vuol dire niente: 1.200 € col viaggio è un altro prezzo. */
+export const cachetScope = pgEnum('cachet_scope', [
+	'solo_cachet',
+	'cachet_e_viaggio',
+	'tutto_incluso'
+]);
+
+/**
+ * `osservata` è appesa a una data vera; `riferita` è sentito dire.
+ *
+ * Le due non si mescolano mai nell'aggregato: la riferita ha una riga propria
+ * sulla scheda, con il suo conteggio. «Queste le abbiamo viste, queste ce le
+ * hanno raccontate» (ADR-0049).
+ */
+export const observationOrigin = pgEnum('observation_origin', ['osservata', 'riferita']);
+
+/**
+ * Che cosa un'organizzazione ha visto di una band (ADR-0048).
+ *
+ * Il cachet non è un attributo della band: è un fatto su una trattativa, fra
+ * quella band e quell'organizzatore, in quella serata, con quella capienza, in
+ * quell'anno. Per questo non è una colonna di `artists` da sovrascrivere ma una
+ * riga qui, che nessun altro può riscrivere.
+ *
+ * Nessun handler restituisce mai una riga di questa tabella grezza: si passa da
+ * `serializeArtistCard()` (ADR-0048).
+ */
+export const artistObservations = pgTable(
+	'artist_observations',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		artistId: uuid('artist_id')
+			.notNull()
+			.references(() => artists.id, { onDelete: 'cascade' }),
+		/** Chi ha scritto: l'organizzazione, non la persona. */
+		organizationId: uuid('organization_id')
+			.notNull()
+			.references(() => organizations.id, { onDelete: 'cascade' }),
+		createdBy: uuid('created_by').references(() => profiles.id, { onDelete: 'set null' }),
+
+		origine: observationOrigin('origine').notNull(),
+		/**
+		 * L'ancoraggio, ed è la parte che fa funzionare tutto il resto: chi
+		 * scrive il numero l'ha visto, il dato si data da sé, e il permesso di
+		 * scrittura non va inventato perché è già l'appartenenza
+		 * all'organizzazione titolare della data.
+		 */
+		eventLineupId: uuid('event_lineup_id').references(() => eventLineup.id, {
+			onDelete: 'cascade'
+		}),
+
+		fasciaCachet: cachetBand('fascia_cachet'),
+		cachetInclude: cachetScope('cachet_include'),
+		/** Minuti effettivamente suonati, non quelli dichiarati. */
+		durataSetMinuti: integer('durata_set_minuti'),
+		volumeOsservato: volumeAttrezzatura('volume_osservato'),
+
+		/**
+		 * Copiata da `events.starts_at` per una `osservata`, dichiarata da chi
+		 * scrive per una `riferita`. È il perno della finestra di 24 mesi.
+		 */
+		dataRiferimento: date('data_riferimento').notNull(),
+
+		/*
+		 * Contesto congelato al momento della scrittura, non ricavato con un
+		 * join: un evento si modifica dopo, e un venue cambiato non deve
+		 * riscrivere il contesto di un'osservazione già data.
+		 *
+		 * L'eleggibilità invece resta un join vivo su `events.status`, così una
+		 * data che esce da `confirmed` esce dall'aggregato da sola.
+		 */
+		ruolo: billingRole('ruolo'),
+		capienzaVenue: integer('capienza_venue'),
+		regione: text('regione'),
+
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [
+		// O è appesa a una data, o si dichiara sentito dire. Non c'è una terza
+		// forma, e il database lo sa: è l'invariante su cui poggia il fatto
+		// che chi ha scritto un numero l'abbia visto.
+		check(
+			'artist_observations_ancoraggio',
+			sql`(${t.origine} = 'osservata') = (${t.eventLineupId} is not null)`
+		),
+		// Un'osservazione vuota non è un'osservazione.
+		check(
+			'artist_observations_almeno_un_dato',
+			sql`${t.fasciaCachet} is not null or ${t.durataSetMinuti} is not null or ${t.volumeOsservato} is not null`
+		),
+		// Una riga di lineup produce una osservazione: due sarebbero la stessa
+		// serata contata due volte, e la soglia di ADR-0049 conta le serate.
+		uniqueIndex('artist_observations_lineup_idx').on(t.eventLineupId),
+		// Una riferita per organizzazione per band, sostituibile. Senza questo
+		// vincolo una sola organizzazione riempie la scheda da sola e il
+		// conteggio smette di voler dire qualcosa.
+		uniqueIndex('artist_observations_riferita_idx')
+			.on(t.artistId, t.organizationId)
+			.where(sql`${t.origine} = 'riferita'`),
+		// L'aggregato si legge sempre per band, filtrando sulla finestra.
+		index('artist_observations_artist_idx').on(t.artistId, t.dataRiferimento)
+	]
 ).enableRLS();
 
 /* ------------------------------------------------------------------ *
@@ -937,7 +1103,20 @@ export const genresRelations = relations(genres, ({ one, many }) => ({
 }));
 
 export const artistsRelations = relations(artists, ({ many }) => ({
-	artistGenres: many(artistGenres)
+	artistGenres: many(artistGenres),
+	observations: many(artistObservations)
+}));
+
+export const artistObservationsRelations = relations(artistObservations, ({ one }) => ({
+	artist: one(artists, { fields: [artistObservations.artistId], references: [artists.id] }),
+	organization: one(organizations, {
+		fields: [artistObservations.organizationId],
+		references: [organizations.id]
+	}),
+	lineup: one(eventLineup, {
+		fields: [artistObservations.eventLineupId],
+		references: [eventLineup.id]
+	})
 }));
 
 export const artistGenresRelations = relations(artistGenres, ({ one }) => ({
@@ -1015,6 +1194,12 @@ export type Genre = typeof genres.$inferSelect;
 export type NewGenre = typeof genres.$inferInsert;
 export type Artist = typeof artists.$inferSelect;
 export type NewArtist = typeof artists.$inferInsert;
+export type VolumeAttrezzatura = (typeof volumeAttrezzatura.enumValues)[number];
+export type ArtistObservation = typeof artistObservations.$inferSelect;
+export type NewArtistObservation = typeof artistObservations.$inferInsert;
+export type CachetBand = (typeof cachetBand.enumValues)[number];
+export type CachetScope = (typeof cachetScope.enumValues)[number];
+export type ObservationOrigin = (typeof observationOrigin.enumValues)[number];
 export type Venue = typeof venues.$inferSelect;
 export type NewVenue = typeof venues.$inferInsert;
 export type Event = typeof events.$inferSelect;

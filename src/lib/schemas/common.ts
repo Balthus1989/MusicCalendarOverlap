@@ -159,3 +159,15 @@ export const giornoOpzionale = z
 	.nullable()
 	.default(null)
 	.refine((v) => v === null || /^\d{4}-\d{2}-\d{2}$/.test(v), 'Data non valida.');
+
+/**
+ * Valore da una lista chiusa, oppure `null`: un `<select>` senza scelta manda
+ * la stringa vuota, e quella non è un valore non previsto — è "non lo so".
+ */
+export const enumOpzionale = <T extends readonly [string, ...string[]]>(valori: T) =>
+	z
+		.union([z.string(), z.null()])
+		.optional()
+		.transform((v) => (v === null || v === undefined || v.trim() === '' ? null : v.trim()))
+		.refine((v) => v === null || (valori as readonly string[]).includes(v), 'Valore non previsto.')
+		.transform((v) => v as T[number] | null);

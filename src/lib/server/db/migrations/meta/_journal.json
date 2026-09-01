@@ -78,6 +78,13 @@
       "when": 1787836893573,
       "tag": "0010_bizarre_purple_man",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1788272516895,
+      "tag": "0011_fase7_scheda_band",
+      "breakpoints": true
     }
   ]
 }

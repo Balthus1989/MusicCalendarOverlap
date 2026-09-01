@@ -9,7 +9,7 @@
  *   platform admin. Artisti e venue non appartengono a nessuno, quindi il
  *   permesso di correggerli non può derivare dal ruolo in un'organizzazione.
  */
-import type { MemberRole } from '$lib/server/db/schema';
+import type { EventStatus, MemberRole } from '$lib/server/db/schema';
 
 export type Viewer = {
 	profileId: string;
@@ -210,4 +210,86 @@ export function canDeleteEvent(viewer: Viewer, event: EventoDaAutorizzare): bool
 	if (event.organizzazioneEsterna) return canModerateCatalog(viewer);
 	const ruolo = membroEffettivo(viewer, event.organizationId);
 	return ruolo === 'admin' || ruolo === 'owner';
+}
+
+/* ------------------------------------------------------------------ *
+ * Scheda operativa della band (Fase 7)
+ * ------------------------------------------------------------------ */
+
+/**
+ * La data a cui si vorrebbe appendere un'osservazione.
+ *
+ * Serve tutta: senza lo stato e senza sapere se è passata, il controllo
+ * diventerebbe "sei membro dell'organizzazione", che è la metà sbagliata.
+ */
+export type DataOsservabile = {
+	organizationId: string;
+	/** `organizations.esterna` del proprietario (ADR-0044). */
+	organizzazioneEsterna: boolean;
+	status: EventStatus;
+	/** Vero se la serata è già avvenuta. */
+	passata: boolean;
+};
+
+/**
+ * Annotare che cosa è successo su una propria data (ADR-0048).
+ *
+ * Il permesso **non è stato inventato**: è l'appartenenza all'organizzazione
+ * titolare della data. È il guadagno vero dell'ancoraggio — nessun ruolo
+ * nuovo, nessuna lista di chi può, nessuna moderazione preventiva.
+ *
+ * Le tre esclusioni non sono cautele, sono la definizione di che cosa conta
+ * come serata vera. Una bozza non è successa. Un `hold` nemmeno, e per giunta
+ * un'osservazione su un `hold` sarebbe una data non annunciata raccontata da
+ * un'altra porta. Una data annullata non ha pagato nessun cachet.
+ *
+ * Sulle date segnalate non scrive nessuno, e non serve dirlo:
+ * un'organizzazione esterna non ha membri, quindi il controllo cade da sé.
+ * Resta esplicito perché la curatela di ADR-0044 **non** deve valere qui —
+ * correggere il nome di un locale è un conto, dichiarare che cosa ha pagato
+ * qualcun altro è un altro.
+ */
+export function canWriteOsservazione(viewer: Viewer, data: DataOsservabile): boolean {
+	if (data.organizzazioneEsterna) return false;
+	if (data.status !== 'confirmed') return false;
+	if (!data.passata) return false;
+	return membroEffettivo(viewer, data.organizationId) !== null;
+}
+
+/**
+ * Lasciare un sentito dire su una band che nel gruppo non ha ancora portato
+ * nessuno: basta appartenere a una qualunque organizzazione.
+ *
+ * Il vincolo che conta non è qui ma sul database — una riferita per
+ * organizzazione per band — ed è ciò che tiene il conteggio significativo.
+ */
+export function canWriteRiferita(viewer: Viewer): boolean {
+	return Object.keys(viewer.roles).length > 0;
+}
+
+/**
+ * Correggere o cancellare un'osservazione: chi appartiene all'organizzazione
+ * che l'ha scritta. Non chi l'ha digitata — le persone in un circolo cambiano,
+ * l'osservazione resta dell'organizzazione.
+ *
+ * Il moderatore qui non entra: cura l'identità della band, non il registro di
+ * chi l'ha pagata. Le osservazioni non sono un bene comune, sono di chi le ha
+ * scritte (ADR-0016 al contrario).
+ */
+export function canEditOsservazione(
+	viewer: Viewer,
+	osservazione: { organizationId: string }
+): boolean {
+	return membroEffettivo(viewer, osservazione.organizationId) !== null;
+}
+
+/**
+ * Spegnere la scheda operativa su richiesta della band (ADR-0051).
+ *
+ * Lo fa un moderatore e non un automatismo: non c'è modo di verificare via web
+ * che chi scrive sia la band, e una bandiera che si alza da sola su richiesta
+ * anonima è una leva per spegnere la scheda di chiunque.
+ */
+export function canSpegnereScheda(viewer: Viewer): boolean {
+	return canModerateCatalog(viewer);
 }

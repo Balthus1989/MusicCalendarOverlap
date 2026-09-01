@@ -4,8 +4,10 @@
 	import { resolve } from '$app/paths';
 	import { cambi, etichettaAzione, nomeAttore } from '$lib/audit';
 	import ConflictWarning from '$lib/components/ConflictWarning.svelte';
+	import Field from '$lib/components/Field.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { ORDINE_SEVERITA } from '$lib/conflicts';
+	import { OPZIONI_FASCIA, OPZIONI_INCLUDE, OPZIONI_VOLUME } from '$lib/scheda';
 	import { ETICHETTE_LOCANDINA, ETICHETTE_STATO } from '$lib/events';
 	import type { ActionData, PageData } from './$types';
 
@@ -163,6 +165,9 @@
 {#if form?.statoCambiato}
 	<p class="mb-4 text-sm">Stato aggiornato: {form.statoCambiato}.</p>
 {/if}
+{#if form?.annotato}
+	<p class="mb-4 text-sm">Annotato sulla scheda della band, senza il tuo nome.</p>
+{/if}
 
 {#if e.status === 'cancelled'}
 	<p class="border-border mb-6 rounded-md border p-3 text-sm">
@@ -284,6 +289,80 @@
 				{:else}
 					<p class="text-muted-foreground text-sm">Ancora nessuna band annunciata.</p>
 				{/if}
+			</section>
+		{/if}
+
+		<!-- Com'è andata? ------------------------------------------------- -->
+		{#if data.puoAnnotare && data.daAnnotare.length}
+			<section>
+				<h2 class="mb-1 text-sm font-medium">Com'è andata?</h2>
+				<p class="text-muted-foreground mb-3 max-w-2xl text-xs">
+					Quello che scrivi qui finisce sulla scheda della band, <strong
+						>senza il tuo nome e senza questa data</strong
+					>. Le altre organizzazioni vedono una fascia comune solo quando almeno due di loro hanno
+					annotato qualcosa; sotto quella soglia non vedono niente.
+				</p>
+
+				<div class="space-y-3">
+					{#each data.daAnnotare as b (b.lineupId)}
+						{#if b.schedaSpenta}
+							<p class="border-border rounded-md border p-3 text-sm">
+								<span class="font-medium">{b.nomeBand}</span>
+								<span class="text-muted-foreground">
+									· ha chiesto di non avere una scheda operativa.</span
+								>
+							</p>
+						{:else}
+							<form
+								method="POST"
+								action="?/annota"
+								class="border-border rounded-md border p-3"
+								use:enhance
+							>
+								<input type="hidden" name="eventLineupId" value={b.lineupId} />
+								<p class="mb-3 text-sm font-medium">
+									{b.nomeBand}
+									{#if b.osservazione}
+										<span class="text-muted-foreground font-normal">· già annotata</span>
+									{/if}
+								</p>
+								<div class="grid gap-4 sm:grid-cols-4">
+									<Field
+										label="Fascia di cachet"
+										name="fasciaCachet"
+										options={OPZIONI_FASCIA}
+										value={b.osservazione?.fasciaCachet ?? ''}
+									/>
+									<Field
+										label="Comprendeva"
+										name="cachetInclude"
+										options={OPZIONI_INCLUDE}
+										value={b.osservazione?.cachetInclude ?? ''}
+									/>
+									<Field
+										label="Minuti suonati"
+										name="durataSetMinuti"
+										type="number"
+										min={1}
+										max={600}
+										value={b.osservazione?.durataSetMinuti ?? ''}
+									/>
+									<Field
+										label="Attrezzatura"
+										name="volumeOsservato"
+										options={OPZIONI_VOLUME}
+										value={b.osservazione?.volumeOsservato ?? ''}
+									/>
+								</div>
+								<div class="mt-3">
+									<Button type="submit" variant="outline">
+										{b.osservazione ? 'Aggiorna' : 'Salva'}
+									</Button>
+								</div>
+							</form>
+						{/if}
+					{/each}
+				</div>
 			</section>
 		{/if}
 

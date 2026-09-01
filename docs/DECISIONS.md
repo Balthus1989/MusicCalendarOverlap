@@ -1382,7 +1382,9 @@ Sull'**avviso a una persona invece che a un'organizzazione**. `destinatari.ts` e
 
 Non ancora decise, elencate per non perderle di vista. Vanno chiuse **parlando con gli organizzatori**, non a tavolino.
 
-> **Aggiornamento (2026-09-01).** La scheda operativa della band ([ADR-0048](#adr-0048--la-scheda-della-band-separa-i-fatti-dichiarati-dalle-osservazioni-e-le-osservazioni-si-appendono-a-una-data)) aggiunge i punti **8** e **9**. L'8 ha una scadenza vincolante — prima della Fase 7 — ed è il primo punto dal 5 che **blocca del codice**: finché non è chiuso, la Fase 7 non si comincia. Il 9 è una calibrazione e si chiude sui dati, non parlando.
+> **Aggiornamento (2026-09-01, in giornata).** La scheda operativa della band ([ADR-0048](#adr-0048--la-scheda-della-band-separa-i-fatti-dichiarati-dalle-osservazioni-e-le-osservazioni-si-appendono-a-una-data)) ha aperto i punti **8** e **9**. L'8 si è chiuso lo stesso giorno, sulla risposta che il disegno presumeva; il 9 resta, ed è una calibrazione che si chiude sui dati e non parlando.
+>
+> Sull'8 va detta una cosa che il registro pretende da sé: questa sezione prescrive di chiudere **parlando con gli organizzatori**, e la risposta è arrivata dal manutentore. È la stessa irregolarità del punto 6, e come lì va scritta invece che nascosta. La differenza è che qui la domanda era già stata messa nella forma giusta prima di rispondere — le tre opzioni, terza compresa, sono qui sotto — e che il costo di sbagliarla è un ADR da riaprire, non un rilascio da rifare.
 >
 > **Aggiornamento (2026-08-27).** Con la chiusura del punto 5 resta aperto **solo il punto 7**, che non ha una scadenza. Tutti i punti con una scadenza di fase sono chiusi, e con essi quello che aveva la scadenza più vincolante di tutte: «prima del lancio».
 
@@ -1395,7 +1397,7 @@ Non ancora decise, elencate per non perderle di vista. Vanno chiuse **parlando c
 | 5   | ~~Chi è formalmente titolare del trattamento dei dati~~ **Chiusa: il manutentore a titolo personale, e l'informativa è la pagina `/privacy` dell'applicazione. Vedi [ADR-0043](#adr-0043--il-titolare-del-trattamento-è-una-persona-fisica-e-linformativa-è-una-pagina-dellapplicazione).** | ~~Prima del lancio~~ chiusa |
 | 6   | ~~Canale Telegram come sink di notifica aggiuntivo?~~ **Chiusa: sì, ed è diventato l'unico canale, vedi [ADR-0039](#adr-0039--il-canale-delle-notifiche-è-telegram-non-lemail).** Chiusa da un vincolo di budget e non parlando con gli organizzatori, come il registro prescriveva: se dicessero di non volerlo, l'interfaccia regge un altro cambio. | ~~Fase 6~~ chiusa |
 | 7   | Un LLM ospitato in locale al posto della Claude API, su un server in casa del manutentore. Ribalterebbe [ADR-0034](#adr-0034--claude-haiku-con-schema-forzato-dallapi-musicbrainz-resta-fuori-dallincolla). Le tre domande vere sono sotto. | Quando il server esiste |
-| 8   | Che cosa vuole il gruppo dalla scheda band: **non farsi trovare impreparato davanti a una richiesta**, oppure **sapere quanto pagano gli altri**. Sono due prodotti, e [ADR-0049](#adr-0049--il-cachet-si-vede-a-fasce-sopra-una-soglia-di-due-organizzazioni-e-non-si-attribuisce-mai) serve il primo per costruzione. Le note sono sotto. | **Prima della Fase 7** |
+| 8   | ~~Che cosa vuole il gruppo dalla scheda band~~ **Chiusa (2026-09-01): "non farsi trovare impreparato davanti a una richiesta".** È la risposta che [ADR-0049](#adr-0049--il-cachet-si-vede-a-fasce-sopra-una-soglia-di-due-organizzazioni-e-non-si-attribuisce-mai) e [ADR-0052](#adr-0052--la-fascia-comune-è-una-mediana-sopra-tre-osservazioni-perché-un-aggregato-di-due-si-inverte) presumevano, quindi **non cambia una riga di codice**: cambia che adesso è una scelta e non un'assunzione. Le note sotto restano perché la domanda si ripresenterà. | ~~Prima della Fase 7~~ chiusa |
 | 9   | I confini delle sei fasce di cachet (§4.7.1 di `ARCHITECTURE.md`). Scritti a tavolino su un giro di club e associazioni. | Tre mesi dopo la Fase 7 |
 
 **Sul punto 7**, perché non vada perso il ragionamento già fatto.
@@ -1405,7 +1407,7 @@ Non ancora decise, elencate per non perderle di vista. Vanno chiuse **parlando c
 - **Il Worker non arriva in salotto.** L'applicazione gira su Cloudflare (ADR-0002) e non può raggiungere una macchina su una rete domestica: servirebbe esporla, con quello che comporta. Va detto però che l'architettura **regge già** un endpoint inaffidabile — `struttura()` non solleva mai e il fallimento non blocca l'inserimento manuale (principio 5) — quindi una connessione casalinga qui è una scelta legittima, come non lo sarebbe su qualcosa di portante.
 - **La riscrittura è contenuta e lo era per progetto.** Cambia `llm.ts` e basta: nessun altro file di `parse/` sa che esiste un modello. È il motivo per cui ADR-0034 ha scartato l'HTTP grezzo senza rimpianti.
 
-**Sul punto 8**, perché la domanda arrivi agli organizzatori nella forma giusta e non in quella comoda.
+**Sul punto 8**, perché la domanda arrivi agli organizzatori nella forma giusta e non in quella comoda. Le note restano dopo la chiusura: la domanda si ripresenta ogni volta che qualcuno chiede di rendere la scheda «più precisa», e la risposta è qui.
 
 - **La domanda non è «vi va bene una scheda delle band».** A quella rispondono tutti di sì. La domanda è che cosa si fa con il numero: se serve a non arrivare al telefono senza un ordine di grandezza, oppure a sapere se il vicino l'ha pagata meno. La prima è informazione, la seconda è coordinamento sul prezzo di acquisto, e chi le chiede entrambe di solito non si è accorto che sono due.
 - **Un archivio dei prezzi condiviso fra chi compra dallo stesso fornitore ha un nome tecnico.** Lo scambio di informazioni sul prezzo pagato allo stesso fornitore è la forma di scambio che il diritto della concorrenza guarda con più attenzione, e l'assenza di scopo di lucro non la mette al riparo: rileva l'attività economica, non il fine. Nessuno qui sta facendo un cartello, e non è questo il punto: il punto è che il disegno di ADR-0049 — fasce invece di importi, soglia di due organizzazioni, nessuna attribuzione, nessun ordinamento per prezzo — è ciò che tiene la feature dalla parte dell'informazione, e ogni richiesta di «renderlo più preciso» è una richiesta di spostarla dall'altra. Va saputo prima, non quando arriva la richiesta.
@@ -1617,13 +1619,15 @@ Sul **congelare** ruolo, capienza e regione sulla riga invece di ricavarli con u
 
 ## ADR-0049 — Il cachet si vede a fasce, sopra una soglia di due organizzazioni, e non si attribuisce mai
 
-**Data:** 2026-09-01 · **Stato:** Accettata · **Dipende da:** il punto aperto 8, che va chiuso prima di implementarla
+**Data:** 2026-09-01 · **Stato:** Accettata, **corretta in parte da [ADR-0052](#adr-0052--la-fascia-comune-è-una-mediana-sopra-tre-osservazioni-perché-un-aggregato-di-due-si-inverte)** · **Presumeva** il punto aperto 8, **chiuso il 2026-09-01** su «non farsi trovare impreparato davanti a una richiesta»: l'assunzione era quella giusta
+
+> **Correzione (2026-09-01, implementando).** I punti 1 e 3 — fasce invece di importi, nessuna attribuzione — reggono e sono il cuore della decisione. Il punto **2 no**: la soglia a due osservazioni e la pubblicazione degli **estremi** rendono l'aggregato ricostruibile da chi vi ha contribuito, e quindi la soglia decorativa proprio nel caso in cui scatta per la prima volta. Soglia a tre e mediana al posto dell'intervallo: [ADR-0052](#adr-0052--la-fascia-comune-è-una-mediana-sopra-tre-osservazioni-perché-un-aggregato-di-due-si-inverte). Il ragionamento sbagliato è quello di «la grana grossa compra la soglia bassa», qui sotto: si legge ancora, e va letto sapendo com'è finito.
 
 **Contesto.** Deciso con [ADR-0048](#adr-0048--la-scheda-della-band-separa-i-fatti-dichiarati-dalle-osservazioni-e-le-osservazioni-si-appendono-a-una-data) **dove** sta il cachet, resta la domanda difficile: che cosa ne vede chi non l'ha scritto.
 
 Il vincolo di scala è duro e non si aggira con la buona volontà. Le organizzazioni iscritte sono **meno di venti**, si conoscono, e sanno chi lavora su quale genere in quale provincia. In un insieme così piccolo un aggregato calcolato su una sola osservazione **è** quella osservazione, e "media di 1.400 € su questa band" letto da chi sa che in zona quella band la porta solo il circolo X non è una statistica: è il cachet del circolo X, riletto a voce alta.
 
-C'è poi il problema opposto, che riguarda l'altro lato del tavolo: un archivio dei prezzi pagati allo stesso fornitore, condiviso fra chi da quel fornitore compra, non è una struttura dati neutrale. È il punto 8, e non si chiude qui.
+C'è poi il problema opposto, che riguarda l'altro lato del tavolo: un archivio dei prezzi pagati allo stesso fornitore, condiviso fra chi da quel fornitore compra, non è una struttura dati neutrale. Era il punto 8, e si è chiuso il giorno stesso: la scheda serve a non arrivare impreparati a una richiesta, non a sapere quanto pagano gli altri.
 
 **Decisione.** Tre scelte che stanno insieme e che separatamente non funzionerebbero.
 
@@ -1658,9 +1662,9 @@ Sull'**asimmetria fra cachet e il resto**. Sarebbe stato più elegante applicare
 - L'interfaccia deve saper dire **«non abbastanza osservazioni»** senza farlo sembrare un guasto, e senza dire quante ne mancano: "manca una sola osservazione" è già un'informazione sul conteggio.
 - Il conteggio delle organizzazioni si calcola su `organization_id` **distinti**, non sui profili. Due persone della stessa associazione sono una voce sola.
 - Chi scrive vede sempre le proprie osservazioni, anche sotto soglia, ed è l'unico modo in cui la propria compilazione resta utile subito invece che forse fra un anno.
-- Resta il **punto 8** aperto, e questa decisione è scritta assumendo la prima delle due risposte. Se il gruppo dicesse l'altra, si riapre questo ADR e non si aggira.
+- Il **punto 8** è stato chiuso il 2026-09-01 sulla prima delle due risposte, che è quella che questa decisione assumeva. L'assunzione diventa quindi una scelta, e i vincoli qui sopra smettono di essere prudenza e diventano il modo in cui la funzione è stata voluta. Se un giorno il gruppo cambiasse idea, si riapre questo ADR e non si aggira.
 
-**Da rivedere se.** Le organizzazioni superano la cinquantina — allora la soglia può scendere e le fasce possono stringersi — oppure il punto 8 si chiude in modo diverso da come questa decisione presume.
+**Da rivedere se.** Le organizzazioni superano la cinquantina — allora la soglia può scendere e le fasce possono stringersi — oppure il gruppo riapre il punto 8, che oggi è chiuso sulla risposta che questa decisione presumeva.
 
 ---
 
@@ -1686,7 +1690,7 @@ E il campo, se esiste, si riempie. Non serve prevedere l'abuso: basta prevedere 
 
 Sulla **nota libera anche se privata**, che è la versione che sembra innocua. È innocua finché è privata, e resta privata finché a qualcuno non viene la buona idea di condividerla — e a quel punto il campo è già pieno di anni di annotazioni scritte quando nessuno pensava che le avrebbe lette un altro. È molto più facile non avere il campo che sostenere quella conversazione. Chi vuole tenersi un appunto ha già mille posti dove farlo, e nessuno di quei posti è un database condiviso fra venti organizzazioni.
 
-Sull'**ordinamento**: un elenco di band ordinabile per prezzo non è la stessa feature con un'affordance in più. È un listino. Trasforma "quanto chiede questa band che sto valutando" in "chi costa meno in questo genere", che è l'uso del punto 8 di cui il gruppo dovrebbe dire esplicitamente se lo vuole, non un effetto collaterale di una `ORDER BY`. La fascia serve a preparare una telefonata, non a fare la spesa.
+Sull'**ordinamento**: un elenco di band ordinabile per prezzo non è la stessa feature con un'affordance in più. È un listino. Trasforma "quanto chiede questa band che sto valutando" in "chi costa meno in questo genere", che è l'uso che il punto 8 ha escluso esplicitamente, non un effetto collaterale di una `ORDER BY`. La fascia serve a preparare una telefonata, non a fare la spesa.
 
 Sull'**uscita dal recinto**: il feed ICS è l'unica superficie di questo prodotto che finisce su server di terzi — è per definizione ciò che fa, e [ADR-0011](#adr-0011--feed-ics-in-sola-lettura-nessun-sync-bidirezionale) lo vuole così. Una scheda che finisse lì dentro sarebbe fuori da ogni controllo di visibilità in un modo da cui non si torna indietro, perché un ICS scaricato non si richiama. Vale lo stesso per il service worker, per il vincolo che `CLAUDE.md` dichiara già: in cache va solo ciò che è uguale per tutti.
 
@@ -1742,8 +1746,61 @@ Sul **non chiedere il consenso alla band prima di aprire la scheda**, che sarebb
 **Conseguenze.**
 
 - **L'informativa è codice**, come già stabilito: la finestra di 24 mesi che dichiara è la costante dell'aggregatore, e cambiarne una senza l'altra produce un'informativa falsa. Vale il commento in testa al file.
+  > **Precisazione (2026-09-01, implementando).** Non è più una regola da ricordare: `MESI_FINESTRA` vive in `src/lib/scheda.ts`, fuori da `server/`, e la pagina `/privacy` la **importa** invece di riscriverla. Il numero nell'informativa e il numero nell'aggregatore sono lo stesso valore, e per farli divergere bisogna prima staccarli a mano.
 - La Fase 7 non è finita quando la scheda funziona: è finita quando `/privacy` la nomina e `scheda_spenta` funziona. La pagina fa parte della fase, non del dopo.
 - La condizione da tenere d'occhio è nominata sopra: **se cadono i vincoli di ADR-0049 e ADR-0050, questa decisione non regge più**. Non è una nota di stile, è la ragione per cui il trattamento è difendibile.
 - ADR-0043 diceva che il servizio non legge mai l'indirizzo IP e che era una proprietà vera del sistema. Resta vera: qui non se ne aggiunge nessuno.
 
 **Da rivedere se.** Una band chiede l'accesso ai dati che la riguardano — cioè esercita l'art. 15 e non l'art. 21. Oggi la risposta si costruisce a mano da `db:studio`, e a questa scala va bene; se succedesse più di una volta l'anno servirebbe un modo di esportare la scheda di una band senza rivelare quali organizzazioni l'hanno osservata, che non è un'esportazione banale.
+
+---
+
+## ADR-0052 — La fascia comune è una mediana sopra tre osservazioni, perché un aggregato di due si inverte
+
+**Data:** 2026-09-01 · **Stato:** Accettata · **Supera in parte:** [ADR-0049](#adr-0049--il-cachet-si-vede-a-fasce-sopra-una-soglia-di-due-organizzazioni-e-non-si-attribuisce-mai), limitatamente alla soglia e alla forma di ciò che si pubblica
+
+**Contesto.** ADR-0049 diceva due cose che sembravano indipendenti e non lo erano: che l'aggregato è l'**intervallo** fra la fascia minima e la massima, e che la soglia scende a **due osservazioni** da due organizzazioni perché «la grana grossa compra la soglia bassa».
+
+Messe insieme producono questo, che si è visto solo guardando la pagina vera con dentro due righe:
+
+> **600 – 1.200 → 1.200 – 2.500 €** — 2 osservazioni da 2 organizzazioni · cachet e viaggio, solo cachet
+
+Beta, che ha scritto `1.200 – 2.500 / solo cachet`, ricava per sottrazione che l'altra osservazione è `600 – 1.200 / cachet e viaggio`. Cioè **esattamente la fascia di Alfa**, con la sua convenzione, ottenuta senza nessun accesso indebito: leggendo la propria riga e facendo una differenza.
+
+Con due elementi, pubblicare minimo e massimo **è** pubblicare l'insieme. La soglia non proteggeva niente proprio nel caso in cui scattava per la prima volta, e l'elenco dei `cachet_include` era un secondo canale con la stessa aritmetica.
+
+Va detto per intero che i test non l'hanno preso, e che è istruttivo: asserivano che le righe altrui non compaiono nella lista delle proprie — il che era vero — e mai che l'aggregato non fosse invertibile. Una verifica positiva su una garanzia negativa.
+
+**Decisione.** Tre correzioni, e stanno insieme come stavano insieme gli errori.
+
+1. **La soglia torna a tre osservazioni**, sempre da almeno due organizzazioni distinte e nella finestra di 24 mesi. La motivazione non è la robustezza statistica: è che sotto tre l'aggregato è ricostruibile da chi vi ha contribuito.
+2. **Si pubblica la fascia mediana, non gli estremi.** Una mediana non si inverte: chi possiede una riga sa dove cade rispetto alla mediana, non quali siano le altre. Su un numero pari di osservazioni si prende la più bassa delle due centrali.
+3. **`cachet_include` esce come valore modale**, non come elenco. Un elenco di due convenzioni su due osservazioni si legge per sottrazione come gli estremi.
+
+Stessa forma per le `riferite`: mediana e conteggio, mai gli estremi.
+
+**Motivazioni.**
+
+Sul **perché l'errore c'era in origine**. ADR-0049 ha trattato la grana come se fosse l'unica variabile di esposizione, e ha barattato precisione del dato contro numerosità della soglia. Ma l'esposizione di un aggregato non dipende solo da quanto è grossa la grana: dipende da **quanti elementi lo compongono e da quanti ne conosce già chi legge**. In un gruppo in cui chi legge è quasi sempre anche chi ha scritto, il secondo termine è quasi sempre uno — e con n=2 uno basta.
+
+Sulla **mediana invece dell'intervallo**, che è la parte che cambia il prodotto e non solo un numero. Un intervallo dice «fra quanto e quanto è stata pagata», la mediana dice «quanto sta di solito». La seconda è la risposta alla domanda che ci si fa davvero prima di una telefonata, ed è anche l'unica delle due che non porta con sé i valori individuali. Si perde qualcosa di reale — la dispersione, cioè quanto quella band varia da piazza a piazza — e va detto: è il costo, ed è accettato per la stessa ragione per cui si erano scelte le fasce.
+
+Sul **non essere tornati agli importi esatti** una volta alzata la soglia. Sarebbe stato il baratto simmetrico e sarebbe stato sbagliato: la grana grossa protegge dal lettore che non ha contribuito, la soglia e la mediana proteggono da quello che ha contribuito. Sono due minacce diverse e servono tutte e due le difese.
+
+Sul **costo di adozione**, che è la conseguenza spiacevole e non va nascosta: con meno di venti organizzazioni, tre osservazioni su una stessa band da due realtà diverse sono una condizione che molte band non raggiungeranno mai. Su quelle la scheda dirà «non abbastanza osservazioni» per sempre. È il prezzo di una soglia che protegge davvero, e l'alternativa non era una soglia più bassa che funziona: era una soglia più bassa che non funziona.
+
+**Alternative scartate.**
+
+- _Tenere l'intervallo e alzare la soglia a cinque._ Riduce l'invertibilità senza toglierla — chi possiede l'estremo sa comunque che qualcuno sta all'altro capo — e alza il costo di adozione molto più della mediana.
+- _Pubblicare l'intervallo solo quando non coincide con l'insieme_, cioè con n ≥ 4. Una regola che si spiega solo raccontando l'attacco da cui difende, e che espone comunque i due estremi a chi ne possiede uno.
+- _Aggiungere rumore alla fascia pubblicata._ Su sei valori ordinali, il rumore che protegge è anche quello che rende il dato falso. Meglio un dato vero e più povero.
+- _Non mostrare niente finché non ci sono tre organizzazioni distinte._ La difesa più solida, e sproporzionata: a questa scala equivarrebbe a non avere la funzione.
+
+**Conseguenze.**
+
+- `MIN_OSSERVAZIONI` passa da 2 a 3; `AggregatoCachet` espone `fascia` al posto di `da`/`a`, e `include` diventa un valore solo. Nessuna migrazione: cambia solo ciò che si calcola in uscita, non ciò che si scrive.
+- I test guadagnano le asserzioni che mancavano, e sono **in negativo**: dato un insieme in cui una sola organizzazione possiede la fascia di mezzo, ciò che viene pubblicato non deve contenere le due agli estremi. È la forma giusta per una garanzia di non-inferenza, e vale sia nell'unità sia nello smoke test.
+- La pagina dice ora «almeno tre osservazioni da due organizzazioni diverse», e va tenuta allineata a `MIN_OSSERVAZIONI` come l'informativa lo è a `MESI_FINESTRA`.
+- Resta un residuo di inferenza che è onesto dichiarare invece di far finta di aver chiuso: con n=3 e due organizzazioni, chi ne possiede due conosce la terza se la mediana è la propria. **Non è risolvibile con una soglia** — solo con un aggregato che non pubblichi nessun valore dell'insieme — e a questa scala è il limite con cui la funzione convive. Chi contribuisce molto su una band vede un po' più di chi contribuisce poco.
+
+**Da rivedere se.** Le organizzazioni superano la cinquantina: allora la soglia può scendere e l'intervallo torna proponibile, perché il numero di elementi che chi legge già conosce smette di essere una frazione significativa dell'insieme.

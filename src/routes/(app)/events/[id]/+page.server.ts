@@ -1,7 +1,18 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { env as publicEnv } from '$env/dynamic/public';
 import { puoLeggereAudit, registroDellEvento } from '$lib/server/audit';
-import { autorizzabile, canDeleteEvent, canEditEvent } from '$lib/server/auth/permissions';
+import {
+	autorizzabile,
+	canDeleteEvent,
+	canEditEvent,
+	canWriteOsservazione
+} from '$lib/server/auth/permissions';
+import {
+	annotazioniDellEvento,
+	leggiAncoraggio,
+	scriviOsservazione
+} from '$lib/server/catalog/osservazioni';
+import { osservazioneSchema } from '$lib/schemas/osservazione';
 import { conflittiDellEvento } from '$lib/server/conflicts/queries';
 import { getDb } from '$lib/server/db/client';
 import { caricaEvento } from '$lib/server/events/queries';
@@ -34,9 +45,25 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 	const puoModificare = canEditEvent(viewer, autorizzabile(evento));
 	const baseUrl = (publicEnv.PUBLIC_APP_URL ?? url.origin).replace(/\/+$/, '');
 
+	// «Com'è andata?»: l'invito compare solo dove l'osservazione si potrebbe
+	// davvero scrivere, cioè su una propria data passata e ancora in cartellone
+	// (ADR-0048). Non è una notifica e non deve diventarlo — un avviso nasce da
+	// un evento o da un conflitto serializzato, e una scheda non è né l'uno né
+	// l'altro (ADR-0035).
+	const puoAnnotare = canWriteOsservazione(viewer, {
+		organizationId: evento.organizationId,
+		organizzazioneEsterna: evento.organization.esterna,
+		status: evento.status,
+		passata: evento.startsAt.getTime() < Date.now()
+	});
+
 	return {
 		evento: serializzato,
 		puoModificare,
+		puoAnnotare,
+		// Le band con la scheda spenta restano nell'elenco ma senza modulo:
+		// sparire in silenzio farebbe sembrare un guasto una richiesta.
+		daAnnotare: puoAnnotare ? await annotazioniDellEvento(db, params.id) : [],
 		// I due link "aggiungi al calendario" si costruiscono lato server, come
 		// prescrive ARCHITECTURE.md §8, e a partire dall'evento **già
 		// serializzato**: di una data opzionata altrui finiscono nell'URL solo
@@ -93,6 +120,62 @@ export const actions: Actions = {
 
 		await cambiaStato(db, viewer.profileId, params.id, evento.status, nuovo);
 		return { statoCambiato: descriviTransizione(evento.status, nuovo) };
+	},
+
+	/**
+	 * «Com'è andata?» — l'osservazione su una band di questa serata (ADR-0048).
+	 *
+	 * Il permesso si ricava dall'ancoraggio e non dal form: chi manda la
+	 * richiesta dichiara solo quale riga di lineup, e da quella si risale
+	 * all'evento, alla sua organizzazione e al suo stato. Un `eventLineupId` di
+	 * un'altra data non passa il controllo, e non c'è nessun campo nascosto da
+	 * cui possa passare qualcos'altro.
+	 */
+	annota: async ({ request, locals }) => {
+		const viewer = locals.viewer;
+		if (!viewer) return fail(401, { errore: 'Sessione non valida.' });
+
+		const form = await request.formData();
+		const parsed = osservazioneSchema.safeParse(Object.fromEntries(form));
+		if (!parsed.success) {
+			return fail(400, { errore: parsed.error.issues[0]?.message ?? 'Dati non validi.' });
+		}
+
+		const db = getDb();
+		const ancoraggio = await leggiAncoraggio(db, parsed.data.eventLineupId);
+		if (!ancoraggio) return fail(404, { errore: 'Serata non trovata.' });
+
+		if (
+			!canWriteOsservazione(viewer, {
+				organizationId: ancoraggio.organizationId,
+				organizzazioneEsterna: ancoraggio.organizzazioneEsterna,
+				status: ancoraggio.status,
+				passata: ancoraggio.startsAt.getTime() < Date.now()
+			})
+		) {
+			return fail(403, { errore: 'Si annota solo una propria data già passata e confermata.' });
+		}
+
+		if (!ancoraggio.artistId) {
+			return fail(400, {
+				errore: 'Questa band non è in anagrafica: aggiungila prima, così la scheda esiste.'
+			});
+		}
+
+		if (ancoraggio.schedaSpenta) {
+			return fail(403, {
+				errore: 'Questa band ha chiesto di non avere una scheda operativa.'
+			});
+		}
+
+		await scriviOsservazione(db, ancoraggio, ancoraggio.organizationId, viewer.profileId, {
+			fasciaCachet: parsed.data.fasciaCachet,
+			cachetInclude: parsed.data.cachetInclude,
+			durataSetMinuti: parsed.data.durataSetMinuti,
+			volumeOsservato: parsed.data.volumeOsservato
+		});
+
+		return { annotato: true };
 	},
 
 	elimina: async ({ locals, params }) => {

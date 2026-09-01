@@ -2,7 +2,9 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import Field from '$lib/components/Field.svelte';
+	import SchedaBand from '$lib/components/SchedaBand.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { OPZIONI_BACKLINE, OPZIONI_VOLUME } from '$lib/scheda';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -142,6 +144,48 @@
 			<Field label="YouTube" name="youtubeUrl" type="url" value={a.youtubeUrl} />
 		</div>
 
+		<!-- I fatti dichiarati: si leggono da un rider e valgono per chiunque la
+		     ingaggi. Il prezzo non sta qui e non ci starà mai (ADR-0048). -->
+		<fieldset class="border-border space-y-4 rounded-md border p-4">
+			<legend class="px-1 text-sm font-medium">Scheda operativa</legend>
+			<p class="text-muted-foreground text-xs">
+				Quello che la band è, a prescindere da chi la ingaggia. Quello che è successo in una serata
+				— cachet, minuti suonati — si annota invece dalla data, non da qui.
+			</p>
+			<div class="grid gap-5 sm:grid-cols-2">
+				<Field
+					label="Volume attrezzatura"
+					name="volumeAttrezzatura"
+					options={OPZIONI_VOLUME}
+					value={a.volumeAttrezzatura}
+				/>
+				<Field
+					label="Backline richiesta"
+					name="richiedeBackline"
+					options={OPZIONI_BACKLINE}
+					value={a.richiedeBackline === null ? '' : a.richiedeBackline ? 'si' : 'no'}
+				/>
+				<Field
+					label="Persone in viaggio"
+					name="personeInViaggio"
+					type="number"
+					min={1}
+					max={60}
+					value={a.personeInViaggio}
+					hint="Band più tecnici: è il numero che decide cena e posti letto."
+				/>
+				<Field
+					label="Durata massima del set"
+					name="durataSetMaxDichiarata"
+					type="number"
+					min={1}
+					max={600}
+					value={a.durataSetMaxDichiarata}
+					hint="Minuti, come da rider."
+				/>
+			</div>
+		</fieldset>
+
 		<Field label="Note" name="bio" rows={3} value={a.bio} />
 
 		<Button type="submit" size="lg" disabled={submitting}>
@@ -193,4 +237,13 @@
 		<dt class="text-muted-foreground text-sm">Inserita da</dt>
 		<dd class="text-sm">{data.autore ?? '—'}</dd>
 	</dl>
+
+	<SchedaBand
+		scheda={data.scheda}
+		nome={a.name}
+		schedaSpenta={a.schedaSpenta}
+		organizzazioni={data.organizzazioni}
+		puoRiferire={data.puoRiferire}
+		puoSpegnere={data.puoSpegnere}
+	/>
 {/if}

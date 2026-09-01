@@ -113,6 +113,31 @@ export const TITOLO_ALFA = 'E2E Serata Alfa';
 export const BAND_ANNUNCIATA = 'E2E Band Annunciata';
 export const BAND_SEGRETA = 'E2E Band Riservata';
 
+/**
+ * La band che **tutte e due** le organizzazioni hanno ospitato, ognuna su una
+ * propria data già passata.
+ *
+ * Esiste per una cosa sola: provare la soglia della scheda operativa contro un
+ * database vero. Con una sola organizzazione non compare niente; con due
+ * compare un intervallo che non dice da che parte sta ciascun estremo
+ * (ADR-0049).
+ */
+export const BAND_COMUNE = 'E2E Band Comune';
+
+export const TITOLO_PASSATA_ALFA = 'E2E Passata Alfa';
+export const TITOLO_PASSATA_ALFA_2 = 'E2E Passata Alfa Due';
+export const TITOLO_PASSATA_BETA = 'E2E Passata Beta';
+
+/**
+ * Una sera già passata, trenta giorni indietro: un'osservazione si scrive solo
+ * su una data passata e ancora `confirmed` (ADR-0048).
+ */
+export function seraPassata(): string {
+	const d = new Date();
+	d.setUTCDate(d.getUTCDate() - 30);
+	return d.toISOString().slice(0, 10);
+}
+
 /* ------------------------------------------------------------------ *
  * Connessioni
  * ------------------------------------------------------------------ */
@@ -247,6 +272,12 @@ export type Ambiente = {
 	localeBeta: string;
 	eventoBeta: string;
 	giorno: string;
+	/** Le due date già passate, una per organizzazione, con la stessa band. */
+	passataAlfa: string;
+	passataAlfa2: string;
+	passataBeta: string;
+	bandComune: string;
+	giornoPassato: string;
 };
 
 /**
@@ -360,6 +391,50 @@ export async function seminaAmbiente(db: Db): Promise<Ambiente> {
 		]);
 	}
 
+	/*
+	 * Le due date già passate, una per organizzazione, con la stessa band in
+	 * cartellone. Servono alla scheda operativa (Fase 7): la soglia di ADR-0049
+	 * chiede due osservazioni da **due organizzazioni distinte**, e un ambiente
+	 * con una sola organizzazione non saprebbe distinguere una soglia che
+	 * funziona da una che non è mai stata raggiunta.
+	 */
+	const giornoPassato = seraPassata();
+	const bandComune = await assicuraBand(db, BAND_COMUNE, profiloAlfa);
+
+	const passataAlfa = await assicuraDataPassata(db, {
+		titolo: TITOLO_PASSATA_ALFA,
+		organizationId: orgAlfa,
+		venueId: localeAlfa,
+		locale: LOCALE_ALFA,
+		giorno: giornoPassato,
+		profiloId: profiloAlfa,
+		artistId: bandComune
+	});
+
+	// Due date di Alfa e una di Beta: tre osservazioni da due organizzazioni,
+	// che è il minimo perché la fascia comune compaia. Con due sole — una per
+	// parte — l'aggregato sarebbe invertibile da tutte e due, ed è il motivo
+	// per cui la soglia è a tre (correzione di ADR-0049).
+	const passataAlfa2 = await assicuraDataPassata(db, {
+		titolo: TITOLO_PASSATA_ALFA_2,
+		organizationId: orgAlfa,
+		venueId: localeAlfa,
+		locale: LOCALE_ALFA,
+		giorno: giornoPassato,
+		profiloId: profiloAlfa,
+		artistId: bandComune
+	});
+
+	const passataBeta = await assicuraDataPassata(db, {
+		titolo: TITOLO_PASSATA_BETA,
+		organizationId: orgBeta,
+		venueId: localeBeta,
+		locale: LOCALE_BETA,
+		giorno: giornoPassato,
+		profiloId: profiloBeta,
+		artistId: bandComune
+	});
+
 	return {
 		profiloAlfa,
 		profiloBeta,
@@ -368,8 +443,87 @@ export async function seminaAmbiente(db: Db): Promise<Ambiente> {
 		localeAlfa,
 		localeBeta,
 		eventoBeta: eventoBeta.id,
-		giorno
+		giorno,
+		passataAlfa,
+		passataAlfa2,
+		passataBeta,
+		bandComune,
+		giornoPassato
 	};
+}
+
+/** Una band in anagrafica, creata una volta sola. */
+async function assicuraBand(db: Db, nome: string, createdBy: string): Promise<string> {
+	const nameNormalized = normalizeName(nome);
+	const [gia] = await db
+		.select({ id: artists.id })
+		.from(artists)
+		.where(eq(artists.nameNormalized, nameNormalized));
+	if (gia) return gia.id;
+
+	const [creata] = await db
+		.insert(artists)
+		.values({ name: nome, nameNormalized, createdBy })
+		.returning({ id: artists.id });
+	return creata.id;
+}
+
+/**
+ * Una data passata e confermata, con una band sola in cartellone.
+ *
+ * Passata e `confirmed` non sono dettagli dell'ambiente: sono le due
+ * condizioni che rendono scrivibile un'osservazione, e se una delle due
+ * cadesse il riquadro «com'è andata?» non comparirebbe affatto.
+ */
+async function assicuraDataPassata(
+	db: Db,
+	d: {
+		titolo: string;
+		organizationId: string;
+		venueId: string;
+		locale: typeof LOCALE_ALFA;
+		giorno: string;
+		profiloId: string;
+		artistId: string;
+	}
+): Promise<string> {
+	const [gia] = await db
+		.select({ id: events.id })
+		.from(events)
+		.where(and(eq(events.organizationId, d.organizationId), eq(events.title, d.titolo)));
+	if (gia) return gia.id;
+
+	const [creato] = await db
+		.insert(events)
+		.values({
+			organizationId: d.organizationId,
+			venueId: d.venueId,
+			status: 'confirmed',
+			title: d.titolo,
+			startsAt: daLocaleAIstante(`${d.giorno}T21:00`),
+			city: d.locale.city,
+			province: d.locale.province,
+			region: 'Umbria',
+			country: 'IT',
+			lat: d.locale.lat,
+			lon: d.locale.lon,
+			isFree: false,
+			currency: 'EUR',
+			createdBy: d.profiloId,
+			updatedBy: d.profiloId
+		})
+		.returning({ id: events.id });
+
+	await db.insert(eventLineup).values({
+		eventId: creato.id,
+		artistId: d.artistId,
+		artistNameRaw: BAND_COMUNE,
+		billing: 'headliner',
+		position: 0,
+		isAnnounced: true
+	});
+
+	return creato.id;
 }
 
 /* ------------------------------------------------------------------ *

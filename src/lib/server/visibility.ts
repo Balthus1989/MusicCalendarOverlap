@@ -2,7 +2,10 @@
  * Layer di serializzazione della visibilità (ARCHITECTURE.md §5, ADR-0005).
  *
  * Regola non negoziabile: **nessun handler restituisce mai una riga `events`
- * grezza al client.** Tutto passa da `serializeEvent()`.
+ * grezza al client.** Tutto passa da `serializeEvent()`. Lo stesso vale per i
+ * conflitti (`serializeConflict`, ADR-0024) e per la scheda operativa della
+ * band (`serializeArtistCard`, ADR-0048): sono i tre punti in cui una riga di
+ * database diventa qualcosa che qualcuno può leggere.
  *
  * Il modello in una riga: un evento in `hold` visto da un'altra organizzazione
  * si presenta come _"12 ottobre — Perugia (PG) — Metal — Associazione X —
@@ -22,6 +25,9 @@ import type {
 	MemberRole
 } from '$lib/server/db/schema';
 import type { DettagliConflitto } from '$lib/server/conflicts/rules';
+import { aggregaScheda } from '$lib/server/catalog/scheda';
+import type { OsservazionePura, SchedaAggregata } from '$lib/server/catalog/scheda';
+import type { FattiDichiarati, MiaOsservazione, SchedaSerializzata } from '$lib/scheda';
 
 export type ViewerContext = {
 	profileId: string;
@@ -535,4 +541,113 @@ export function serializeConflicts(
 	return righe
 		.map((r) => serializeConflict(r.conflitto, { a: r.a, b: r.b }, viewer, nomiArtisti))
 		.filter((c): c is ConflittoSerializzato => c !== null);
+}
+
+/* ------------------------------------------------------------------ *
+ * Scheda operativa della band (§4.7, ADR-0048/0049/0051)
+ * ------------------------------------------------------------------ */
+
+/*
+ * `FattiDichiarati`, `MiaOsservazione` e `SchedaSerializzata` sono dichiarati
+ * in `$lib/scheda`: sono la forma con cui la scheda arriva alla pagina, e una
+ * pagina non può importare niente da `server/`. Si ri-esportano da qui perché
+ * è qui che si producono.
+ */
+export type { FattiDichiarati, MiaOsservazione, SchedaSerializzata };
+
+/** Una riga `artist_observations` come esce dal database, con il suo contesto. */
+export type OsservazioneGrezza = OsservazionePura & {
+	/** L'evento da cui viene, per il collegamento che vede solo chi l'ha scritta. */
+	eventId: string | null;
+	titoloEvento: string | null;
+	capienzaVenue: number | null;
+	regione: string | null;
+};
+
+/** Ciò che di una scheda un dato viewer può effettivamente sapere. */
+export type RedazioneScheda = {
+	/** L'aggregato: uguale per tutti, e già sotto soglia dove serve. */
+	comune: SchedaAggregata;
+	/** Le righe della propria organizzazione, per intero. Vuoto per gli altri. */
+	mie: MiaOsservazione[];
+};
+
+/** La scheda come esce dal database, prima di qualunque redazione. */
+export type SchedaGrezza = {
+	artistId: string;
+	schedaSpenta: boolean;
+	dichiarati: FattiDichiarati;
+	/**
+	 * **Già filtrate per eleggibilità**: solo osservazioni la cui data è
+	 * passata e ancora `confirmed`. È un join vivo su `events.status` e lo fa
+	 * la query, non questo file.
+	 */
+	osservazioni: OsservazioneGrezza[];
+};
+
+/**
+ * Il nucleo della redazione, l'analogo di `redigiConflitto` per la scheda.
+ *
+ * Il principio, uno solo: **fuori dall'organizzazione che l'ha scritta,
+ * un'osservazione non esiste come riga — esiste solo come contributo a un
+ * aggregato che non nomina nessuno** (ADR-0049).
+ *
+ * Da qui discendono le tre cose che non escono mai: chi ha osservato, quando
+ * di preciso, e da quale serata. La soglia, che è l'altra metà della
+ * protezione, la applica `aggregaScheda`.
+ */
+export function redigiScheda(
+	osservazioni: OsservazioneGrezza[],
+	organizationIds: string[],
+	oggi: Date = new Date()
+): RedazioneScheda {
+	const mie = osservazioni
+		.filter((o) => organizationIds.includes(o.organizationId))
+		.map((o): MiaOsservazione => ({
+			id: o.id,
+			origine: o.origine,
+			fasciaCachet: o.fasciaCachet,
+			cachetInclude: o.cachetInclude,
+			durataSetMinuti: o.durataSetMinuti,
+			volumeOsservato: o.volumeOsservato,
+			dataRiferimento: o.dataRiferimento,
+			ruolo: o.ruolo,
+			capienzaVenue: o.capienzaVenue,
+			eventId: o.eventId,
+			titoloEvento: o.titoloEvento
+		}))
+		.sort((a, b) => b.dataRiferimento.localeCompare(a.dataRiferimento));
+
+	// L'aggregato si calcola su **tutte** le osservazioni, comprese le proprie:
+	// la fascia comune è un fatto del gruppo, non cambia a seconda di chi
+	// guarda. Ciò che cambia è solo quanto se ne vede sotto.
+	return { comune: aggregaScheda(osservazioni, oggi), mie };
+}
+
+/**
+ * Serializza la scheda operativa di una band per un viewer.
+ *
+ * Restituisce `null` quando la scheda è spenta su richiesta della band
+ * (ADR-0051): per **tutti**, moderatore e platform admin compresi. Che sia
+ * spenta si legge dalla riga `artists`, e serve a chi può riaccenderla; il suo
+ * contenuto no.
+ *
+ * Il platform admin non ha nessuna scorciatoia qui, per la ragione di
+ * ADR-0019: una promessa che vale contro i concorrenti ma non contro chi
+ * amministra il server è un'altra promessa.
+ */
+export function serializeArtistCard(
+	scheda: SchedaGrezza,
+	viewer: ViewerContext,
+	oggi: Date = new Date()
+): SchedaSerializzata | null {
+	if (scheda.schedaSpenta) return null;
+
+	const redazione = redigiScheda(scheda.osservazioni, viewer.organizationIds, oggi);
+	return {
+		artistId: scheda.artistId,
+		dichiarati: scheda.dichiarati,
+		comune: redazione.comune,
+		mie: redazione.mie
+	};
 }

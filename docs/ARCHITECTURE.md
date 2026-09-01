@@ -347,13 +347,28 @@ I confini sono un'ipotesi scritta a tavolino su un giro di club e associazioni, 
 
 Ciò che si legge sulla scheda **non** è ciò che si scrive. Vedi [ADR-0049](DECISIONS.md):
 
-- **Fascia di riferimento**: l'intervallo fra la fascia minima e la massima fra le osservazioni `osservata` degli ultimi **24 mesi**, mostrato solo con **n ≥ 2 osservazioni da almeno 2 organizzazioni distinte**. Sotto soglia non compare niente, e chi ha scritto continua a vedere le proprie.
-- **Riferite**: riga a parte, con il proprio conteggio. Non entrano nell'intervallo di riferimento e non concorrono alla soglia.
+- **Fascia comune**: la **mediana** delle fasce osservate negli ultimi **24 mesi**, mostrata solo con **n ≥ 3 osservazioni da almeno 2 organizzazioni distinte**. Sotto soglia non compare niente, e chi ha scritto continua a vedere le proprie. Il valore di `cachet_include` esce come caso più frequente, non come elenco.
+  > **Correzione (2026-09-01, [ADR-0052](DECISIONS.md)).** La prima stesura pubblicava l'**intervallo** fra la fascia minima e la massima, con soglia a due. Con due osservazioni, minimo e massimo **sono** l'insieme: chi ne ha scritta una ricava l'altra per sottrazione, e la soglia non protegge niente proprio nel caso in cui scatta per la prima volta. Una mediana non si inverte. Vale anche per l'elenco delle convenzioni, che era un secondo canale con la stessa aritmetica.
+- **Riferite**: riga a parte, con il proprio conteggio e la propria mediana. Non entrano nella fascia comune e non concorrono alla soglia.
 - **Durata del set**: mediana delle osservate, per ruolo in cartellone quando i numeri lo permettono, più il massimo dichiarato dalla scheda. Nessuna soglia: non è un prezzo e non espone una trattativa.
 - **Volume attrezzatura**: valore modale delle osservate, accanto a quello dichiarato quando divergono. Nessuna soglia, per la stessa ragione.
 - **Freschezza**: a fasce grosse (_ultimi 12 mesi_ / _12–24 mesi_), mai con una data esatta. Una data esatta su una band di nicchia è un indizio su chi ha suonato dove.
 
 Il calcolo della soglia e delle aggregazioni è **codice puro senza I/O**, testato caso per caso come le regole dei conflitti; l'accesso al database sta accanto. Vale qui la stessa separazione che `CLAUDE.md` impone a `conflicts/`, e per la stessa ragione: è la parte in cui un bug è silenzioso.
+
+> **Precisazioni emerse implementando (2026-09-01).** Sei cose che il disegno non diceva e che hanno una sola risposta ragionevole. La prima non è una precisazione ma una correzione, ed è l'unica che si è vista soltanto guardando la pagina vera.
+>
+> **Un aggregato di due elementi non è un aggregato.** Vedi [ADR-0052](DECISIONS.md) e il riquadro qui sopra: la soglia a due con gli estremi pubblicati era invertibile a mente da chi aveva contribuito. I test non l'hanno preso perché asserivano in positivo — «le righe altrui non compaiono» — e una garanzia di non-inferenza si asserisce **in negativo**: dato un insieme, ciò che esce non deve contenere i valori che chi legge non ha scritto. Le due suite ora lo fanno.
+>
+> **La finestra vive fuori da `server/`.** `MESI_FINESTRA` sta in `src/lib/scheda.ts` insieme alle etichette, perché la legge sia l'aggregatore sia la pagina `/privacy` — e una pagina non può importare niente da `$lib/server`. Riscriverla nei due posti sarebbe stato il modo più rapido di produrre l'informativa falsa che [ADR-0051](DECISIONS.md) vuole rendere impossibile. Lo stesso file dichiara le unioni delle fasce, e tre righe di tipi in `catalog/scheda.ts` non compilano se smettono di combaciare con gli enum del database.
+>
+> **Una riferita non ha un giorno.** Si chiede l'anno e si àncora al `30 giugno` di quell'anno: colloca il sentito dire dentro la finestra senza fingere una precisione che non ha. Gli anni ammessi sono tre — quello corrente e i due precedenti — perché più indietro non entrerebbe comunque in nessun aggregato, e accettarlo darebbe l'idea che serva a qualcosa.
+>
+> **Le riferite non entrano nemmeno negli aggregati senza soglia.** Il disegno le teneva fuori dall'intervallo di cachet; tenerle dentro alla mediana dei minuti sarebbe stato incoerente e più difficile da spiegare di quanto valesse. Osservate e riferite non si mescolano mai, in nessuna riga.
+>
+> **La scheda spenta non nasconde le proprie righe, le spegne per tutti.** `serializeArtistCard` restituisce `null` anche a chi ha scritto: se una band ha chiesto che di questo non si parli, non si parla nemmeno nel proprio cortile. Chi può riaccenderla lo vede dalla colonna su `artists`, che è un'altra cosa dal contenuto.
+>
+> **L'art. 17 ha un pulsante, e sta dietro l'art. 21.** [ADR-0051](DECISIONS.md) prometteva che chi chiede la cancellazione e non solo l'opposizione la ottiene davvero, e la prima stesura la lasciava a un `delete` da `db:studio` — cioè a una promessa. Ora è un'azione del moderatore, disponibile **solo su una scheda già spenta**: cancella righe di altre organizzazioni ed è irreversibile, quindi non deve stare a un clic di distanza da chi stava facendo un'altra cosa. Ed è anche l'ordine giusto nel merito: prima si ferma il trattamento, poi lo si rimuove.
 
 ---
 
@@ -419,7 +434,7 @@ La scheda operativa (§4.7) ha una matrice propria, molto più corta, e un seria
 | Riga della scheda                            | Org che l'ha scritta | Altra org | Moderatore | Platform admin |
 | -------------------------------------------- | -------------------- | --------- | ---------- | -------------- |
 | Fatti dichiarati (§4.3)                      | ✓                    | ✓         | ✓ (scrive) | ✓              |
-| Fascia di riferimento, **sopra** soglia      | ✓                    | ✓         | ✓          | ✓              |
+| Fascia comune (mediana), **sopra** soglia    | ✓                    | ✓         | ✓          | ✓              |
 | Osservazioni **sotto** soglia                | ✓ (solo le proprie)  | ✗         | ✗          | ✗              |
 | Numero di osservazioni e di organizzazioni   | ✓                    | ✓         | ✓          | ✓              |
 | Freschezza a fasce grosse                    | ✓                    | ✓         | ✓          | ✓              |
@@ -746,9 +761,15 @@ Notifiche email e digest. Audit log consultabile. PWA (manifest, offline shell).
 **Fase 7 — Scheda operativa della band**
 Le cinque colonne dichiarate su `artists` e la tabella `artist_observations` (§4.7), in una migrazione puramente additiva. Aggregazione e soglia come modulo puro con test caso per caso. `serializeArtistCard()` con un'asserzione per cella della matrice §5. Sezione nella pagina `/artists/[id]`; invito _«com'è andata?»_ sulle proprie date passate e `confirmed`; form della riferita, uno per organizzazione per band. Sezione nuova in `/privacy` e percorso di rimozione con `scheda_spenta` ([ADR-0051](DECISIONS.md)).
 
-Prima della fase va chiuso il punto 8 delle decisioni aperte, che non si chiude scrivendo codice.
+Il punto 8 delle decisioni aperte — a che cosa deve servire il numero — andava chiuso prima della fase, e si è chiuso: **non farsi trovare impreparati davanti a una richiesta**. È la risposta che il disegno presumeva, quindi non ha cambiato niente nel codice.
 
 _Criterio di fine:_ due organizzazioni scrivono un'osservazione sulla stessa band e **nessuna delle due riesce a risalire alla fascia dell'altra**; una terza organizzazione vede l'intervallo e non vede chi l'ha prodotto. Testato, non verificato a occhio — è il `serializeEvent` di questa fase.
+
+> **Stato (2026-09-01).** Scritta, migrata e verde: schema e migrazione `0011` additiva applicata, `catalog/scheda.ts` puro con 22 asserzioni, `serializeArtistCard` con 16 sulla matrice, i permessi con 8, la sezione su `/artists/[id]`, il riquadro «com'è andata?» sulla pagina della serata, la sezione nuova di `/privacy`, più **tre smoke test** che rifanno il criterio di fine contro il database vero con due organizzazioni che entrano davvero.
+>
+> È stato lo smoke test — cioè la pagina disegnata, non il ragionamento — a far vedere che la soglia di [ADR-0049](DECISIONS.md) non teneva: vedi [ADR-0052](DECISIONS.md). Vale la pena ricordarselo alla fase prossima.
+>
+> Il **punto 8** si è chiuso lo stesso giorno, sulla risposta che ADR-0049 e ADR-0052 presumevano: la scheda serve a non arrivare impreparati a una richiesta. **La fase è chiusa.** Resta il punto 9, che non blocca niente: i confini delle sei fasce vanno guardati sui dati veri fra tre mesi, e se l'80% delle annotazioni cade in una fascia sola la scala va rifatta.
 
 ---
 
@@ -865,6 +886,8 @@ Con la chiusura del punto 5, **l'elenco è esaurito**: tutti e cinque i punti ch
 Resta aperta, fuori da questo elenco perché non ha una scadenza di fase, la sola questione di un LLM ospitato in locale (#7, quando il server esiste). È tracciata in `DECISIONS.md`.
 
 > **Aggiornamento (2026-09-01).** L'elenco si riapre, e non per una svista: la scheda operativa della band (§4.7) porta con sé **due punti nuovi**, l'8 e il 9, tracciati in `DECISIONS.md`. Il 9 è una calibrazione e si chiude guardando i dati dopo tre mesi. L'**8 no**: chiede al gruppo se ciò che vuole è non farsi trovare impreparato davanti a una richiesta, oppure sapere quanto pagano gli altri. Sono due prodotti diversi, il disegno di [ADR-0049](DECISIONS.md) serve il primo e ostacola il secondo, e la domanda non si chiude a tavolino. Ha una scadenza: **prima della Fase 7**. È la prima volta dal punto 5 che una decisione aperta blocca del codice.
+>
+> **Chiuso in giornata.** La risposta è la prima: la scheda serve a **non farsi trovare impreparati davanti a una richiesta**. È quella che [ADR-0049](DECISIONS.md) e [ADR-0052](DECISIONS.md) presumevano, quindi non ha cambiato niente nel codice — ha cambiato lo stato di ciò che il codice fa, da assunzione a scelta. **Resta aperto il solo punto 9**, che non blocca niente, insieme al 7 che non ha scadenza.
 
 > **Aggiornamento (2026-08-27).** Il **titolare del trattamento** era l'altra questione senza scadenza di fase, ma con la scadenza più vincolante di tutte — «prima del lancio pubblico» — ed è chiusa: è il manutentore a titolo personale, e l'informativa esiste come pagina dell'applicazione ([ADR-0043](DECISIONS.md)).
 

@@ -4,6 +4,7 @@ import {
 	canCreateOrgInvite,
 	canDeleteEvent,
 	canEditCatalogEntry,
+	canEditOsservazione,
 	canEditEvent,
 	canEditOrg,
 	canInviteToOrg,
@@ -11,7 +12,10 @@ import {
 	canMergeCatalogEntries,
 	canModerateCatalog,
 	canReportExternalEvent,
+	canSpegnereScheda,
 	canVerifyCatalogEntry,
+	canWriteOsservazione,
+	canWriteRiferita,
 	hasOrgRole,
 	isMemberOf,
 	type Viewer
@@ -207,5 +211,71 @@ describe('date segnalate, di organizzazioni esterne', () => {
 		// Un platform admin senza organizzazioni non ha una firma da mettere
 		// accanto alla segnalazione, che è l'unico controllo previsto.
 		expect(canReportExternalEvent(platformAdmin)).toBe(false);
+	});
+});
+
+describe('scheda operativa della band (Fase 7)', () => {
+	const passataConfermata = {
+		organizationId: ORG_A,
+		organizzazioneEsterna: false,
+		status: 'confirmed' as const,
+		passata: true
+	};
+
+	it('annota chi appartiene all’organizzazione titolare della data, a qualunque titolo', () => {
+		// Il permesso non è stato inventato: è l'appartenenza. È il guadagno
+		// vero dell'ancoraggio (ADR-0048).
+		expect(canWriteOsservazione(member, passataConfermata)).toBe(true);
+		expect(canWriteOsservazione(owner, passataConfermata)).toBe(true);
+	});
+
+	it('non annota chi non è dentro quell’organizzazione', () => {
+		const altra = viewer({ roles: { [ORG_B]: 'owner' } });
+		expect(canWriteOsservazione(altra, passataConfermata)).toBe(false);
+	});
+
+	it('il platform admin non annota le date altrui, come su ogni altra cosa che le riguarda', () => {
+		expect(canWriteOsservazione(platformAdmin, passataConfermata)).toBe(false);
+	});
+
+	it('le tre esclusioni sono la definizione di serata vera, non cautele', () => {
+		// Una bozza non è successa; un `hold` nemmeno, e per giunta sarebbe una
+		// data non annunciata raccontata da un'altra porta; una data annullata
+		// non ha pagato nessun cachet.
+		for (const status of ['draft', 'hold', 'cancelled'] as const) {
+			expect(canWriteOsservazione(member, { ...passataConfermata, status })).toBe(false);
+		}
+		expect(canWriteOsservazione(member, { ...passataConfermata, passata: false })).toBe(false);
+	});
+
+	it('sulle date segnalate non annota nessuno, curatela compresa', () => {
+		const segnalata = { ...passataConfermata, organizzazioneEsterna: true };
+		expect(canWriteOsservazione(member, segnalata)).toBe(false);
+		// Correggere il nome di un locale è un conto; dichiarare che cosa ha
+		// pagato qualcun altro è un altro.
+		expect(canWriteOsservazione(moderator, segnalata)).toBe(false);
+		expect(canWriteOsservazione(platformAdmin, segnalata)).toBe(false);
+	});
+
+	it('il sentito dire lo lascia chiunque appartenga a un’organizzazione', () => {
+		expect(canWriteRiferita(member)).toBe(true);
+		expect(canWriteRiferita(platformAdmin)).toBe(false);
+	});
+
+	it('un’osservazione la corregge l’organizzazione che l’ha scritta, non chi l’ha digitata', () => {
+		expect(canEditOsservazione(member, { organizationId: ORG_A })).toBe(true);
+		expect(canEditOsservazione(member, { organizationId: ORG_B })).toBe(false);
+	});
+
+	it('il moderatore non tocca le osservazioni: cura l’identità, non il registro', () => {
+		const moderatoreAltrove = viewer({ roles: { [ORG_B]: 'moderator' } });
+		expect(canEditOsservazione(moderatoreAltrove, { organizationId: ORG_A })).toBe(false);
+		expect(canEditOsservazione(platformAdmin, { organizationId: ORG_A })).toBe(false);
+	});
+
+	it('spegnere la scheda su richiesta della band è un atto di curatela', () => {
+		expect(canSpegnereScheda(moderator)).toBe(true);
+		expect(canSpegnereScheda(platformAdmin)).toBe(true);
+		expect(canSpegnereScheda(member)).toBe(false);
 	});
 });

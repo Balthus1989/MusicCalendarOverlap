@@ -10,13 +10,15 @@
 	 * fornitore nominato qui corrisponde a una chiamata che esiste nel codice, e
 	 * ogni scadenza a una costante — `GIORNI_CONSERVAZIONE` in
 	 * `parse/retention.ts`, `GIORNI_CONSERVAZIONE_NOTIFICHE` in
-	 * `notifications/service.ts`. **Se cambiano quelle, cambia questa pagina**:
+	 * `notifications/service.ts`, `MESI_FINESTRA` in `$lib/scheda.ts`, che qui
+	 * si **importa** invece di riscriverlo. **Se cambiano quelle, cambia questa pagina**:
 	 * un'informativa che descrive una conservazione diversa da quella applicata
 	 * è peggio di nessuna informativa.
 	 */
 	import { resolve } from '$app/paths';
+	import { MESI_FINESTRA } from '$lib/scheda';
 
-	const aggiornamento = '27 agosto 2026';
+	const aggiornamento = '1 settembre 2026';
 
 	const fornitori = [
 		{
@@ -59,6 +61,10 @@
 		{ cosa: 'Avvisi ricevuti', quanto: '180 giorni, poi cancellati in automatico' },
 		{ cosa: 'Contatori dei limiti d’uso', quanto: 'circa un’ora, poi cancellati in automatico' },
 		{ cosa: 'Profilo, date, schede di artisti e locali', quanto: 'finché il profilo esiste' },
+		{
+			cosa: 'Annotazioni sulle band (fascia di cachet, minuti, attrezzatura)',
+			quanto: `entrano nel dato comune solo per ${MESI_FINESTRA} mesi; oltre, restano visibili alla sola organizzazione che le ha scritte`
+		},
 		{
 			cosa: 'Registro delle modifiche',
 			quanto: 'finché esiste l’organizzazione a cui si riferisce'
@@ -184,6 +190,37 @@
 				del punto 1: la richiesta vale esattamente quanto quella di un iscritto.
 			</p>
 
+			<h3 class="mt-5 mb-2 font-medium">Quelli delle band, che raccogliamo di proposito</h3>
+			<p>
+				Questa categoria è diversa dalla precedente e merita una riga sua: qui il servizio non
+				riceve niente per caso, <strong>chiede</strong>. Chi organizza può annotare sulla scheda di
+				una band che ha ospitato una fascia di cachet — mai un importo esatto — i minuti suonati e
+				il volume dell'attrezzatura. Sono dati economici su soggetti che non usano il servizio, e
+				una band non è sempre una società: un solista sotto nome d'arte è una persona.
+			</p>
+			<ul class="mt-3 list-disc space-y-1.5 pl-5">
+				<li>
+					<strong>Non registriamo importi.</strong> Solo una fascia fra sei, e nessun campo accetta una
+					cifra.
+				</li>
+				<li>
+					<strong>Non registriamo giudizi.</strong> Non esiste nessun campo su affidabilità, puntualità
+					o comportamento, e non esiste nessuna nota di testo libero su una band.
+				</li>
+				<li>
+					<strong>Nessuno vede chi ha annotato che cosa.</strong> Chi organizza vede solo le proprie
+					annotazioni; agli altri arriva un intervallo, e solo quando almeno due organizzazioni
+					diverse hanno annotato qualcosa negli ultimi {MESI_FINESTRA} mesi.
+				</li>
+			</ul>
+			<p class="mt-3">
+				<strong>Se sei una band e non vuoi che questa scheda esista</strong>, scrivi all'indirizzo
+				del punto 1: la spegniamo, e da quel momento non è visibile a nessuno e non si può più
+				annotare niente. Il resto della scheda — nome, generi, collegamenti — resta, perché serve a
+				segnalare le sovrapposizioni fra date e non contiene niente di economico. Se invece vuoi che
+				le annotazioni siano cancellate, dillo: si cancellano davvero.
+			</p>
+
 			<h3 class="mt-5 mb-2 font-medium">Quello che non trattiamo</h3>
 			<p class="text-muted-foreground">
 				Nessuna password, perché l'accesso è senza password. Nessun indirizzo IP letto o conservato
@@ -219,6 +256,13 @@
 					conservazione temporanea del testo incollato. Base giuridica: legittimo interesse (art.
 					6.1.f), bilanciato con la scadenza breve e con il fatto che il testo non viene usato per
 					nessun altro scopo.
+				</li>
+				<li>
+					<strong>Per far sapere a chi organizza a che condizioni si ingaggia una band</strong> — le annotazioni
+					descritte al punto 2. Base giuridica: legittimo interesse (art. 6.1.f). Il bilanciamento sta
+					nei limiti che il servizio si è dato e che non sono discrezionali: fasce e non importi, nessun
+					giudizio e nessuna nota libera, niente che risalga a chi ha annotato, nessun elenco di band
+					ordinabile per prezzo, e il diritto di opporsi (art. 21) che spegne la scheda per tutti.
 				</li>
 			</ul>
 		</section>
