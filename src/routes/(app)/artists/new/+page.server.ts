@@ -91,6 +91,10 @@ export const actions: Actions = {
 					soundcloudUrl: d.soundcloudUrl,
 					bookingEmail: d.bookingEmail,
 					bookingAgency: d.bookingAgency,
+					volumeAttrezzatura: d.volumeAttrezzatura,
+					personeInViaggio: d.personeInViaggio,
+					richiedeBackline: d.richiedeBackline,
+					durataSetMaxDichiarata: d.durataSetMaxDichiarata,
 					createdBy: viewer.profileId
 				})
 				.returning({ id: artists.id });

@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import Field from '$lib/components/Field.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { OPZIONI_BACKLINE, OPZIONI_VOLUME } from '$lib/scheda';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -199,6 +200,39 @@
 			<Field label="Spotify" name="spotifyUrl" type="url" />
 			<Field label="YouTube" name="youtubeUrl" type="url" />
 		</div>
+
+		<!-- I fatti dichiarati della scheda operativa: si leggono da un rider e
+		     valgono per chiunque la ingaggi (ADR-0048). Stanno anche qui e non
+		     solo nella modifica, perché chi inserisce una band di solito ha il
+		     rider davanti proprio in quel momento. Il prezzo non c'è e non ci
+		     starà: quello si annota da una data passata. -->
+		<fieldset class="border-border space-y-4 rounded-md border p-4">
+			<legend class="px-1 text-sm font-medium">Scheda operativa</legend>
+			<p class="text-muted-foreground text-xs">
+				Facoltativi, e si aggiungono anche dopo. Quello che è successo in una serata — cachet,
+				minuti suonati — non si scrive qui ma dalla data, quando è passata.
+			</p>
+			<div class="grid gap-5 sm:grid-cols-2">
+				<Field label="Volume attrezzatura" name="volumeAttrezzatura" options={OPZIONI_VOLUME} />
+				<Field label="Backline richiesta" name="richiedeBackline" options={OPZIONI_BACKLINE} />
+				<Field
+					label="Persone in viaggio"
+					name="personeInViaggio"
+					type="number"
+					min={1}
+					max={60}
+					hint="Band più tecnici: è il numero che decide cena e posti letto."
+				/>
+				<Field
+					label="Durata massima del set"
+					name="durataSetMaxDichiarata"
+					type="number"
+					min={1}
+					max={600}
+					hint="Minuti, come da rider."
+				/>
+			</div>
+		</fieldset>
 
 		<Field label="Note" name="bio" rows={3} />
 

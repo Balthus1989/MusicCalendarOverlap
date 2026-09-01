@@ -406,3 +406,37 @@ test.describe('scheda della band · dall’altro lato', () => {
 		await expect(page.getByText('1.200 – 2.500 €')).toHaveCount(0);
 	});
 });
+
+test.describe('anagrafica · i fatti dichiarati si inseriscono subito', () => {
+	test.use({ storageState: ALFA.statoFile });
+
+	/**
+	 * La scheda operativa ha due metà con due strade diverse, e questa prova la
+	 * strada che si dimentica: i **fatti dichiarati** si scrivono al momento
+	 * dell'inserimento, perché chi mette una band in anagrafica ha il rider
+	 * davanti proprio allora. Le osservazioni no — quelle partono da una data
+	 * passata, ed è l'altro blocco.
+	 */
+	test('una band nuova nasce già con volume, persone e durata massima', async ({ page }) => {
+		const nome = `E2E Band Rider ${Date.now()}`;
+
+		await apri(page, '/artists/new');
+		await page.getByLabel('Nome').fill(nome);
+		await page.getByLabel('Volume attrezzatura').selectOption('furgone');
+		await page.getByLabel('Backline richiesta').selectOption('si');
+		await page.getByLabel('Persone in viaggio').fill('5');
+		await page.getByLabel('Durata massima del set').fill('75');
+		await page.getByRole('button', { name: 'Salva artista' }).click();
+
+		// L'inserimento rimanda alla scheda: i quattro campi devono essere già lì,
+		// senza passare da "Modifica".
+		await expect(page.getByRole('heading', { name: nome })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Scheda operativa' })).toBeVisible();
+		await expect(page.getByText('si aspettano la backline sul posto')).toBeVisible();
+		await expect(page.getByText('5 persone')).toBeVisible();
+		await expect(page.getByText('massimo dichiarato: 75 minuti')).toBeVisible();
+
+		// E il cachet non c'è, perché di questa band non ha ancora suonato nessuno.
+		await expect(page.getByText('Nessuno ha ancora annotato niente.')).toBeVisible();
+	});
+});
