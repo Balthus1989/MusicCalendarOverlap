@@ -1382,6 +1382,8 @@ Sull'**avviso a una persona invece che a un'organizzazione**. `destinatari.ts` e
 
 Non ancora decise, elencate per non perderle di vista. Vanno chiuse **parlando con gli organizzatori**, non a tavolino.
 
+> **Aggiornamento (2026-09-01).** La scheda operativa della band ([ADR-0048](#adr-0048--la-scheda-della-band-separa-i-fatti-dichiarati-dalle-osservazioni-e-le-osservazioni-si-appendono-a-una-data)) aggiunge i punti **8** e **9**. L'8 ha una scadenza vincolante — prima della Fase 7 — ed è il primo punto dal 5 che **blocca del codice**: finché non è chiuso, la Fase 7 non si comincia. Il 9 è una calibrazione e si chiude sui dati, non parlando.
+>
 > **Aggiornamento (2026-08-27).** Con la chiusura del punto 5 resta aperto **solo il punto 7**, che non ha una scadenza. Tutti i punti con una scadenza di fase sono chiusi, e con essi quello che aveva la scadenza più vincolante di tutte: «prima del lancio».
 
 | #   | Questione                                                                                                                      | Entro            |
@@ -1393,6 +1395,8 @@ Non ancora decise, elencate per non perderle di vista. Vanno chiuse **parlando c
 | 5   | ~~Chi è formalmente titolare del trattamento dei dati~~ **Chiusa: il manutentore a titolo personale, e l'informativa è la pagina `/privacy` dell'applicazione. Vedi [ADR-0043](#adr-0043--il-titolare-del-trattamento-è-una-persona-fisica-e-linformativa-è-una-pagina-dellapplicazione).** | ~~Prima del lancio~~ chiusa |
 | 6   | ~~Canale Telegram come sink di notifica aggiuntivo?~~ **Chiusa: sì, ed è diventato l'unico canale, vedi [ADR-0039](#adr-0039--il-canale-delle-notifiche-è-telegram-non-lemail).** Chiusa da un vincolo di budget e non parlando con gli organizzatori, come il registro prescriveva: se dicessero di non volerlo, l'interfaccia regge un altro cambio. | ~~Fase 6~~ chiusa |
 | 7   | Un LLM ospitato in locale al posto della Claude API, su un server in casa del manutentore. Ribalterebbe [ADR-0034](#adr-0034--claude-haiku-con-schema-forzato-dallapi-musicbrainz-resta-fuori-dallincolla). Le tre domande vere sono sotto. | Quando il server esiste |
+| 8   | Che cosa vuole il gruppo dalla scheda band: **non farsi trovare impreparato davanti a una richiesta**, oppure **sapere quanto pagano gli altri**. Sono due prodotti, e [ADR-0049](#adr-0049--il-cachet-si-vede-a-fasce-sopra-una-soglia-di-due-organizzazioni-e-non-si-attribuisce-mai) serve il primo per costruzione. Le note sono sotto. | **Prima della Fase 7** |
+| 9   | I confini delle sei fasce di cachet (§4.7.1 di `ARCHITECTURE.md`). Scritti a tavolino su un giro di club e associazioni. | Tre mesi dopo la Fase 7 |
 
 **Sul punto 7**, perché non vada perso il ragionamento già fatto.
 
@@ -1400,6 +1404,13 @@ Non ancora decise, elencate per non perderle di vista. Vanno chiuse **parlando c
 - **Lo schema forzato è la parte che non si può perdere.** È ciò che rende l'integrazione affidabile invece che quasi affidabile, e non è un'esclusiva di nessuno: `llama.cpp` ha le grammatiche, Ollama e vLLM hanno la decodifica guidata da JSON Schema, e quasi tutti espongono un endpoint compatibile OpenAI con `response_format`. La domanda da porsi prima di comprare hardware è se lo stack scelto ce l'ha, non se il modello è bravo.
 - **Il Worker non arriva in salotto.** L'applicazione gira su Cloudflare (ADR-0002) e non può raggiungere una macchina su una rete domestica: servirebbe esporla, con quello che comporta. Va detto però che l'architettura **regge già** un endpoint inaffidabile — `struttura()` non solleva mai e il fallimento non blocca l'inserimento manuale (principio 5) — quindi una connessione casalinga qui è una scelta legittima, come non lo sarebbe su qualcosa di portante.
 - **La riscrittura è contenuta e lo era per progetto.** Cambia `llm.ts` e basta: nessun altro file di `parse/` sa che esiste un modello. È il motivo per cui ADR-0034 ha scartato l'HTTP grezzo senza rimpianti.
+
+**Sul punto 8**, perché la domanda arrivi agli organizzatori nella forma giusta e non in quella comoda.
+
+- **La domanda non è «vi va bene una scheda delle band».** A quella rispondono tutti di sì. La domanda è che cosa si fa con il numero: se serve a non arrivare al telefono senza un ordine di grandezza, oppure a sapere se il vicino l'ha pagata meno. La prima è informazione, la seconda è coordinamento sul prezzo di acquisto, e chi le chiede entrambe di solito non si è accorto che sono due.
+- **Un archivio dei prezzi condiviso fra chi compra dallo stesso fornitore ha un nome tecnico.** Lo scambio di informazioni sul prezzo pagato allo stesso fornitore è la forma di scambio che il diritto della concorrenza guarda con più attenzione, e l'assenza di scopo di lucro non la mette al riparo: rileva l'attività economica, non il fine. Nessuno qui sta facendo un cartello, e non è questo il punto: il punto è che il disegno di ADR-0049 — fasce invece di importi, soglia di due organizzazioni, nessuna attribuzione, nessun ordinamento per prezzo — è ciò che tiene la feature dalla parte dell'informazione, e ogni richiesta di «renderlo più preciso» è una richiesta di spostarla dall'altra. Va saputo prima, non quando arriva la richiesta.
+- **La risposta cambia il codice, non solo l'intenzione.** Se il gruppo dicesse chiaramente di volere il secondo prodotto, la decisione onesta non è costruirlo con i vincoli del primo e chiamarlo come il primo: è riaprire ADR-0049 e scrivere che si è scelto quello, con chi ne risponde. Ed è il genere di ADR che si scrive con qualcuno che di questo si occupa per mestiere, come già dice ADR-0043 per la forma giuridica.
+- **C'è una terza risposta possibile, e sarebbe la migliore:** che del cachet non importi a nessuno e che le tre domande vere siano volume, persone in viaggio e durata del set — cioè i fatti dichiarati, che non hanno soglia, non hanno rischio e sono già metà della feature. In quel caso la Fase 7 dimezza e `artist_observations` nasce senza `fascia_cachet`. È l'esito che costa meno di tutti e nessuno lo propone mai da solo: va messo sul tavolo esplicitamente.
 
 ---
 
@@ -1553,3 +1564,186 @@ Sul **test che gira il `DateEnv` vero**: verificare i due metodi dell'adattatore
 - Il plugin è client-side e va dichiarato in `optimizeDeps` di `vite.config.ts` come gli altri quattro moduli di FullCalendar, perché importa `@fullcalendar/core/internal`.
 
 **Da rivedere se.** Il prodotto smette di essere italiano. Se un giorno le organizzazioni avessero un fuso proprio, la decisione da prendere non sarebbe questa ma quella a monte — quale fuso è "il" fuso di una data — e riguarderebbe `ARCHITECTURE.md` §16 prima del calendario.
+
+---
+
+## ADR-0048 — La scheda della band separa i fatti dichiarati dalle osservazioni, e le osservazioni si appendono a una data
+
+**Data:** 2026-09-01 · **Stato:** Accettata · **Apre:** la Fase 7 e i punti aperti 8 e 9
+
+**Contesto.** La richiesta arriva da un promoter del giro: la piattaforma è chiusa a chi organizza, quindi il calendario può portarsi dietro le informazioni che oggi ognuno tiene nella propria testa o in un foglio — quanto chiede una band, quanta attrezzatura porta, quanto dura il suo set. Sono le tre domande che si fanno al telefono prima di proporre una data, e la risposta ce l'ha soltanto chi quella band l'ha già ospitata.
+
+La strada breve era aggiungere quattro colonne ad `artists`: `cachet_medio`, `volume_attrezzatura`, `durata_set_media`, `durata_set_max`. Non regge, e non regge per una ragione che sta già in [ADR-0006](#adr-0006--artisti-e-venue-come-entità-globali-condivise): `artists` è un'anagrafica **che non appartiene a nessuno**. Una colonna `cachet_medio` su una tabella senza proprietario apre tre domande a cui nessuno può rispondere — la media di chi, aggiornata da chi, vera quando — e la quarta è peggiore: chi la sovrascrive quando l'ultimo che l'ha toccata ha pagato 800 € in un circolo da 90 posti e io sto trattando per un festival.
+
+Il cachet non è un attributo della band. È un fatto su una **trattativa**: fra quella band e quell'organizzatore, in quella serata, con quella capienza, in quell'anno.
+
+**Decisione.** La scheda ha due strati con una linea netta fra loro.
+
+- Se il valore descrive la band **a prescindere da chi la ingaggia**, è un campo di `artists`, curato come `booking_email` e correggibile dal moderatore: `volume_attrezzatura`, `persone_in_viaggio`, `richiede_backline`, `durata_set_max_dichiarata`. Sono **fatti dichiarati**, si leggono da un rider.
+- Se il valore **cambia da serata a serata**, è un'**osservazione**: una riga di `artist_observations`, scritta da un'organizzazione, mai sovrascritta da un'altra.
+- Se il valore è un **prezzo**, è sempre un'osservazione, anche se non cambiasse mai.
+
+Un'osservazione `osservata` è appesa a una riga di `event_lineup` di un evento **passato e `confirmed` della propria organizzazione** (CHECK sul database, non solo controllo applicativo). Esiste anche la forma `riferita` — sentito dire, senza data alle spalle — vincolata a **una per organizzazione per band**, sostituibile, con l'anno a cui si riferisce dichiarato da chi scrive.
+
+**Motivazioni.**
+
+Sull'**ancoraggio a una data**, che è la parte che fa funzionare tutto il resto. Regala tre cose che nessun form libero regala: chi scrive il numero **l'ha visto**; il dato **si data da sé**, e un cachet del 2024 non finisce per inerzia a rappresentare il prezzo di oggi; il contesto — ruolo in cartellone, capienza, regione — non va chiesto a nessuno perché è già nel database. Ma la conseguenza migliore è sui permessi: il diritto di scrivere non va inventato, **è già l'appartenenza all'organizzazione titolare della data**. Nessun ruolo nuovo, nessuna lista di chi può, nessuna moderazione preventiva. È lo stesso motivo per cui [ADR-0016](#adr-0016--il-ruolo-moderator-esiste-dalla-v1-ed-è-trasversale-alle-organizzazioni) ha dovuto inventare un ruolo per l'anagrafica: lì l'entità non è di nessuno, qui la serata è di qualcuno.
+
+Sulla **selezione degli eventi ammessi** — passati, `confirmed`. Le bozze non sono successe. Gli `hold` nemmeno, e in più un'osservazione su un `hold` sarebbe una data non annunciata raccontata da un'altra porta. Una data `cancelled` non ha pagato nessun cachet. È la stessa selezione con cui il motore sceglie i candidati ([ADR-0025](#adr-0025--il-motore-ignora-le-bozze-le-date-annullate-e-quelle-senza-coordinate)), applicata all'indietro nel tempo, ed è un bene che le due regole si somiglino: sono la stessa idea di che cosa conta come serata vera.
+
+Sull'ammettere le **riferite**, che è la concessione. Senza, la scheda di una band mai ospitata da nessuno degli iscritti resta vuota per sempre, e le band che interessano di più sono spesso proprio quelle che nel gruppo non ha ancora portato nessuno. Con, entra il sentito dire. Il vincolo di una per organizzazione è ciò che tiene il sentito dire misurabile: senza, una sola organizzazione riempie la scheda da sola e il conteggio smette di voler dire qualcosa.
+
+Sul **congelare** ruolo, capienza e regione sulla riga invece di ricavarli con un join. Un evento si modifica dopo, e un titolo o un venue cambiati non devono riscrivere il contesto di un'osservazione già data. L'eleggibilità invece resta un join vivo su `events.status`: se una data esce da `confirmed`, l'osservazione esce dall'aggregato senza che nessuno debba ricordarsene.
+
+**Alternative scartate.**
+
+- _Quattro colonne su `artists`._ È la strada breve del contesto. Un valore singolo, senza proprietario, senza data e senza contesto, sovrascritto dall'ultimo che passa: la definizione di un dato che dopo sei mesi nessuno usa più perché nessuno si fida.
+- _Una tabella per coppia band-organizzazione_ (`artist_org_notes`), cioè "il mio quaderno su ogni band". Semplice e inutile: non aggrega, non si data, e ricrea in database il foglio di calcolo che ognuno ha già.
+- _Osservazioni libere sulla scheda, senza ancoraggio, per tutti._ È l'opzione che riempie più in fretta ed è quella che si degrada più in fretta: nessuna prova che chi scrive abbia visto qualcosa, nessuna datazione affidabile, e un permesso di scrittura da inventare da zero. È sopravvissuta solo nella forma ristretta della `riferita`.
+- _Rider allegato invece di campi._ Un PDF risolve il problema di chi lo carica e nessuno degli altri: non si cerca, non si aggrega, non si confronta, e per giunta contiene molti più dati di terzi di quattro campi chiusi.
+
+**Conseguenze.**
+
+- Nasce un **terzo serializzatore** accanto a `serializeEvent` e `serializeConflict`: `serializeArtistCard()` / `redigiScheda()`, con la regola identica — nessun handler restituisce mai una riga `artist_observations` grezza. Il vincolo va in `CLAUDE.md` insieme agli altri due.
+- L'**aggregazione e la soglia sono codice puro senza I/O**, testate caso per caso, con l'accesso al database accanto e fuori: la stessa separazione che `conflicts/` ha per contratto, e per la stessa ragione — è la parte in cui un errore non si vede.
+- La migrazione è **puramente additiva**: cinque colonne nullable su `artists` e una tabella nuova. Il rilascio precedente le ignora, quindi `wrangler rollback` regge senza toccare il database ([ADR-0046](#adr-0046--il-rilascio-ha-un-numero-e-il-numero-sta-dentro-lartefatto)).
+- Il motore conflitti **non cambia**. Le regole restano quattro e restano pure. La tentazione — "questa band chiede più di quanto incassi la tua capienza" — non è un conflitto fra due date e non entra da quella porta.
+- Nessuna **notifica** nuova: [ADR-0035](#adr-0035--una-notifica-nasce-già-redatta-per-un-destinatario-solo) vuole che un avviso nasca da un evento o da un conflitto serializzato, e una scheda non è né l'uno né l'altro. L'invito _«com'è andata?»_ è un elemento di pagina sulle proprie date passate, non un messaggio su Telegram.
+- Si apre il punto 9: **i confini delle fasce sono un'ipotesi**, e vanno guardati sui dati veri dopo tre mesi.
+
+**Da rivedere se.** Le riferite superano le osservate. Vorrebbe dire che la scheda si sta riempiendo di sentito dire invece che di esperienza, e a quel punto la forma `riferita` non è una concessione ma il prodotto — e va tolta, o va detto che il prodotto è quello.
+
+---
+
+## ADR-0049 — Il cachet si vede a fasce, sopra una soglia di due organizzazioni, e non si attribuisce mai
+
+**Data:** 2026-09-01 · **Stato:** Accettata · **Dipende da:** il punto aperto 8, che va chiuso prima di implementarla
+
+**Contesto.** Deciso con [ADR-0048](#adr-0048--la-scheda-della-band-separa-i-fatti-dichiarati-dalle-osservazioni-e-le-osservazioni-si-appendono-a-una-data) **dove** sta il cachet, resta la domanda difficile: che cosa ne vede chi non l'ha scritto.
+
+Il vincolo di scala è duro e non si aggira con la buona volontà. Le organizzazioni iscritte sono **meno di venti**, si conoscono, e sanno chi lavora su quale genere in quale provincia. In un insieme così piccolo un aggregato calcolato su una sola osservazione **è** quella osservazione, e "media di 1.400 € su questa band" letto da chi sa che in zona quella band la porta solo il circolo X non è una statistica: è il cachet del circolo X, riletto a voce alta.
+
+C'è poi il problema opposto, che riguarda l'altro lato del tavolo: un archivio dei prezzi pagati allo stesso fornitore, condiviso fra chi da quel fornitore compra, non è una struttura dati neutrale. È il punto 8, e non si chiude qui.
+
+**Decisione.** Tre scelte che stanno insieme e che separatamente non funzionerebbero.
+
+1. **Fasce, non importi.** Sei valori chiusi — `fino_a_300`, `300_600`, `600_1200`, `1200_2500`, `2500_5000`, `oltre_5000` — con `cachet_include` a dire che cosa c'era dentro (`solo_cachet`, `cachet_e_viaggio`, `tutto_incluso`). Nessun campo accetta un importo esatto: non è nascosto in uscita, **non entra proprio**.
+2. **Soglia.** L'intervallo di riferimento compare solo con **n ≥ 2 osservazioni da almeno 2 organizzazioni distinte**, in una finestra di **24 mesi**. Sotto soglia non compare niente; chi ha scritto continua a vedere le proprie.
+3. **Nessuna attribuzione, mai.** Fuori dall'organizzazione che l'ha scritta non si vede chi ha osservato, né la data esatta, né la serata da cui l'osservazione viene. La freschezza si mostra a fasce grosse — _ultimi 12 mesi_, _12–24 mesi_ — perché su una band di nicchia una data esatta è un indizio su chi ha suonato dove.
+
+Durata del set e volume dell'attrezzatura si mostrano **da n = 1 e senza soglia**: non sono prezzi e non espongono nessuna trattativa. Le `riferite` non entrano nell'intervallo e non concorrono alla soglia: compaiono in una riga propria, con il loro conteggio.
+
+**Motivazioni.**
+
+Sulle **fasce al posto degli importi**, che è la scelta con più conseguenze. Una fascia risponde alla domanda che si fa davvero — «con che ordine di grandezza mi sto muovendo» — e non risponde a quella che è meglio non poter fare: «quanto ha pagato l'altro». Perde qualcosa di reale, e va detto: chi tratta al confine fra due fasce dalla scheda non capisce da che parte sta. È il costo, ed è accettato.
+
+Sulla **soglia a due organizzazioni invece di tre osservazioni**, che è un baratto esplicito: **la grana grossa compra la soglia bassa**. Con un importo esatto la soglia doveva essere alta, perché ogni singola riga esposta è una trattativa leggibile; con una fascia la precisione residua è un intervallo, e basta assicurarsi che non sia riconducibile a un'organizzazione sola. Il criterio che conta non è quante righe ci sono ma **da quante organizzazioni vengono**: dieci osservazioni della stessa organizzazione restano il quaderno di quella organizzazione, e non superano niente.
+
+Sulla **finestra di 24 mesi**. Un prezzo di tre anni fa non è un prezzo, è un ricordo. E una finestra mobile fa scadere il dato da sé, senza che nessuno debba fare pulizia: è lo stesso meccanismo per cui [ADR-0032](#adr-0032--il-testo-incollato-ha-una-scadenza) mette una scadenza al testo incollato invece di affidarsi alla buona volontà.
+
+Sulle **riferite fuori dall'aggregato**, che è dove la decisione si discosta da come la richiesta era formulata — "peso minore". Un peso frazionario dentro un aggregato di fasce non è spiegabile a chi legge: che cosa vuol dire una fascia che conta metà? E una riferita pesata, se cade fuori dall'intervallo, lo allarga comunque — cioè il sentito dire sposta il numero che si legge, che è precisamente ciò che il peso minore doveva impedire. Riga separata con il proprio conteggio dice la stessa cosa in modo verificabile: **queste le abbiamo viste, queste ce le hanno raccontate**.
+
+Sull'**asimmetria fra cachet e il resto**. Sarebbe stato più elegante applicare una sola regola a tutti i campi. Sarebbe stato anche inutilmente severo: la durata di un set e il volume di un furgone non espongono una trattativa e non interessano a nessuno come leva. La soglia protegge una cosa sola, e va messa solo lì — altrimenti diventa un rito, e i riti si aggirano.
+
+**Alternative scartate.**
+
+- _Importi esatti attribuiti, visibili a tutti._ Massima utilità pratica, e contraddice il prodotto: un gruppo che ha costruito lo stato `hold` per non far vedere le proprie date agli altri non può poi pubblicare quanto paga. Sarebbe la [ADR-0005](#adr-0005--stato-hold-con-visibilità-ridotta) rovesciata sul lato del denaro.
+- _Importi esatti, aggregati con soglia alta (n ≥ 3, ≥ 2 organizzazioni)._ Era la proposta iniziale e non è sbagliata; è stata superata perché la fascia ottiene quasi lo stesso servizio con molta meno esposizione, e perché una media di importi esatti invita a un'aritmetica ("allora posso offrire 1.150") che una fascia non invita.
+- _Mediana senza soglia._ Una mediana su n = 1 è il dato singolo con un nome più rispettabile. Peggio del problema, perché lo nasconde.
+- _K-anonimato sul conteggio delle righe soltanto._ Contare le righe e non le organizzazioni lascia il caso peggiore scoperto, ed è il caso più frequente: l'organizzazione che compila con diligenza tutte le proprie date passate.
+
+**Conseguenze.**
+
+- La soglia vive in **una funzione pura sola**, con i suoi test, e non sparsa fra query e componenti. Se un giorno le organizzazioni fossero cento, si cambia lì.
+- L'interfaccia deve saper dire **«non abbastanza osservazioni»** senza farlo sembrare un guasto, e senza dire quante ne mancano: "manca una sola osservazione" è già un'informazione sul conteggio.
+- Il conteggio delle organizzazioni si calcola su `organization_id` **distinti**, non sui profili. Due persone della stessa associazione sono una voce sola.
+- Chi scrive vede sempre le proprie osservazioni, anche sotto soglia, ed è l'unico modo in cui la propria compilazione resta utile subito invece che forse fra un anno.
+- Resta il **punto 8** aperto, e questa decisione è scritta assumendo la prima delle due risposte. Se il gruppo dicesse l'altra, si riapre questo ADR e non si aggira.
+
+**Da rivedere se.** Le organizzazioni superano la cinquantina — allora la soglia può scendere e le fasce possono stringersi — oppure il punto 8 si chiude in modo diverso da come questa decisione presume.
+
+---
+
+## ADR-0050 — Sulla scheda della band non esiste nessun campo di giudizio, e la lista non si ordina per prezzo
+
+**Data:** 2026-09-01 · **Stato:** Accettata
+
+**Contesto.** Una scheda che raccoglie quanto costa una band, quanto occupa e quanto suona attira per gravità i due campi successivi. Il primo è il giudizio: puntualità, affidabilità, «com'è andata», una nota libera. Il secondo è l'ordinamento: se ogni band ha una fascia, ordinare l'elenco per fascia è una riga di SQL e sembra un servizio.
+
+Nessuno dei due arriva come una proposta esplicita. Arrivano come richieste ragionevoli, sei mesi dopo, da una persona che ha avuto una brutta serata.
+
+**Decisione.** Non esistono, e non esistono per progetto.
+
+- **Nessun campo di giudizio, in nessuna forma.** Niente valutazioni, niente affidabilità, niente puntualità, **nessuna nota di testo libero** su una band — né condivisa né privata alla propria organizzazione. Solo fatti misurabili: fasce, minuti, volume, numero di persone.
+- **Nessun ordinamento e nessun filtro per fascia di cachet** nella lista artisti. La fascia si legge sulla scheda di una band che stai già guardando; non è una colonna su cui scorrere il catalogo.
+- **La scheda non esce dal recinto:** mai nel feed ICS, nell'ICS singolo, negli export JSON/CSV/JSON-LD, nella copy per i social, nel JSON-LD della pagina evento, mai nella cache del service worker.
+
+**Motivazioni.**
+
+Sul **giudizio**: la differenza fra un database operativo e una lista nera è esattamente questo campo. Un archivio in cui venti organizzatori annotano che una band è inaffidabile, tenuto all'insaputa di quella band, non è uno strumento di lavoro: è una cosa che decide se qualcuno lavora ancora, scritta da chi non deve renderne conto a nessuno e letta da tutti quelli che potrebbero scritturarlo. Le persone di cui parla non sanno che esiste, non possono rispondere, e nella maggior parte dei casi non sono nemmeno una persona giuridica ([ADR-0051](#adr-0051--i-dati-operativi-delle-band-sono-dati-di-terzi-raccolti-deliberatamente)). Un fatto misurabile sbagliato si corregge con un'altra osservazione; un giudizio no, resta.
+
+E il campo, se esiste, si riempie. Non serve prevedere l'abuso: basta prevedere una brutta serata e una casella di testo.
+
+Sulla **nota libera anche se privata**, che è la versione che sembra innocua. È innocua finché è privata, e resta privata finché a qualcuno non viene la buona idea di condividerla — e a quel punto il campo è già pieno di anni di annotazioni scritte quando nessuno pensava che le avrebbe lette un altro. È molto più facile non avere il campo che sostenere quella conversazione. Chi vuole tenersi un appunto ha già mille posti dove farlo, e nessuno di quei posti è un database condiviso fra venti organizzazioni.
+
+Sull'**ordinamento**: un elenco di band ordinabile per prezzo non è la stessa feature con un'affordance in più. È un listino. Trasforma "quanto chiede questa band che sto valutando" in "chi costa meno in questo genere", che è l'uso del punto 8 di cui il gruppo dovrebbe dire esplicitamente se lo vuole, non un effetto collaterale di una `ORDER BY`. La fascia serve a preparare una telefonata, non a fare la spesa.
+
+Sull'**uscita dal recinto**: il feed ICS è l'unica superficie di questo prodotto che finisce su server di terzi — è per definizione ciò che fa, e [ADR-0011](#adr-0011--feed-ics-in-sola-lettura-nessun-sync-bidirezionale) lo vuole così. Una scheda che finisse lì dentro sarebbe fuori da ogni controllo di visibilità in un modo da cui non si torna indietro, perché un ICS scaricato non si richiama. Vale lo stesso per il service worker, per il vincolo che `CLAUDE.md` dichiara già: in cache va solo ciò che è uguale per tutti.
+
+**Alternative scartate.**
+
+- _Giudizi condivisi ma solo fra moderatori._ Sposta il problema in una stanza più piccola e non lo toglie: resta un archivio di reputazione su persone che non sanno di esserci, con in più l'aggravante di essere segreto.
+- _Nota libera visibile solo a chi la scrive._ Vedi sopra: è la stessa cosa con un intervallo di tempo davanti.
+- _Ordinamento per fascia riservato a chi ha contribuito._ Reciprocità come biglietto d'ingresso a una funzione che non dovrebbe esistere. Due errori che non si annullano.
+
+**Conseguenze.**
+
+- `artist_observations` non ha e non avrà una colonna di testo. Il CHECK che impone almeno un valore fra i tre campi misurabili lo rende anche strutturalmente vero: **un'osservazione senza un numero non è scrivibile**.
+- La lista artisti resta ordinabile per nome e filtrabile per genere e paese, come oggi.
+- I test del serializzatore includono le righe negative: la scheda non compare in ICS, export e copy social. Sono asserzioni noiose ed è esattamente il tipo di asserzione che serve, perché il giorno in cui qualcuno aggiunge un campo all'export non ci penserà.
+- Quando la richiesta arriverà — e arriverà — la risposta è questo ADR, non una discussione da rifare da capo con qualcuno che ha appena avuto una brutta serata.
+
+**Da rivedere se.** Niente di ciò che può succedere dentro questo prodotto. Se cambia, cambia perché il prodotto è diventato un altro, e allora la decisione da riscrivere è quella a monte.
+
+---
+
+## ADR-0051 — I dati operativi delle band sono dati di terzi raccolti deliberatamente
+
+**Data:** 2026-09-01 · **Stato:** Accettata · **Estende:** [ADR-0043](#adr-0043--il-titolare-del-trattamento-è-una-persona-fisica-e-linformativa-è-una-pagina-dellapplicazione)
+
+**Contesto.** ADR-0043 ha identificato il titolare del trattamento e ha isolato una categoria delicata: i dati personali di terzi che il servizio **non raccoglie ma riceve**, cioè il testo incollato nell'import, con la frase «le persone nominate lì dentro non sanno che ne teniamo copia».
+
+La scheda operativa della band è la stessa frase senza l'attenuante. Qui il servizio non riceve niente per sbaglio: **raccoglie di proposito**, con un form fatto apposta, dati economici su soggetti identificabili che non usano la piattaforma e non sanno che esiste. E il soggetto spesso non è una persona giuridica: un solista sotto nome d'arte è una persona fisica; un duo senza partita IVA sono due persone fisiche. Il cachet di una band di tre persone è, per quelle tre persone, un dato sul proprio reddito.
+
+**Decisione.**
+
+- L'informativa `/privacy` guadagna una **sezione propria** sulla scheda operativa, accanto a quella sul testo incollato: che cosa si raccoglie, da chi, perché, per quanto (24 mesi di finestra sull'aggregato), e come si chiede che sparisca.
+- Sull'anagrafica esiste la colonna **`scheda_spenta`**. A bandiera alzata la scheda non mostra niente — a nessuno, moderatore e platform admin compresi, che vedono solo che è spenta — e non si scrivono osservazioni nuove. Il resto dell'anagrafica (nome, generi, link) resta: serve al motore conflitti e non è ciò a cui si oppone chi si oppone.
+- La bandiera la alza **un moderatore su richiesta della band**, ed è un'opposizione ex art. 21 fatta funzionare invece che promessa. Se poi chiede la cancellazione e non solo l'opposizione, le osservazioni si cancellano davvero: sono righe, non c'è niente da conservare.
+- La sezione dell'informativa dice **anche alle band** — che non sono iscritte e non la leggeranno mai da sole — a quale indirizzo scrivere. È lo stesso indirizzo del titolare.
+
+**Motivazioni.**
+
+Sul **dirlo invece di sperare che non si noti**. Un'informativa che elenca i campi del profilo e tace sulla categoria di dati più delicata che il servizio tratta è un adempimento, non un'informazione. ADR-0043 ha già scelto la strada opposta per il testo incollato, per la ragione che vale identica qui: è esattamente il caso in cui un'informativa serve a qualcosa.
+
+Sulla **bandiera invece della cancellazione come unica risposta**. Chi si oppone di solito non vuole sparire dal calendario — vuole che non si parli del suo prezzo. Due risposte diverse per due richieste diverse; offrire solo l'accetta significa non offrire niente.
+
+Sul **moderatore invece dell'automatismo**. Non c'è modo di verificare via web che chi scrive sia la band, e un flag che si alza da solo su richiesta anonima è una leva per spegnere la scheda di chiunque. Il moderatore fa quello che fa già per i doppioni ([ADR-0016](#adr-0016--il-ruolo-moderator-esiste-dalla-v1-ed-è-trasversale-alle-organizzazioni)): un giudizio umano su una richiesta, a questa scala e non oltre.
+
+Sul **non chiedere il consenso alla band prima di aprire la scheda**, che sarebbe la posizione più pulita e non è quella scelta. Sarebbe pulita e finirebbe la feature il primo giorno: nessuno raccoglie un consenso da centinaia di band per compilare una scheda interna. La base è l'interesse legittimo di chi organizza a conoscere le condizioni di un ingaggio, ed è per questo che il disegno di [ADR-0049](#adr-0049--il-cachet-si-vede-a-fasce-sopra-una-soglia-di-due-organizzazioni-e-non-si-attribuisce-mai) e [ADR-0050](#adr-0050--sulla-scheda-della-band-non-esiste-nessun-campo-di-giudizio-e-la-lista-non-si-ordina-per-prezzo) conta più della buona intenzione: fasce invece di importi, soglia, nessuna attribuzione, nessun giudizio e nessun listino sono ciò che tiene il trattamento proporzionato allo scopo. Se quei vincoli cadono, cade anche l'argomento che regge questa decisione, e **cadono insieme**.
+
+**Alternative scartate.**
+
+- _Trattare le band come dati non personali perché "sono gruppi musicali"._ Falso per una parte consistente dei casi e comodo per tutti, che è la combinazione peggiore.
+- _Non nominare la scheda nell'informativa perché la piattaforma è chiusa._ Chiusa vuol dire che i lettori sono pochi, non che i dati sono meno personali. E i soggetti non sono i lettori.
+- _Consenso preventivo della band._ Vedi sopra: chiude la feature, e la chiude fingendo di aprirla.
+- _Cancellazione automatica dopo 24 mesi._ La finestra dei 24 mesi è sull'aggregato, non sulla riga: la propria storia di ingaggi è un dato dell'organizzazione che l'ha scritta e non c'è motivo di distruggerla. Ciò che scade è la sua capacità di parlare al posto del presente.
+
+**Conseguenze.**
+
+- **L'informativa è codice**, come già stabilito: la finestra di 24 mesi che dichiara è la costante dell'aggregatore, e cambiarne una senza l'altra produce un'informativa falsa. Vale il commento in testa al file.
+- La Fase 7 non è finita quando la scheda funziona: è finita quando `/privacy` la nomina e `scheda_spenta` funziona. La pagina fa parte della fase, non del dopo.
+- La condizione da tenere d'occhio è nominata sopra: **se cadono i vincoli di ADR-0049 e ADR-0050, questa decisione non regge più**. Non è una nota di stile, è la ragione per cui il trattamento è difendibile.
+- ADR-0043 diceva che il servizio non legge mai l'indirizzo IP e che era una proprietà vera del sistema. Resta vera: qui non se ne aggiunge nessuno.
+
+**Da rivedere se.** Una band chiede l'accesso ai dati che la riguardano — cioè esercita l'art. 15 e non l'art. 21. Oggi la risposta si costruisce a mano da `db:studio`, e a questa scala va bene; se succedesse più di una volta l'anno servirebbe un modo di esportare la scheda di una band senza rivelare quali organizzazioni l'hanno osservata, che non è un'esportazione banale.

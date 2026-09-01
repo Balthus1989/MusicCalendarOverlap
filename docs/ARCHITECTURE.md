@@ -154,11 +154,18 @@ Tassonomia **chiusa**: solo i platform admin possono aggiungere generi. Il seed 
 | `image_url`                                                                                                    | text                  | Supabase Storage                                  |
 | `website_url`, `instagram_url`, `facebook_url`, `bandcamp_url`, `spotify_url`, `youtube_url`, `soundcloud_url` | text                  |                                                   |
 | `booking_email`, `booking_agency`                                                                              | text                  | informazione preziosa tra organizzatori           |
+| `volume_attrezzatura`                                                                                          | enum, nullable        | Fase 7: `solo_voce` … `camion`, tassonomia chiusa |
+| `persone_in_viaggio`                                                                                           | integer, nullable     | Fase 7: band più crew, serve per l'ospitalità     |
+| `richiede_backline`                                                                                            | boolean, nullable     | Fase 7: `NULL` significa "non lo sappiamo"        |
+| `durata_set_max_dichiarata`                                                                                    | integer, nullable     | Fase 7: minuti, come da rider                     |
+| `scheda_spenta`                                                                                                | boolean DEFAULT false | Fase 7: su richiesta della band, vedi ADR-0051    |
 | `is_verified`                                                                                                  | boolean DEFAULT false | curato da un admin                                |
 | `created_by`                                                                                                   | uuid FK → profiles    |                                                   |
 | `created_at`, `updated_at`                                                                                     | timestamptz           |                                                   |
 
 Indice UNIQUE su `name_normalized` (parziale, dove `mbid IS NULL`) per limitare i duplicati senza bloccare omonimie legittime risolte via MBID. Indice trigram (`pg_trgm`) su `name` per l'autocomplete locale.
+
+> **Aggiunta (2026-09-01, Fase 7).** Le cinque colonne nuove sono **fatti dichiarati**: descrivono la band a prescindere da chi la ingaggia, si leggono da un rider e si curano come `booking_email` — chiunque le compila, il moderatore le corregge. Non contengono nessun prezzo e nessun giudizio, e la ragione per cui la riga si ferma qui sta in [ADR-0048](DECISIONS.md): tutto ciò che **cambia da serata a serata** non è un campo di questa tabella ma un'osservazione, e sta in §4.7. `scheda_spenta` è l'unica colonna che non descrive la band: descrive una sua richiesta ([ADR-0051](DECISIONS.md)).
 
 **`artist_genres`** — `artist_id`, `genre_id`, `is_primary` boolean. PK composita.
 
@@ -287,6 +294,67 @@ UNIQUE `(event_a_id, event_b_id, kind)`, più un CHECK `event_a_id < event_b_id`
 >
 > Il registro si legge da `/audit`, e **solo la propria organizzazione**: conserva i valori precedenti dei campi, fra cui il titolo, e mostrarlo altrove significherebbe raccontare il titolo che una data aveva quando era ancora opzionata. Il platform admin non fa eccezione, per la ragione di [ADR-0019](DECISIONS.md).
 
+### 4.7 Scheda operativa della band (Fase 7)
+
+Un'anagrafica artisti condivisa dice **chi** è una band. Chi organizza ha bisogno di sapere anche **quanto costa portarla, quanto spazio occupa e quanto suona**: sono le tre domande che si fanno al telefono prima di proporre una data, e oggi la risposta ce l'ha solo chi quella band l'ha già ospitata.
+
+La divisione del modello è quella di [ADR-0048](DECISIONS.md), in tre righe:
+
+- il valore descrive la band **a prescindere da chi la ingaggia** → è un campo di `artists` (§4.3);
+- il valore **cambia da serata a serata** → è un'**osservazione**, riga di `artist_observations`;
+- il valore è un **prezzo** → è sempre un'osservazione, anche se non cambiasse mai.
+
+**`artist_observations`**
+
+| Campo                      | Tipo                       | Note                                                                   |
+| -------------------------- | -------------------------- | ---------------------------------------------------------------------- |
+| `id`                       | uuid PK                    |                                                                        |
+| `artist_id`                | uuid FK NOT NULL           | → `artists`, `on delete cascade`                                       |
+| `organization_id`          | uuid FK NOT NULL           | chi ha scritto: l'organizzazione, non la persona                       |
+| `created_by`               | uuid FK → profiles         | `on delete set null`                                                   |
+| `origine`                  | enum `observation_origin`  | `osservata` \| `riferita`                                              |
+| `event_lineup_id`          | uuid FK, nullable          | NOT NULL se `osservata`, NULL se `riferita`; `on delete cascade`       |
+| `fascia_cachet`            | enum `cachet_band`, null   | sei valori, §4.7.1                                                     |
+| `cachet_include`           | enum `cachet_scope`, null  | `solo_cachet` \| `cachet_e_viaggio` \| `tutto_incluso`                 |
+| `durata_set_minuti`        | integer, nullable          | minuti effettivamente suonati                                          |
+| `volume_osservato`         | enum, nullable             | stessa scala di `artists.volume_attrezzatura`                          |
+| `data_riferimento`         | date NOT NULL              | copiata da `events.starts_at` se `osservata`, dichiarata se `riferita` |
+| `ruolo`                    | enum `billing_role`, null  | congelato dalla riga di lineup                                         |
+| `capienza_venue`           | integer, nullable          | congelata dal venue                                                    |
+| `regione`                  | text, nullable             | congelata dal venue                                                    |
+| `created_at`, `updated_at` | timestamptz                |                                                                        |
+
+Vincoli, e sono la sostanza della tabella:
+
+- CHECK `(origine = 'osservata') = (event_lineup_id IS NOT NULL)`. Un'osservazione o è appesa a una data o si dichiara sentito dire; non c'è una terza forma.
+- UNIQUE su `event_lineup_id`. Una riga di lineup produce **una** osservazione: due sarebbero la stessa serata contata due volte.
+- UNIQUE parziale su `(artist_id, organization_id)` dove `origine = 'riferita'`. **Una riferita per organizzazione per band**, sostituibile. Senza questo vincolo una sola organizzazione riempie la scheda da sola e il conteggio smette di voler dire qualcosa.
+- CHECK: almeno uno fra `fascia_cachet`, `durata_set_minuti`, `volume_osservato` valorizzato. Un'osservazione vuota non è un'osservazione.
+
+**Chi può scrivere una `osservata`.** Solo un membro dell'organizzazione titolare della data, e solo su un evento **passato e `confirmed`**. Le bozze non sono successe, gli `hold` nemmeno, e una data `cancelled` non ha pagato nessun cachet — è la stessa selezione con cui il motore conflitti sceglie i candidati (§6.1, [ADR-0025](DECISIONS.md)), applicata all'indietro nel tempo. Sulle date segnalate ([ADR-0044](DECISIONS.md)) non scrive nessuno: non hanno membri.
+
+Il permesso di scrittura quindi non va inventato, **è già l'appartenenza**. E l'ancoraggio regala tre cose che nessun form libero regala: chi scrive il numero l'ha visto, il dato si data da sé, e il contesto (ruolo in cartellone, capienza, regione) non va chiesto a nessuno.
+
+L'ingresso naturale è un invito in pagina sulle proprie date passate — _«com'è andata?»_ — non un avviso su Telegram: [ADR-0035](DECISIONS.md) dice che una notifica nasce da un evento o da un conflitto serializzato, e una scheda non è né l'uno né l'altro.
+
+#### 4.7.1 Le sei fasce, e perché non sono importi
+
+`cachet_band`: `fino_a_300` · `300_600` · `600_1200` · `1200_2500` · `2500_5000` · `oltre_5000`. Euro lordi, IVA e ritenuta escluse; `cachet_include` dice che cosa c'era dentro, perché 1.200 € con il viaggio compreso e 1.200 € senza sono due prezzi diversi e all'estremo basso della scala la differenza è un'intera fascia.
+
+I confini sono un'ipotesi scritta a tavolino su un giro di club e associazioni, ed è la parte più facilmente sbagliata di tutta la feature: se dopo tre mesi l'80% delle osservazioni sta nella prima fascia, la scala non dice niente e va rifatta. È il punto 9 delle decisioni aperte.
+
+#### 4.7.2 L'aggregato
+
+Ciò che si legge sulla scheda **non** è ciò che si scrive. Vedi [ADR-0049](DECISIONS.md):
+
+- **Fascia di riferimento**: l'intervallo fra la fascia minima e la massima fra le osservazioni `osservata` degli ultimi **24 mesi**, mostrato solo con **n ≥ 2 osservazioni da almeno 2 organizzazioni distinte**. Sotto soglia non compare niente, e chi ha scritto continua a vedere le proprie.
+- **Riferite**: riga a parte, con il proprio conteggio. Non entrano nell'intervallo di riferimento e non concorrono alla soglia.
+- **Durata del set**: mediana delle osservate, per ruolo in cartellone quando i numeri lo permettono, più il massimo dichiarato dalla scheda. Nessuna soglia: non è un prezzo e non espone una trattativa.
+- **Volume attrezzatura**: valore modale delle osservate, accanto a quello dichiarato quando divergono. Nessuna soglia, per la stessa ragione.
+- **Freschezza**: a fasce grosse (_ultimi 12 mesi_ / _12–24 mesi_), mai con una data esatta. Una data esatta su una band di nicchia è un indizio su chi ha suonato dove.
+
+Il calcolo della soglia e delle aggregazioni è **codice puro senza I/O**, testato caso per caso come le regole dei conflitti; l'accesso al database sta accanto. Vale qui la stessa separazione che `CLAUDE.md` impone a `conflicts/`, e per la stessa ragione: è la parte in cui un bug è silenzioso.
+
 ---
 
 ## 5. Modello di visibilità
@@ -343,6 +411,32 @@ Regole non negoziabili:
 - **Nessun handler restituisce mai una riga `events` grezza al client.** Tutto passa da `serializeEvent`.
 - Le query di lista filtrano già in SQL (`status != 'draft' OR organization_id = ANY(...)`), la serializzazione è il secondo strato.
 - La funzione ha test unitari esaustivi: una asserzione per cella della matrice sopra. È il test suite più importante del progetto.
+
+### Matrice di visibilità della scheda band (Fase 7)
+
+La scheda operativa (§4.7) ha una matrice propria, molto più corta, e un serializzatore proprio: `serializeArtistCard()` / `redigiScheda()`. È il **terzo** della lista dopo `serializeEvent` e `serializeConflict`, e la regola è identica: nessun handler restituisce mai una riga `artist_observations` grezza.
+
+| Riga della scheda                            | Org che l'ha scritta | Altra org | Moderatore | Platform admin |
+| -------------------------------------------- | -------------------- | --------- | ---------- | -------------- |
+| Fatti dichiarati (§4.3)                      | ✓                    | ✓         | ✓ (scrive) | ✓              |
+| Fascia di riferimento, **sopra** soglia      | ✓                    | ✓         | ✓          | ✓              |
+| Osservazioni **sotto** soglia                | ✓ (solo le proprie)  | ✗         | ✗          | ✗              |
+| Numero di osservazioni e di organizzazioni   | ✓                    | ✓         | ✓          | ✓              |
+| Freschezza a fasce grosse                    | ✓                    | ✓         | ✓          | ✓              |
+| Data esatta di un'osservazione               | ✓ (le proprie)       | ✗         | ✗          | ✗              |
+| **Quale** organizzazione ha osservato        | ✓ (sé stessa)        | ✗         | ✗          | ✗              |
+| Collegamento alla data che l'ha generata     | ✓ (le proprie)       | ✗         | ✗          | ✗              |
+| Riferite: fasce e conteggio                  | ✓                    | ✓         | ✓          | ✓              |
+| Autore di una riferita                       | ✓ (la propria)       | ✗         | ✗          | ✗              |
+| Qualunque riga, con `scheda_spenta`          | ✗                    | ✗         | ✗ (vede solo che è spenta) | ✗ |
+
+Le due colonne di destra sono la parte che sorprende, e sono deliberate.
+
+**Il moderatore** cura l'identità della band, non il registro di chi l'ha pagata: corregge il nome, unisce i doppioni, compila i fatti dichiarati, e delle osservazioni vede esattamente ciò che vede chiunque. [ADR-0016](DECISIONS.md) gli dà potere su un bene comune, e le osservazioni non sono un bene comune: sono di chi le ha scritte.
+
+**Il platform admin** non ha niente in più di nessuno, per la ragione già scritta in [ADR-0019](DECISIONS.md). Una promessa che vale contro i concorrenti ma non contro chi amministra il server è un'altra promessa.
+
+**Dove la scheda non compare mai:** feed ICS, ICS singolo, export JSON/CSV/JSON-LD, copy per i social, JSON-LD della pagina evento, cache del service worker. Il feed va a Google e ad Apple, ed è la sola superficie di questo prodotto che esce dal recinto ([ADR-0050](DECISIONS.md)).
 
 ---
 
@@ -649,6 +743,13 @@ Notifiche email e digest. Audit log consultabile. PWA (manifest, offline shell).
 >
 > Sotto `md:` la navigazione principale scende in una barra fissa in basso con quattro voci e il resto passa dietro un pannello laterale; il calendario apre in `listMonth`, perché su colonne da 34px il titolo di una data non entra e nessun foglio di stile lo fa entrare; i bersagli tattili arrivano a 44px e i campi a 16px, che è la soglia sotto cui Safari ingrandisce la pagina da solo. Sopra `md:` non cambia niente. Vedi [ADR-0042](DECISIONS.md).
 
+**Fase 7 — Scheda operativa della band**
+Le cinque colonne dichiarate su `artists` e la tabella `artist_observations` (§4.7), in una migrazione puramente additiva. Aggregazione e soglia come modulo puro con test caso per caso. `serializeArtistCard()` con un'asserzione per cella della matrice §5. Sezione nella pagina `/artists/[id]`; invito _«com'è andata?»_ sulle proprie date passate e `confirmed`; form della riferita, uno per organizzazione per band. Sezione nuova in `/privacy` e percorso di rimozione con `scheda_spenta` ([ADR-0051](DECISIONS.md)).
+
+Prima della fase va chiuso il punto 8 delle decisioni aperte, che non si chiude scrivendo codice.
+
+_Criterio di fine:_ due organizzazioni scrivono un'osservazione sulla stessa band e **nessuna delle due riesce a risalire alla fascia dell'altra**; una terza organizzazione vede l'intervallo e non vede chi l'ha prodotto. Testato, non verificato a occhio — è il `serializeEvent` di questa fase.
+
 ---
 
 ## 13. Struttura del repository
@@ -660,7 +761,10 @@ src/
       db/            schema.ts, migrations/, seeds/, client.ts
       conflicts/     engine.ts, rules.ts, genre-affinity.ts, geo.ts,
                      reconcile.ts, preview.ts, queries.ts, actions.ts
+      catalog/       artists.ts, venues.ts, scheda.ts (aggregati e soglia,
+                     puro), osservazioni.ts (I/O)
       visibility.ts  serializeEvent + serializeConflict/redigiConflitto
+                     + serializeArtistCard/redigiScheda
       cron.ts        segreto condiviso dei job periodici
       ics/
       parse/         sniff.ts, ics.ts, csv.ts, to-form.ts, prompt.ts (puri),
@@ -739,6 +843,7 @@ PUBLIC_APP_URL
   > **Aggiunta (2026-08-30).** Il fuso applicativo vale anche **dentro** le librerie che disegnano. FullCalendar accetta `timeZone: 'Europe/Rome'` ma non sa convertirlo da solo: senza un `namedTimeZonedImpl` disegna tutto in UTC, in silenzio. Lo fornisce `src/lib/fuso-fullcalendar.ts`, sopra `Intl` e sopra le stesse funzioni di `time.ts` ([ADR-0047](DECISIONS.md)).
 - **GDPR.** Dati personali minimi (nome, email, telefono opzionale). Hosting EU. Privacy policy e informativa necessarie, con il titolare del trattamento identificato prima del lancio pubblico: va deciso chi è formalmente titolare (una delle associazioni, presumibilmente) e non lasciato implicito.
   > **Chiuso (2026-08-27).** Il titolare è il manutentore, **persona fisica**, e non un'associazione: il codice, il database e le chiavi sono in mano sua, e la responsabilità deve stare dove sta il controllo effettivo. L'informativa è la rotta pubblica `/privacy`, fuori dal gruppo `(app)` perché va letta prima di digitare la propria email nel form di accesso. Le scadenze che dichiara sono le costanti del codice, non un testo parallelo: cambiarne una senza cambiare la pagina produce un'informativa falsa ([ADR-0043](DECISIONS.md)).
+  > **Aggiunta (2026-09-01, Fase 7).** E ce n'è una che il prodotto **raccoglie deliberatamente**: la scheda operativa della band (§4.7). Sono dati economici su soggetti identificabili che non usano il servizio e non sanno che esiste — e una band spesso non è una persona giuridica: un solista sotto nome d'arte è una persona fisica e basta. L'informativa deve nominarla in una sezione propria, come già fa per il testo incollato, e dire come si chiede di spegnerla: è la colonna `scheda_spenta`, ed è un'opposizione ex art. 21 fatta funzionare invece che promessa ([ADR-0051](DECISIONS.md)).
   > **Aggiunta (2026-08-24).** C'è una categoria di dati personali che il prodotto **non raccoglie ma riceve**: `parse_jobs.raw_text`, cioè il testo che qualcuno incolla. Un annuncio di concerto contiene con regolarità il numero di chi prende le prenotazioni o il nome di chi ospita il gruppo, e nessuna di quelle persone sa che ne stiamo tenendo copia. Ha una scadenza di novanta giorni, applicata da `/api/cron/purge` ([ADR-0032](DECISIONS.md)). L'informativa dovrà nominarla.
 - **Backup.** Il free tier di Supabase non garantisce backup adeguati: schedulare un `pg_dump` settimanale via GitHub Actions su artifact cifrato. Non opzionale.
 - **Attribuzione OSM** obbligatoria dove si mostrano dati di geocoding.
@@ -758,6 +863,8 @@ Con la chiusura del punto 5, **l'elenco è esaurito**: tutti e cinque i punti ch
 5. ~~Verificare, in Fase 5, lo stato attuale delle API Meta~~ — chiuso: verificato il 24 agosto 2026, la conclusione regge. Non è una deprecazione: leggere gli eventi di Utenti e Pagine è riservato ai Facebook Marketing Partner, e su Instagram non esiste un oggetto evento da leggere. [ADR-0030](DECISIONS.md).
 
 Resta aperta, fuori da questo elenco perché non ha una scadenza di fase, la sola questione di un LLM ospitato in locale (#7, quando il server esiste). È tracciata in `DECISIONS.md`.
+
+> **Aggiornamento (2026-09-01).** L'elenco si riapre, e non per una svista: la scheda operativa della band (§4.7) porta con sé **due punti nuovi**, l'8 e il 9, tracciati in `DECISIONS.md`. Il 9 è una calibrazione e si chiude guardando i dati dopo tre mesi. L'**8 no**: chiede al gruppo se ciò che vuole è non farsi trovare impreparato davanti a una richiesta, oppure sapere quanto pagano gli altri. Sono due prodotti diversi, il disegno di [ADR-0049](DECISIONS.md) serve il primo e ostacola il secondo, e la domanda non si chiude a tavolino. Ha una scadenza: **prima della Fase 7**. È la prima volta dal punto 5 che una decisione aperta blocca del codice.
 
 > **Aggiornamento (2026-08-27).** Il **titolare del trattamento** era l'altra questione senza scadenza di fase, ma con la scadenza più vincolante di tutte — «prima del lancio pubblico» — ed è chiusa: è il manutentore a titolo personale, e l'informativa esiste come pagina dell'applicazione ([ADR-0043](DECISIONS.md)).
 

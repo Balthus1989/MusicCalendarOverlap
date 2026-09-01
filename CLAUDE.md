@@ -37,6 +37,14 @@ npm run rilascia # rilascio completo: controlli, tag, deploy
 - Lo stesso vale per i conflitti: mai una riga `conflicts` grezza, perché
   `details` contiene quali band erano annunciate su ciascun lato. Si passa
   da `serializeConflict()` / `redigiConflitto()`. Vedi ADR-0024.
+- E vale per la **scheda operativa della band** (Fase 7): mai una riga
+  `artist_observations` grezza. Si passa da `serializeArtistCard()` /
+  `redigiScheda()`. Il cachet si vede solo **a fasce**, solo **sopra
+  soglia** (n≥2 osservazioni da ≥2 organizzazioni, 24 mesi) e **mai
+  attribuito**; sulla scheda non esiste nessun campo di giudizio né
+  nessuna nota di testo libero, e la lista artisti non si ordina né si
+  filtra per prezzo. Non sono preferenze di prodotto: sono ciò che rende
+  difendibile il trattamento. Vedi ADR-0048, 0049, 0050, 0051.
 - Le **regole** del motore conflitti (`conflicts/engine.ts`, `rules.ts`,
   `genre-affinity.ts`, `geo.ts`) sono codice puro senza I/O, sempre coperto
   da test unitari. L'accesso al database sta accanto, in `reconcile.ts`,
