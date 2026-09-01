@@ -39,13 +39,13 @@ export const artistSchema = z.object({
 		.refine((v) => v === null || z.uuid().safeParse(v).success, 'Un MusicBrainz ID è un UUID.'),
 	country: testoOpzionale(2),
 	city: testoOpzionale(120),
-	formedYear: z.coerce
-		.number()
-		.int()
-		.min(1900, 'Anno troppo remoto.')
-		.max(ANNO_CORRENTE, 'Anno nel futuro.')
-		.nullable()
-		.default(null),
+	// `interoOpzionale` e non `z.coerce.number()`, per la stessa ragione già
+	// scritta accanto a `capacity` in `venue.ts`: da un form l'anno non
+	// compilato arriva come stringa vuota, che `coerce` trasforma in 0 —
+	// bocciato dal minimo con «Anno troppo remoto», e un campo facoltativo
+	// diventava obbligatorio. Qui era rimasto, e rendeva impossibile inserire
+	// o modificare una band di cui non si conosce l'anno di formazione.
+	formedYear: interoOpzionale(1900, ANNO_CORRENTE).nullable().default(null),
 	bio: testoOpzionale(4000),
 	websiteUrl: urlOpzionale,
 	instagramUrl: urlOpzionale,
